@@ -34,3 +34,82 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+# Install Required Libraries
+
+If installing manually, install the required packages using:
+
+### TailwindCSS
+
+```bash
+npm install -D tailwindcss postcss autoprefixer
+```
+
+and create the config in the project root if missing:
+### tailwind.config.js
+
+```js
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./node_modules/flowbite-react/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [
+    require("flowbite/plugin")
+  ],
+}
+```
+
+---
+
+### Tailwind & TailwindCSS
+
+```bash
+npm install tailwindcss @tailwindcss/postcss postcss
+```
+
+### Flowbite & Flowbite React
+
+```bash
+npm install flowbite flowbite-react
+```
+
+---
+
+### ExcelJS & FileSaver.js
+
+```bash
+npm install exceljs file-saver
+```
+
+---
+
+### React Icons
+
+```bash
+npm install react-icons
+```
+
+---
+
+### Postgres
+
+```bash
+npm install postgres
+```
+
+---
+
+### Azure
+
+```bash
+npm install @azure/msal-react @azure/msal-browser
+```
+
+---
