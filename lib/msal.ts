@@ -5,7 +5,9 @@ export const msalConfig = {
   auth: {
     clientId: process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || "",
     authority: `https://login.microsoftonline.com/organizations`,
-    redirectUri: "http://localhost:3000",
+    redirectUri: typeof window !== "undefined"
+      ? window.location.origin
+      : "http://localhost:3000",
     navigateToLoginRequestUrl: false, // Prevents MSAL from forcing double navigations
   },
   cache: {

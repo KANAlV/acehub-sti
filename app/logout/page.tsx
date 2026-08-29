@@ -12,7 +12,7 @@ export default function AutoLogoutPage() {
         if (accounts.length > 0) {
           await instance.logoutRedirect({
             account: accounts[0],
-            postLogoutRedirectUri: window.location.origin, // Returns directly to your site root
+            postLogoutRedirectUri: (window.location.href = "/"),
           });
         }
       } catch (error) {
