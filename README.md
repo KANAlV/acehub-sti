@@ -61,39 +61,10 @@ npm install
 
 If installing manually, install the required packages using:
 
-### TailwindCSS
+### TailwindCSS & Tailwind-Scrollbar
 
 ```bash
-npm install -D tailwindcss postcss autoprefixer
-```
-
-and create the config in the project root if missing:
-### tailwind.config.js
-
-```js
-/** @type {import('tailwindcss').Config} */
-export default {
-  content: [
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./node_modules/flowbite-react/**/*.{js,ts,jsx,tsx}",
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [
-    require("flowbite/plugin")
-  ],
-}
-```
-
----
-
-### Tailwind & TailwindCSS
-
-```bash
-npm install tailwindcss @tailwindcss/postcss postcss
+npm install tailwindcss @tailwindcss/postcss postcss tailwind-scrollbar
 ```
 
 ### Flowbite & Flowbite React

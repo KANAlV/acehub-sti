@@ -2,101 +2,505 @@ import {
   Button,
   DarkThemeToggle,
   Sidebar,
-  SidebarItem,
   SidebarItemGroup,
-  SidebarItems,
+  SidebarItems, Tooltip,
 } from "flowbite-react";
 import { useRouter } from "next/navigation";
-import { useMsal } from "@azure/msal-react";
 import { useEffect, useState } from "react";
 import { HiLogout } from "react-icons/hi";
-import { HiCalendar, HiChartPie } from "react-icons/hi2";
-import { TbLayoutSidebarLeftCollapse } from "react-icons/tb";
+import {
+  HiBookOpen,
+  HiCalendar,
+  HiChartPie,
+  HiChevronDown,
+  HiChevronUp,
+  HiClipboardDocument,
+  HiDocumentCheck,
+  HiMiniAcademicCap,
+  HiMiniBuildingLibrary,
+  HiMiniBuildingOffice,
+  HiMiniCog6Tooth,
+  HiQuestionMarkCircle,
+  HiUser,
+  HiUsers,
+} from "react-icons/hi2";
+import {
+  TbLayoutSidebarLeftCollapse,
+  TbLayoutSidebarLeftExpand,
+} from "react-icons/tb";
 import Image from "next/image";
+import { FaCubes } from "react-icons/fa6";
+import { AccountInfo } from "@azure/msal-common";
+import { fetchUserRole } from "@/app/actions/user";
 
-export default function SidebarFunction(){
+interface SidebarFunctionProps {
+  account: AccountInfo | null;
+}
+
+interface UserPermissions {
+  booking: boolean;
+  personal_schedule: boolean;
+  academic_qualification: boolean;
+  schedules: boolean;
+  courses: boolean;
+  rooms: boolean;
+  subjects: boolean;
+  teachers: boolean;
+  maq: boolean;
+  fcce: boolean;
+  help: boolean;
+  config: boolean;
+  super: boolean;
+}
+
+export default function SidebarFunction({ account }: SidebarFunctionProps) {
   const router = useRouter();
-  const { instance, accounts } = useMsal();
-  const [ collapsed, setCollapsed ] = useState(false);
 
-  useEffect(() => {}, [accounts]);
+  const [collapsed, setCollapsed] = useState(false);
+  const [dropdownCourses, setDropdownCourses] = useState(false);
+
+  const [permissions, setPermissions] = useState<UserPermissions | null>(null);
+
+  useEffect(() => {
+    async function fetchPermissions() {
+      if (!account?.username) return;
+
+      const result = await fetchUserRole(account.username);
+
+      if (result.success && result.data) {
+        // Map all permission fields returned from user_get_role
+        setPermissions({
+          booking: Boolean(result.data.booking),
+          personal_schedule: Boolean(result.data.personal_schedule),
+          academic_qualification: Boolean(result.data.academic_qualification),
+          schedules: Boolean(result.data.schedules),
+          courses: Boolean(result.data.courses),
+          rooms: Boolean(result.data.rooms),
+          subjects: Boolean(result.data.subjects),
+          teachers: Boolean(result.data.teachers),
+          maq: Boolean(result.data.maq),
+          fcce: Boolean(result.data.fcce),
+          help: Boolean(result.data.help),
+          config: Boolean(result.data.config),
+          super: Boolean(result.data.super),
+        });
+      } else {
+        console.error("Failed to fetch permissions:", result.error);
+        setPermissions(null);
+      }
+    }
+
+    fetchPermissions();
+  }, [account]);
 
   return (
     <Sidebar
-      className={`h-screen ${collapsed ? "w-16" : "w-64"} border-r border-gray-200 bg-gray-200 shadow-lg shadow-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col`}
+      className={`scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent border-r border-gray-200 bg-gray-200 shadow-lg shadow-gray-400/60 transition-[width] duration-300 ease-in-out dark:scrollbar-thumb-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col
+                  ${collapsed ? "w-16" : "w-64"}`}
       aria-label="Sidebar"
     >
-      {/* Header Section */}
-      <div
-        className={`${collapsed ? "justify-center" : "flex"} mb-2 items-center justify-between border-b-1 border-gray-200 pb-2 dark:border-gray-700`}
-      >
-        <div className="flex items-center">
-          <Image
-            src="/acehub-logo.png"
-            alt="Acehub Logo"
-            width={32}
-            height={32}
-            className={`${collapsed ? "mb-4 ml-1" : ""}`}
-          />
-          <h1 className={`${collapsed ? "hidden" : ""} ml-2 text-lg font-bold`}>
-            Acehub
-          </h1>
-        </div>
-        <DarkThemeToggle />
-      </div>
-
       {/* Navigation Items (Stretches to fill remaining vertical space) */}
       <SidebarItems className="flex flex-1 flex-col justify-between">
         {/* Main Top Navigation */}
         <SidebarItemGroup>
-          <Button
-            outline
-            color="alternative"
-            onClick={() => router.push("/dashboard")}
-            className={`w-full cursor-pointer text-gray-500 hover:bg-gray-500/20 ${
-              collapsed ? "justify-center p-2" : "justify-start"
-            }`}
-          >
-            <HiChartPie className="h-6 w-6 shrink-0" />
-            {!collapsed && <span className="ml-2">Dashboard</span>}
-          </Button>
+          {!collapsed ? (
+            <>
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/dashboard")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}`}
+              >
+                <HiChartPie className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">Dashboard</span>}
+              </Button>
 
-          <Button
-            outline
-            color="alternative"
-            onClick={() => router.push("/booking")}
-            className={`w-full cursor-pointer text-gray-500 hover:bg-gray-500/20 ${
-              collapsed ? "justify-center p-2" : "justify-start"
-            }`}
-          >
-            <HiCalendar className="h-6 w-6 shrink-0" />
-            {!collapsed && <span className="ml-2">Booking</span>}
-          </Button>
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push(`/booking`)}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.booking ? "" : "hidden"}`}
+              >
+                <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">Booking</span>}
+              </Button>
 
-          <Button
-            outline
-            color="alternative"
-            onClick={() => router.push("/logout")}
-            className={`w-full cursor-pointer text-gray-500 hover:bg-gray-500/20 ${
-              collapsed ? "justify-center p-2" : "justify-start"
-            }`}
-          >
-            <HiLogout className="h-6 w-6 shrink-0" />
-            {!collapsed && <span className="ml-2">Logout</span>}
-          </Button>
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/schedules")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.schedules ? "" : "hidden"}`}
+              >
+                <HiCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">Schedules</span>}
+              </Button>
+
+              <Button //Dropdown Courses
+                outline
+                color="alternative"
+                onClick={() => setDropdownCourses(!dropdownCourses)}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""}
+                            ${permissions?.courses ? "" : "hidden"}`}
+              >
+                <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && (
+                  <div className="ml-2 flex w-full items-center justify-between">
+                    <span>Courses</span>
+                    {dropdownCourses ? (
+                      <HiChevronUp className="h-4 w-4" />
+                    ) : (
+                      <HiChevronDown className="h-4 w-4" />
+                    )}
+                  </div>
+                )}
+              </Button>
+
+              <div // Dropdown Courses Container
+                className={`flex flex-col ${dropdownCourses ? "block" : "hidden"} ${
+                  collapsed
+                    ? "justify-center border-y-1 border-gray-200 dark:border-gray-700"
+                    : "ml-4 justify-start"
+                } `}
+              >
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/courses/shs")}
+                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${
+                    collapsed ? "justify-center p-2" : "justify-start"
+                  }`}
+                >
+                  <HiMiniAcademicCap className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  {!collapsed && <span className="ml-2">SHS</span>}
+                </Button>
+
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/courses/tertiary")}
+                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${
+                    collapsed ? "justify-center p-2" : "justify-start"
+                  }`}
+                >
+                  <HiMiniBuildingLibrary className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  {!collapsed && <span className="ml-2">Tertiary</span>}
+                </Button>
+              </div>
+
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/rooms")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.rooms ? "" : "hidden"}`}
+              >
+                <HiMiniBuildingOffice className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">Rooms</span>}
+              </Button>
+
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/subjects")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.subjects ? "" : "hidden"}`}
+              >
+                <HiBookOpen className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">Subjects</span>}
+              </Button>
+
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/teachers")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.teachers ? "" : "hidden"}`}
+              >
+                <HiUsers className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">Teachers</span>}
+              </Button>
+
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/maq")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.maq ? "" : "hidden"}`}
+              >
+                <HiDocumentCheck className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">MAQ</span>}
+              </Button>
+
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/fcce")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.fcce ? "" : "hidden"}`}
+              >
+                <HiClipboardDocument className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">FCCE</span>}
+              </Button>
+            </>
+          ) : (
+            /** Collapsed */
+            <>
+              <Tooltip content={"Dashboard"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/dashboard")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                >
+                  <HiChartPie className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={"Booking"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push(`/booking`)}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.booking ? "" : "hidden"}`}
+                >
+                  <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={"Schedules"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/schedules")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.schedules ? "" : "hidden"}`}
+                >
+                  <HiCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={"Courses"} placement={"right"}>
+                <Button //Dropdown Courses
+                  outline
+                  color="alternative"
+                  onClick={() => setDropdownCourses(!dropdownCourses)}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""}
+                              ${permissions?.courses ? "" : "hidden"}`}
+                >
+                  <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  {!collapsed && (
+                    <div className="ml-2 flex w-full items-center justify-between">
+                      <span>Courses</span>
+                      {dropdownCourses ? (
+                        <HiChevronUp className="h-4 w-4" />
+                      ) : (
+                        <HiChevronDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  )}
+                </Button>
+              </Tooltip>
+
+              <div // Dropdown Courses Container
+                className={`flex flex-col ${dropdownCourses ? "block" : "hidden"} ${
+                  collapsed
+                    ? "justify-center border-y-1 border-gray-200 dark:border-gray-700"
+                    : "ml-4 justify-start"
+                } `}
+              >
+                <Tooltip content={"SHS"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/courses/shs")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                  >
+                    <HiMiniAcademicCap className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                    {!collapsed && <span className="ml-2">SHS</span>}
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"Tertiary"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/courses/tertiary")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                  >
+                    <HiMiniBuildingLibrary className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+              </div>
+
+              <Tooltip content={"Rooms"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/rooms")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.rooms ? "" : "hidden"}`}
+                >
+                  <HiMiniBuildingOffice className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={"Subjects"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/subjects")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.subjects ? "" : "hidden"}`}
+                >
+                  <HiBookOpen className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={"Teachers"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/teachers")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.teachers ? "" : "hidden"}`}
+                >
+                  <HiUsers className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={"MAQ"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/maq")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.maq ? "" : "hidden"}`}
+                >
+                  <HiDocumentCheck className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={"FCCE"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/fcce")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.fcce ? "" : "hidden"}`}
+                >
+                  <HiClipboardDocument className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+            </>
+          )}
+        </SidebarItemGroup>
+
+        {/* Middle Group */}
+        <SidebarItemGroup>
+          {!collapsed ? (
+            <>
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/help")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20 
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.help ? "" : "hidden"}`}
+              >
+                <HiQuestionMarkCircle className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">Help</span>}
+              </Button>
+
+              <Button
+                outline
+                color="alternative"
+                onClick={() => router.push("/configuration")}
+                className={`w-full cursor-pointer hover:bg-gray-500/20
+                            ${collapsed ? "justify-center p-2" : "justify-start"}
+                            ${permissions?.config ? "" : "hidden"}`}
+              >
+                <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                {!collapsed && <span className="ml-2">Configurations</span>}
+              </Button>
+            </>
+          ) : (
+            /** Collapsed View */
+            <>
+              <Tooltip content={"Help"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/help")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.help ? "" : "hidden"}`}
+                >
+                  <HiQuestionMarkCircle className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+
+              <Tooltip content={"Configurations"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/configuration")}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20
+                              ${permissions?.config ? "" : "hidden"}`}
+                >
+                  <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                </Button>
+              </Tooltip>
+            </>
+          )}
         </SidebarItemGroup>
 
         {/* Bottom Group */}
         <SidebarItemGroup>
-          <Button
-            outline
-            color="alternative"
-            onClick={() => setCollapsed(!collapsed)}
-            className={`w-full cursor-pointer text-gray-500 hover:bg-gray-500/20 justify-center`}
-          >
-            <TbLayoutSidebarLeftCollapse className="h-6 w-6 shrink-0" />
-            {!collapsed && <span className="ml-2">Collapse Sidebar</span>}
-          </Button>
+          {!collapsed ? (
+            <>
+              <Button
+                outline
+                color="alternative"
+                onClick={() => setCollapsed(!collapsed)}
+                className={`w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20`}
+              >
+                {!collapsed ? (
+                  <>
+                    <TbLayoutSidebarLeftCollapse className="h-6 w-6 shrink-0" />
+                    <span className="ml-2">Collapse Sidebar</span>
+                  </>
+                ) : (
+                  <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
+                )}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Tooltip content={"Expand Sidebar"} placement={"right"}>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => setCollapsed(!collapsed)}
+                  className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                >
+                  <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
+                </Button>
+              </Tooltip>
+            </>
+          )}
         </SidebarItemGroup>
       </SidebarItems>
     </Sidebar>

@@ -4,25 +4,33 @@ import { useMsal } from "@azure/msal-react";
 import { DarkThemeToggle } from "flowbite-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { syncUserToDatabase } from "@/app/actions/user";
 
 export default function LoginPage() {
   const { instance, accounts, inProgress } = useMsal();
+  const activeAccount = instance.getActiveAccount() || accounts[0];
+
   const router = useRouter();
 
   // Redirect to /dashboard as soon as authentication finishes and accounts exist
   useEffect(() => {
+    async function syncUser() {
+      await syncUserToDatabase(activeAccount.username!, activeAccount.name!);
+    }
+
     if (inProgress === "none" && accounts.length > 0) {
       const activeAccount = instance.getActiveAccount() || accounts[0];
 
-      /**
-      if(activeAccount.name!.includes("Student")) {
-        router.push("/restricted_access");
-      } else {
-        router.push("/dashboard");
-      }
-       **/
 
-      router.push("/dashboard"); //remove this line before deployment
+      //if (activeAccount.name!.includes("Student")) {
+      //  router.push("/restricted_access");
+      //}
+      /*else*/ if (activeAccount.username!.includes("@alabang.sti.edu.ph")) {
+        syncUser();
+        router.push("/dashboard");
+      } else {
+        router.push("/restricted_access");
+      }
     }
   }, [accounts, inProgress, router]);
 
