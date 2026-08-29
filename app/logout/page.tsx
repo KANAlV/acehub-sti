@@ -7,25 +7,24 @@ export default function AutoLogoutPage() {
   const { instance, accounts } = useMsal();
 
   useEffect(() => {
-    const performAutoLogout = async () => {
+    const handleLogout = async () => {
       try {
         if (accounts.length > 0) {
           await instance.logoutRedirect({
             account: accounts[0],
-            onRedirectNavigate: () => false, // Prevents MSAL from redirecting to Microsoft's sign-out portal
+            postLogoutRedirectUri: window.location.origin, // Returns directly to your site root
           });
         }
       } catch (error) {
         console.error("Local logout failed:", error);
       } finally {
-        // Clear all storage and force state reset
         sessionStorage.clear();
         localStorage.clear();
         window.location.href = "/";
       }
     };
 
-    performAutoLogout();
+    handleLogout();
   }, [instance, accounts]);
 
   return null; // Render nothing since logout handles immediate redirection
