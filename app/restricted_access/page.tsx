@@ -14,7 +14,7 @@ export default function RestrictedAccess() {
         if (accounts.length > 0) {
           await instance.logoutRedirect({
             account: accounts[0],
-            onRedirectNavigate: () => false, // Prevents MSAL from redirecting to Microsoft's sign-out portal
+            postLogoutRedirectUri: window.location.origin, // Prevents MSAL from redirecting to Microsoft's sign-out portal
           });
         }
       } catch (error) {
