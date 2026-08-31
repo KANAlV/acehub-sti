@@ -19,7 +19,7 @@ interface SidebarFunctionProps {
 
 export function NavigationBar({ account }: SidebarFunctionProps) {
   const router = useRouter();
-  const { mode, computedMode, toggleMode } = useThemeMode();
+  const { mode, toggleMode } = useThemeMode();
 
   return (
     <Navbar

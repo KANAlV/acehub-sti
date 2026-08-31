@@ -1,13 +1,16 @@
 "use server";
 import sql from "@/lib/database";
 
-export async function syncUserToDatabase(email: string, username:string) {
+export async function syncUserToDatabase(email: string, username: string) {
   try {
     await sql`
       CALL sp_add_or_update_user(${email}, ${username});
     `;
 
-    console.log("Synced user and verified role assignment successfully:", email);
+    console.log(
+      "Synced user and verified role assignment successfully:",
+      email,
+    );
     return { success: true };
   } catch (error) {
     console.error("Database sync error:", error);
@@ -23,7 +26,7 @@ export async function fetchUserRole(email: string) {
 
     return {
       success: true,
-      data: userRole ?? null
+      data: userRole ?? null,
     };
   } catch (error) {
     console.error("Database fetch error:", error);

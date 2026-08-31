@@ -5,7 +5,7 @@ import SidebarFunction from "@/components/Sidebar";
 import { useMsal } from "@azure/msal-react";
 import { NavigationBar } from "@/components/NavigationBar";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
 
