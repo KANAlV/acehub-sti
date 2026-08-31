@@ -120,7 +120,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
 
       {/* --- Toast --- */}
       {showToast && (
-        <div className="fixed right-5 bottom-5 z-50 border border-gray-500/30 rounded-lg">
+        <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
           <Toast>
             <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200">
               <HiExclamation className="h-5 w-5" />
@@ -132,13 +132,49 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       )}
 
       <Sidebar
-        className={`fixed top-[64px] bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent border-r border-gray-200 bg-gray-200 shadow-lg shadow-gray-400/60 transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
+        className={`fixed top-[58px] bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent border-r border-gray-200 bg-gray-200 shadow-lg shadow-gray-400/60 transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
         aria-label="Sidebar"
       >
         {/* Navigation Items (Stretches to fill remaining vertical space) */}
         <SidebarItems className="flex flex-1 flex-col justify-between">
           {/* Main Top Navigation */}
           <SidebarItemGroup>
+
+            {/* Moblie Sidebar Toggle */}
+            {!collapsed ? (
+              <>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => setCollapsed(!collapsed)}
+                  className={`w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20 md:hidden`}
+                >
+                  {!collapsed ? (
+                    <>
+                      <TbLayoutSidebarLeftCollapse className="h-6 w-6 shrink-0" />
+                      <span className="ml-2">Collapse Sidebar</span>
+                    </>
+                  ) : (
+                    <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
+                  )}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Tooltip content={"Expand Sidebar"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => setCollapsed(!collapsed)}
+                    className={`md:hidden w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                  >
+                    <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
+                  </Button>
+                </Tooltip>
+              </>
+            )}
+
+            {/* Sidebar Items */}
             {!collapsed ? (
               <>
                 <Button
@@ -496,13 +532,14 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
               </div>
             )}
 
+            {/* PC Sidebar Toggle */}
             {!collapsed ? (
               <>
                 <Button
                   outline
                   color="alternative"
                   onClick={() => setCollapsed(!collapsed)}
-                  className={`w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20`}
+                  className={`hidden w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20 md:block`}
                 >
                   {!collapsed ? (
                     <>
@@ -521,7 +558,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                     outline
                     color="alternative"
                     onClick={() => setCollapsed(!collapsed)}
-                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                    className={`md:block w-full hidden cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
                   >
                     <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
                   </Button>
@@ -534,8 +571,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
 
       {/* Mobile Sidebar On-Click Outside */}
       <div
-        className={`fixed top-[64px] bottom-0 left-0 z-10 h-[calc(100vh-64px)] w-full bg-gray-500/30
-                    ${collapsed ? "hidden md:hidden" : "md:hidden"} `}
+        className={`fixed top-[64px] bottom-0 left-0 z-10 h-[calc(100vh-64px)] w-full bg-gray-500/30 ${collapsed ? "hidden md:hidden" : "md:hidden"} `}
         onClick={() => setCollapsed(true)}
       />
 

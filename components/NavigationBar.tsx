@@ -1,15 +1,17 @@
 import {
   Button,
-  DarkThemeToggle,
+  useThemeMode,
   Dropdown,
   DropdownItem,
   Navbar,
   NavbarBrand,
+  DropdownHeader,
 } from "flowbite-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AccountInfo } from "@azure/msal-common";
 import { HiLogout } from "react-icons/hi";
+import {HiChevronDown, HiMoon, HiSun} from "react-icons/hi2";
 
 interface SidebarFunctionProps {
   account: AccountInfo | null;
@@ -17,6 +19,7 @@ interface SidebarFunctionProps {
 
 export function NavigationBar({ account }: SidebarFunctionProps) {
   const router = useRouter();
+  const { mode, computedMode, toggleMode } = useThemeMode();
 
   return (
     <Navbar
@@ -44,24 +47,28 @@ export function NavigationBar({ account }: SidebarFunctionProps) {
         </span>
       </NavbarBrand>
       <div className="flex md:order-2">
-        <DarkThemeToggle className="mr-2 cursor-pointer" />
-
         {/* --- User Dropdown --- */}
-        <Dropdown
-          label={account?.name}
-          dismissOnClick={false}
-          className={"hidden md:block"}
+        <Dropdown dismissOnClick={false}
+                  renderTrigger={() => (
+                      <button className="flex w-full items-center justify-between px-3 py-3 rounded-4xl bg-gray-500/30 text-sm font-medium text-gray-900 dark:text-white">
+                        <HiChevronDown className="" />
+                      </button>
+                  )}
         >
-          <DropdownItem onClick={() => router.push("/logout")}>
-            <HiLogout className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-            Sign out
+          <DropdownHeader>
+            <span className="block text-sm">{account?.name}</span>
+            <span className="block truncate text-sm font-medium">{account?.username}</span>
+          </DropdownHeader>
+          <DropdownItem onClick={toggleMode}>
+            {mode === "light" ? (
+              <HiSun className={`mr-4 text-gray-500 dark:text-gray-400`} />
+            ) : (
+              <HiMoon className={`mr-4 text-gray-500 dark:text-gray-400`} />
+            )}
+            Toggle Dark Mode
           </DropdownItem>
-        </Dropdown>
-
-        <Dropdown dismissOnClick={false} className={"md:hidden"}>
-          <DropdownItem>{account?.name}</DropdownItem>
           <DropdownItem onClick={() => router.push("/logout")}>
-            <HiLogout className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+            <HiLogout className="mr-2 h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
             Sign out
           </DropdownItem>
         </Dropdown>
