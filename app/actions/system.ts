@@ -16,7 +16,7 @@ export async function seedConfiguration(): Promise<boolean> {
 
     return result?.configuration_seed_default ?? false;
   } catch (error) {
-    console.error("Failed to seed default configuration:", error);
+    console.error("Failed to seed default configurations:", error);
     return false;
   }
 }
@@ -254,7 +254,7 @@ export async function fetchFacultyLoadConfig({
       data: configs,
     };
   } catch (error) {
-    console.error("Failed to fetch faculty load configuration:", error);
+    console.error("Failed to fetch faculty load configurations:", error);
     return {
       success: false,
       error: (error as Error).message,
@@ -294,7 +294,7 @@ export async function updateFacultyLoad({
 
     return { success: true };
   } catch (error) {
-    console.error("Failed to update faculty load configuration:", error);
+    console.error("Failed to update faculty load configurations:", error);
     return {
       success: false,
       error: (error as Error).message
@@ -331,7 +331,7 @@ export async function updatePrepLimits({
 
     return { success: true };
   } catch (error) {
-    console.error("Failed to update prep limits configuration:", error);
+    console.error("Failed to update prep limits configurations:", error);
     return {
       success: false,
       error: (error as Error).message,
@@ -364,7 +364,7 @@ export async function updateOverloadMax({
 
     return { success: true };
   } catch (error) {
-    console.error("Failed to update overload max configuration:", error);
+    console.error("Failed to update overload max configurations:", error);
     return {
       success: false,
       error: (error as Error).message,

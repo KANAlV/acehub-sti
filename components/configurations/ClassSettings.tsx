@@ -21,6 +21,7 @@ import { useMsal } from "@azure/msal-react";
 export default function ClassSettings() {
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
+  const username = activeAccount?.username;
   const [isLoading, setLoading] = useState(true);
 
   // --- Form State --- //
@@ -91,7 +92,7 @@ export default function ClassSettings() {
     if (sectionError || isSectionUnchanged) return;
 
     const response = await updateEnrollmentConstraints({
-      userEmail: activeAccount?.username ?? "",
+      userEmail: username ?? "",
       maxStudentsPerSection: Number(maxStudentsPerSection),
     });
 

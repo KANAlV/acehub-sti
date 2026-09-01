@@ -51,6 +51,7 @@ interface BreakPeriod {
 export default function BreakPeriods() {
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
+  const username = activeAccount?.username;
   const [isLoading, setLoading] = useState(true);
 
   // --- Table Constants --- //
@@ -323,7 +324,7 @@ export default function BreakPeriods() {
     }
 
     const response = await createBreakPeriod(
-      activeAccount.username,
+      username,
       description.trim(),
       dayOfWeek,
       startTime,
@@ -394,7 +395,7 @@ export default function BreakPeriods() {
     }
 
     const response = await updateBreakPeriod(
-      activeAccount.username,
+      username,
       rowID,
       newDescription.trim(),
       newDayOfWeek,
@@ -423,10 +424,7 @@ export default function BreakPeriods() {
 
   // Delete
   async function handleBreakDelete() {
-    const response = await deleteBreakPeriod(
-      activeAccount.username,
-      rowID
-    );
+    const response = await deleteBreakPeriod(username, rowID);
 
     if (response.success) {
       const msg = "Break Period Deleted successfully";

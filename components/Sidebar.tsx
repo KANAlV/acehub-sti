@@ -105,7 +105,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
     async function initializeConfiguration() {
       const isSeeded = await seedConfiguration();
       if (isSeeded) {
-        console.log("[System] Default configuration seeded successfully.");
+        console.log("[System] Default configurations seeded successfully.");
       }
     }
 
@@ -480,7 +480,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                 <Button
                   outline
                   color="alternative"
-                  onClick={() => router.push("/configuration")}
+                  onClick={() => router.push("/configurations")}
                   className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.config ? "" : "hidden"}`}
                 >
                   <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
@@ -505,7 +505,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   <Button
                     outline
                     color="alternative"
-                    onClick={() => router.push("/configuration")}
+                    onClick={() => router.push("/configurations")}
                     className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.config ? "" : "hidden"}`}
                   >
                     <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
@@ -548,7 +548,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => setCollapsed(!collapsed)}
-                  className={`hidden w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20 md:block`}
+                  className={`hidden w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20 md:flex`}
                 >
                   {!collapsed ? (
                     <>
