@@ -15,6 +15,7 @@ import { useMsal } from "@azure/msal-react";
 import { fetchUserRole } from "@/app/actions/user";
 import { HiExclamation } from "react-icons/hi";
 import FacultyLoad from "@/components/configuration/FacultyLoad";
+import ClassSettings from "@/components/configuration/ClassSettings";
 
 interface UserPermissions {
   booking: boolean;
@@ -106,7 +107,7 @@ export default function Configuration() {
           </TabItem>
 
           <TabItem title="Class Settings" icon={FaAddressBook}>
-            {activeTab === 2 && <div>{/* ClassSettings component here */}</div>}
+            {activeTab === 2 && <div><ClassSettings /></div>}
           </TabItem>
 
           <TabItem title="Dropdown Values" icon={FaBarsStaggered}>

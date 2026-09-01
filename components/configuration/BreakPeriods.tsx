@@ -29,10 +29,9 @@ import {
   fetchBreakPeriodsCount,
   updateBreakPeriod,
 } from "@/app/actions/system";
-import { FaSortDown, FaSortUp } from "react-icons/fa6";
+import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
 import {
   HiCheck,
-  HiMiniPlus,
   HiOutlineExclamationCircle,
   HiTrash,
 } from "react-icons/hi2";
@@ -525,8 +524,8 @@ export default function BreakPeriods() {
             assigning classes during these times.
           </p>
         </div>
-        <Button onClick={() => setOpenAddBreakModal(true)}>
-          <HiMiniPlus className={`mr-2`} />
+        <Button className={"min-w-40"} onClick={() => setOpenAddBreakModal(true)}>
+          <FaPlus className={`mr-2`} />
           Add Break
         </Button>
       </div>

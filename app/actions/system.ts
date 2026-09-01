@@ -372,10 +372,45 @@ export async function updateOverloadMax({
   }
 }
 
-/** --- Logs --- **/
-interface SidebarFunctionProps {
-  account: AccountInfo | null;
+/** --- Class Settings --- **/
+
+interface UpdateEnrollmentConstraintsParams {
+  userEmail: string;
+  maxStudentsPerSection: number;
 }
+
+export async function updateEnrollmentConstraints({
+  userEmail,
+  maxStudentsPerSection,
+}: UpdateEnrollmentConstraintsParams) {
+  try {
+    const [result] = await sql<
+      { configuration_update_max_students: boolean }[]
+    >`
+      SELECT configuration_update_max_students(
+        ${maxStudentsPerSection}
+      );
+    `;
+
+    createLog(
+      userEmail,
+      "update_enrollment_constraints",
+      `max_students_per_section: '${maxStudentsPerSection}'`,
+    );
+
+    return {
+      success: result?.configuration_update_max_students ?? true,
+    };
+  } catch (error) {
+    console.error("Failed to update enrollment constraints:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+/** --- Logs --- **/
 
 export async function createLog(
   activeAccount: string,

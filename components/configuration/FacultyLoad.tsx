@@ -73,10 +73,13 @@ export default function FacultyLoad() {
     /** --- Validation Handlers --- **/
 
     const handleLoadChange = (
-        value: string,
+        rawValue: string,
         setter: (val: number) => void
     ) => {
-        const num = Number(value);
+        // Strip leading zeros unless it's just '0'
+        const cleaned = rawValue.replace(/^0+(?=\d)/, "");
+        const num = cleaned === "" ? 0 : Number(cleaned);
+
         setter(num);
         if (num < 1 || num > 30) {
             setLoadError("Values must be between 1 and 30.");
@@ -86,10 +89,12 @@ export default function FacultyLoad() {
     };
 
     const handlePrepChange = (
-        value: string,
+        rawValue: string,
         setter: (val: number) => void
     ) => {
-        const num = Number(value);
+        const cleaned = rawValue.replace(/^0+(?=\d)/, "");
+        const num = cleaned === "" ? 0 : Number(cleaned);
+
         setter(num);
         if (num < 1 || num > 10) {
             setPrepError("Values must be between 1 and 10.");
@@ -98,8 +103,10 @@ export default function FacultyLoad() {
         }
     };
 
-    const handleOverloadChange = (value: string) => {
-        const num = Number(value);
+    const handleOverloadChange = (rawValue: string) => {
+        const cleaned = rawValue.replace(/^0+(?=\d)/, "");
+        const num = cleaned === "" ? 0 : Number(cleaned);
+
         setMaxOverloadUnits(num);
         if (num < 0 || num > 10) {
             setOverloadError("Value must be between 0 and 10.");
@@ -329,10 +336,8 @@ export default function FacultyLoad() {
                                 type="number"
                                 min={1}
                                 max={30}
-                                value={ftMaxLoad}
-                                onChange={(e) =>
-                                    handleLoadChange(e.target.value, setFtMaxLoad)
-                                }
+                                value={ftMaxLoad === 0 ? "" : ftMaxLoad}
+                                onChange={(e) => handleLoadChange(e.target.value, setFtMaxLoad)}
                                 color={loadError ? "failure" : "gray"}
                                 required
                             />
@@ -349,10 +354,8 @@ export default function FacultyLoad() {
                                 type="number"
                                 min={1}
                                 max={30}
-                                value={ptflMaxLoad}
-                                onChange={(e) =>
-                                    handleLoadChange(e.target.value, setPtflMaxLoad)
-                                }
+                                value={ptflMaxLoad === 0 ? "" : ptflMaxLoad}
+                                onChange={(e) => handleLoadChange(e.target.value, setPtflMaxLoad)}
                                 color={loadError ? "failure" : "gray"}
                                 required
                             />
@@ -367,10 +370,8 @@ export default function FacultyLoad() {
                                 type="number"
                                 min={1}
                                 max={30}
-                                value={ptMaxLoad}
-                                onChange={(e) =>
-                                    handleLoadChange(e.target.value, setPtMaxLoad)
-                                }
+                                value={ptMaxLoad === 0 ? "" : ptMaxLoad}
+                                onChange={(e) => handleLoadChange(e.target.value, setPtMaxLoad)}
                                 color={loadError ? "failure" : "gray"}
                                 required
                             />
@@ -415,10 +416,8 @@ export default function FacultyLoad() {
                                 type="number"
                                 min={1}
                                 max={10}
-                                value={ftMaxSubjects}
-                                onChange={(e) =>
-                                    handlePrepChange(e.target.value, setFtMaxSubjects)
-                                }
+                                value={ftMaxSubjects === 0 ? "" : ftMaxSubjects}
+                                onChange={(e) => handlePrepChange(e.target.value, setFtMaxSubjects)}
                                 color={prepError ? "failure" : "gray"}
                                 required
                             />
@@ -435,10 +434,8 @@ export default function FacultyLoad() {
                                 type="number"
                                 min={1}
                                 max={10}
-                                value={ptflMaxSubjects}
-                                onChange={(e) =>
-                                    handlePrepChange(e.target.value, setPtflMaxSubjects)
-                                }
+                                value={ptflMaxSubjects === 0 ? "" : ptflMaxSubjects}
+                                onChange={(e) => handlePrepChange(e.target.value, setPtflMaxSubjects)}
                                 color={prepError ? "failure" : "gray"}
                                 required
                             />
@@ -455,10 +452,8 @@ export default function FacultyLoad() {
                                 type="number"
                                 min={1}
                                 max={10}
-                                value={ptMaxSubjects}
-                                onChange={(e) =>
-                                    handlePrepChange(e.target.value, setPtMaxSubjects)
-                                }
+                                value={ptMaxSubjects === 0 ? "" : ptMaxSubjects}
+                                onChange={(e) => handlePrepChange(e.target.value, setPtMaxSubjects)}
                                 color={prepError ? "failure" : "gray"}
                                 required
                             />
@@ -503,7 +498,7 @@ export default function FacultyLoad() {
                                 type="number"
                                 min={0}
                                 max={10}
-                                value={maxOverloadUnits}
+                                value={maxOverloadUnits === 0 ? "" : maxOverloadUnits}
                                 onChange={(e) => handleOverloadChange(e.target.value)}
                                 color={overloadError ? "failure" : "gray"}
                                 required
