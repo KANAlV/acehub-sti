@@ -8,14 +8,14 @@ import {
   ToastToggle,
 } from "flowbite-react";
 import { FaCoffee, FaUsersCog, FaWeight } from "react-icons/fa";
-import BreakPeriods from "@/components/configuration/BreakPeriods";
+import BreakPeriods from "@/components/configurations/BreakPeriods";
 import { useEffect, useState } from "react";
 import { FaAddressBook, FaBarsStaggered } from "react-icons/fa6";
 import { useMsal } from "@azure/msal-react";
 import { fetchUserRole } from "@/app/actions/user";
 import { HiExclamation } from "react-icons/hi";
-import FacultyLoad from "@/components/configuration/FacultyLoad";
-import ClassSettings from "@/components/configuration/ClassSettings";
+import FacultyLoad from "@/components/configurations/FacultyLoad";
+import ClassSettings from "@/components/configurations/ClassSettings";
 
 interface UserPermissions {
   booking: boolean;
@@ -42,14 +42,15 @@ export default function Configuration() {
 
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
+  const username = activeAccount?.username;
 
   /** --- Fetch Roles --- **/
   const [permissions, setPermissions] = useState<UserPermissions | null>(null);
   useEffect(() => {
     async function fetchPermissions() {
-      if (!activeAccount?.username) return;
+      if (!username) return;
 
-      const result = await fetchUserRole(activeAccount.username);
+      const result = await fetchUserRole(username);
 
       if (result.success && result.data) {
         setPermissions({
@@ -78,7 +79,7 @@ export default function Configuration() {
     }
 
     fetchPermissions();
-  }, [activeAccount]);
+  }, [username]); // Pass username instead of activeAccount
 
   function closeToast() {
     setShowToast(false);
@@ -107,11 +108,17 @@ export default function Configuration() {
           </TabItem>
 
           <TabItem title="Class Settings" icon={FaAddressBook}>
-            {activeTab === 2 && <div><ClassSettings /></div>}
+            {activeTab === 2 && (
+              <div>
+                <ClassSettings />
+              </div>
+            )}
           </TabItem>
 
           <TabItem title="Dropdown Values" icon={FaBarsStaggered}>
-            {activeTab === 3 && <div>{/* DropdownValues component here */}</div>}
+            {activeTab === 3 && (
+              <div>{/* DropdownValues component here */}</div>
+            )}
           </TabItem>
 
           <TabItem title="Users" icon={FaUsersCog}>
