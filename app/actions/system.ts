@@ -2,6 +2,25 @@
 import sql from "@/lib/database";
 import { AccountInfo } from "@azure/msal-common";
 
+/******************
+ * CONFIGURATIONS *
+ ******************/
+
+/** --- Generate Default Settings --- **/
+
+export async function seedConfiguration(): Promise<boolean> {
+  try {
+    const [result] = await sql<{ configuration_seed_default: boolean }[]>`
+      SELECT configuration_seed_default();
+    `;
+
+    return result?.configuration_seed_default ?? false;
+  } catch (error) {
+    console.error("Failed to seed default configuration:", error);
+    return false;
+  }
+}
+
 /** --- Break Period --- **/
 interface BreakPeriod {
   break_id: string;
@@ -153,6 +172,199 @@ export async function deleteBreakPeriod(user: string, breakId: string) {
     };
   } catch (error) {
     console.error("Failed to delete break period:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+/** --- Faculty Load --- **/
+
+export interface Configuration {
+  configuration_id: string;
+  active_schedule: string | null;
+  faculty_load: {
+    full_time: number;
+    part_time_full_load: number;
+    part_time: number;
+  };
+  max_students: number;
+  overload_max: number;
+  prep_limits: {
+    full_time: number;
+    part_time_full_load: number;
+    part_time: number;
+  };
+}
+
+interface FetchFacultyLoadConfigParams {
+  search?: string | null;
+  sortBy?: string;
+  sortDir?: "ASC" | "DESC";
+  limit?: number;
+  page?: number;
+}
+
+interface UpdateFacultyLoadParams {
+  userEmail: string;
+  fullTime: number;
+  partTimeFullLoad: number;
+  partTime: number;
+  configurationId?: string;
+}
+
+interface UpdatePrepLimitsParams {
+  userEmail: string;
+  fullTime: number;
+  partTimeFullLoad: number;
+  partTime: number;
+  configurationId?: string;
+}
+
+interface UpdateOverloadMaxParams {
+  userEmail: string;
+  overloadMax: number;
+  configurationId?: string;
+}
+
+// Read
+export async function fetchFacultyLoadConfig({
+  search = null,
+  sortBy = "configuration_id",
+  sortDir = "ASC",
+  limit = 10,
+  page = 1,
+}: FetchFacultyLoadConfigParams = {}) {
+  try {
+    const offset = Math.max(0, (page - 1) * limit);
+
+    const configs = await sql<Configuration[]>`
+      SELECT * FROM configuration_read(
+        ${search},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data: configs,
+    };
+  } catch (error) {
+    console.error("Failed to fetch faculty load configuration:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+      data: [],
+    };
+  }
+}
+
+// --- Updates --- //
+export async function updateFacultyLoad({
+                                          userEmail,
+                                          fullTime,
+                                          partTimeFullLoad,
+                                          partTime,
+                                          configurationId,
+                                        }: UpdateFacultyLoadParams): Promise<{ success: boolean; error?: string }> {
+  // Client/Server Action Validation Check
+  if (fullTime > 30 || partTimeFullLoad > 30 || partTime > 30) {
+    return {
+      success: false,
+      error: "Faculty load parameters cannot exceed 30 hours.",
+    };
+  }
+
+  try {
+    await sql`
+      CALL configuration_update_faculty_load(
+        ${fullTime},
+        ${partTimeFullLoad},
+        ${partTime},
+        ${configurationId ?? null}::UUID
+      );
+    `;
+
+    const logDetails = `full_time: ${fullTime} | part_time_full_load: ${partTimeFullLoad} | part_time: ${partTime}`;
+    await createLog(userEmail, "update_faculty_load", logDetails);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update faculty load configuration:", error);
+    return {
+      success: false,
+      error: (error as Error).message
+    };
+  }
+}
+
+export async function updatePrepLimits({
+  userEmail,
+  fullTime,
+  partTimeFullLoad,
+  partTime,
+  configurationId,
+}: UpdatePrepLimitsParams): Promise<{ success: boolean; error?: string }> {
+  if (fullTime > 10 || partTimeFullLoad > 10 || partTime > 10) {
+    return {
+      success: false,
+      error: "Preparation limits cannot exceed 10.",
+    };
+  }
+
+  try {
+    await sql`
+      CALL configuration_update_prep_limits(
+        ${fullTime},
+        ${partTimeFullLoad},
+        ${partTime},
+        ${configurationId ?? null}::UUID
+      );
+    `;
+
+    const logDetails = `full_time: ${fullTime} | part_time_full_load: ${partTimeFullLoad} | part_time: ${partTime}`;
+    await createLog(userEmail, "update_prep_limits", logDetails);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update prep limits configuration:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+export async function updateOverloadMax({
+  userEmail,
+  overloadMax,
+  configurationId,
+}: UpdateOverloadMaxParams): Promise<{ success: boolean; error?: string }> {
+  if (overloadMax > 10) {
+    return {
+      success: false,
+      error: "Overload max cannot exceed 10.",
+    };
+  }
+
+  try {
+    await sql`
+      CALL configuration_update_overload_max(
+        ${overloadMax},
+        ${configurationId ?? null}::UUID
+      );
+    `;
+
+    const logDetails = `overload_max: ${overloadMax}`;
+    await createLog(userEmail, "update_overload_max", logDetails);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update overload max configuration:", error);
     return {
       success: false,
       error: (error as Error).message,

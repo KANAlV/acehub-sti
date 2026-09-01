@@ -1,17 +1,20 @@
-"use client"
+"use client";
 
 import { HiMiniCog6Tooth } from "react-icons/hi2";
 import {
   TabItem,
-  Tabs, Toast, ToastToggle,
+  Tabs,
+  Toast,
+  ToastToggle,
 } from "flowbite-react";
 import { FaCoffee, FaUsersCog, FaWeight } from "react-icons/fa";
 import BreakPeriods from "@/components/configuration/BreakPeriods";
 import { useEffect, useState } from "react";
-import { FaAddressBook, FaBarsStaggered, FaUsers } from "react-icons/fa6";
+import { FaAddressBook, FaBarsStaggered } from "react-icons/fa6";
 import { useMsal } from "@azure/msal-react";
 import { fetchUserRole } from "@/app/actions/user";
 import { HiExclamation } from "react-icons/hi";
+import FacultyLoad from "@/components/configuration/FacultyLoad";
 
 interface UserPermissions {
   booking: boolean;
@@ -48,7 +51,6 @@ export default function Configuration() {
       const result = await fetchUserRole(activeAccount.username);
 
       if (result.success && result.data) {
-        // Map all permission fields returned from user_get_role
         setPermissions({
           booking: Boolean(result.data.booking),
           personal_schedule: Boolean(result.data.personal_schedule),
@@ -96,20 +98,24 @@ export default function Configuration() {
           onActiveTabChange={(tabIndex) => setActiveTab(tabIndex)}
         >
           <TabItem active title="Break Periods" icon={FaCoffee}>
-            <BreakPeriods />
+            {activeTab === 0 && <BreakPeriods />}
           </TabItem>
 
-          <TabItem active title="Faculty Load" icon={FaWeight}></TabItem>
+          <TabItem title="Faculty Load" icon={FaWeight}>
+            {activeTab === 1 && <FacultyLoad />}
+          </TabItem>
 
-          <TabItem active title="Class Settings" icon={FaAddressBook}></TabItem>
+          <TabItem title="Class Settings" icon={FaAddressBook}>
+            {activeTab === 2 && <div>{/* ClassSettings component here */}</div>}
+          </TabItem>
 
-          <TabItem
-            active
-            title="Dropdown Values"
-            icon={FaBarsStaggered}
-          ></TabItem>
+          <TabItem title="Dropdown Values" icon={FaBarsStaggered}>
+            {activeTab === 3 && <div>{/* DropdownValues component here */}</div>}
+          </TabItem>
 
-          <TabItem active title="Users" icon={FaUsersCog}></TabItem>
+          <TabItem title="Users" icon={FaUsersCog}>
+            {activeTab === 4 && <div>{/* Users component here */}</div>}
+          </TabItem>
         </Tabs>
       </div>
 

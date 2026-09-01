@@ -35,6 +35,7 @@ import Image from "next/image";
 import { FaCubes } from "react-icons/fa6";
 import { AccountInfo } from "@azure/msal-common";
 import { fetchUserRole } from "@/app/actions/user";
+import { seedConfiguration } from "@/app/actions/system";
 
 interface SidebarFunctionProps {
   account: AccountInfo | null;
@@ -101,6 +102,14 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       setLoading(false);
     }
 
+    async function initializeConfiguration() {
+      const isSeeded = await seedConfiguration();
+      if (isSeeded) {
+        console.log("[System] Default configuration seeded successfully.");
+      }
+    }
+
+    initializeConfiguration();
     fetchPermissions();
   }, [account]);
 
