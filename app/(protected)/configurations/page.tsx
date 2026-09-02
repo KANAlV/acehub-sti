@@ -16,6 +16,8 @@ import RoomTypes from "@/components/configurations/RoomTypes";
 import AuditLogs from "@/components/configurations/Logs";
 import UsersManagement from "@/components/configurations/Users";
 import RolesManagement from "@/components/configurations/Roles";
+import UsersManagementPage from "@/components/configurations/Users";
+import BlacklistManagement from "@/components/configurations/Blacklist";
 
 interface UserPermissions {
   booking: boolean;
@@ -124,19 +126,31 @@ export default function Configuration() {
         >
           {/* Tabs 0 - 3: Visible when permissions.config is true */}
           {permissions.config && (
-            <TabItem active={activeTab === 0} title="Break Periods" icon={FaCoffee}>
+            <TabItem
+              active={activeTab === 0}
+              title="Break Periods"
+              icon={FaCoffee}
+            >
               {activeTab === 0 && <BreakPeriods />}
             </TabItem>
           )}
 
           {permissions.config && (
-            <TabItem active={activeTab === 1} title="Faculty Load" icon={FaWeight}>
+            <TabItem
+              active={activeTab === 1}
+              title="Faculty Load"
+              icon={FaWeight}
+            >
               {activeTab === 1 && <FacultyLoad />}
             </TabItem>
           )}
 
           {permissions.config && (
-            <TabItem active={activeTab === 2} title="Class Settings" icon={FaAddressBook}>
+            <TabItem
+              active={activeTab === 2}
+              title="Class Settings"
+              icon={FaAddressBook}
+            >
               {activeTab === 2 && (
                 <div>
                   <ClassSettings />
@@ -146,14 +160,22 @@ export default function Configuration() {
           )}
 
           {permissions.config && (
-            <TabItem active={activeTab === 3} title="Room Types" icon={FaBarsStaggered}>
+            <TabItem
+              active={activeTab === 3}
+              title="Room Types"
+              icon={FaBarsStaggered}
+            >
               {activeTab === 3 && <RoomTypes />}
             </TabItem>
           )}
 
           {/* Tabs 4 - 5: Visible when permissions.super is true */}
           {permissions.superuser && (
-            <TabItem active={activeTab === 4} title="User Management" icon={FaUsersCog}>
+            <TabItem
+              active={activeTab === 4}
+              title="User Management"
+              icon={FaUsersCog}
+            >
               {activeTab === 4 && (
                 <Tabs
                   aria-label="User Management Subtabs"
@@ -162,10 +184,13 @@ export default function Configuration() {
                   }
                 >
                   <TabItem title="Users" icon={FaUsersCog}>
-                    {usersActiveTab === 0 && <UsersManagement />}
+                    {usersActiveTab === 0 && <UsersManagementPage />}
                   </TabItem>
                   <TabItem title="Roles" icon={FaBarsStaggered}>
                     {usersActiveTab === 1 && <RolesManagement />}
+                  </TabItem>
+                  <TabItem title="Blacklist" icon={FaBarsStaggered}>
+                    {usersActiveTab === 2 && <BlacklistManagement />}
                   </TabItem>
                 </Tabs>
               )}
@@ -173,7 +198,11 @@ export default function Configuration() {
           )}
 
           {permissions.superuser && (
-            <TabItem active={activeTab === 5} title="Logs" icon={HiClipboardDocumentList}>
+            <TabItem
+              active={activeTab === 5}
+              title="Logs"
+              icon={HiClipboardDocumentList}
+            >
               {activeTab === 5 && <AuditLogs />}
             </TabItem>
           )}

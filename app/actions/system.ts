@@ -546,6 +546,170 @@ export async function deleteRoomType(user: string, roomTypeId: string) {
   }
 }
 
+/** --- User Management --- **/
+
+export interface ManagedUser {
+  user_id: string;
+  email: string;
+  username: string;
+  role_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FetchUsersListResponse {
+  success: boolean;
+  data?: ManagedUser[];
+  error?: string;
+}
+
+// Read
+export async function fetchUsers(
+  search?: string | null,
+  sortBy: string = "email",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
+): Promise<FetchUsersListResponse> {
+  try {
+    const offset = Math.max(0, (page - 1) * limit);
+    const searchParam = search?.trim() ? search.trim() : null;
+
+    const users = await sql<ManagedUser[]>`
+      SELECT 
+        user_id, 
+        email, 
+        username, 
+        role_name, 
+        created_at, 
+        updated_at
+      FROM manage_users_read(
+        ${searchParam}, 
+        ${sortBy}, 
+        ${sortDir}, 
+        ${limit}, 
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data: users ? [...users] : [],
+    };
+  } catch (error) {
+    console.error("Error executing fetchUsers:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch users. Please try again later.",
+    };
+  }
+}
+
+/** Create User */
+export async function createUser(
+  actor: string,
+  email: string,
+  username?: string,
+  roleName: string = "viewer"
+) {
+  try {
+    const [result] = await sql<{ manage_users_create: string }[]>`
+      SELECT manage_users_create(${email}, ${username ?? null}, ${roleName});
+    `;
+
+    createLog(
+      actor,
+      "create_user",
+      `email: '${email}' | role: '${roleName}'`
+    );
+
+    return {
+      success: true,
+      userId: result?.manage_users_create
+    };
+  } catch (error) {
+    console.error("Failed to create user:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+/** Update User */
+export async function updateUser(
+  actor: string,
+  userId: string,
+  username: string,
+  roleName: string
+) {
+  try {
+    await sql`
+      SELECT manage_users_update(
+        ${userId}::UUID,
+        ${username},
+        ${roleName}
+      );
+    `;
+
+    createLog(
+      actor,
+      "update_user",
+      `user_id: '${userId}' | username: '${username}' | role: '${roleName}'`
+    );
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update user:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+/** Delete User */
+export async function deleteUser(actor: string, userId: string) {
+  try {
+    await sql`
+      SELECT manage_users_delete(${userId}::UUID);
+    `;
+
+    createLog(actor, "delete_user", `user_id: '${userId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete user:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+/** Fetch Users Total Count */
+export async function fetchUsersCount(search?: string | null) {
+  try {
+    const pSearch = search?.trim() ? search.trim() : null;
+
+    const [result] = await sql<{ manage_users_count: number }[]>`
+      SELECT manage_users_count(${pSearch});
+    `;
+
+    return {
+      success: true,
+      count: result?.manage_users_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch user count:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+      count: 0,
+    };
+  }
+}
+
 /** --- Logs --- **/
 
 export interface SystemLog {
