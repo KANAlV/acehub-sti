@@ -548,6 +548,67 @@ export async function deleteRoomType(user: string, roomTypeId: string) {
 
 /** --- Logs --- **/
 
+export interface SystemLog {
+  log_id: string;
+  user_id: string;
+  username: string;
+  action: string;
+  details: string;
+  created_at: string;
+}
+
+export interface FetchLogListResponse {
+  success: boolean;
+  data?: SystemLog[];
+  count?: number;
+  error?: string;
+}
+
+// Read
+export async function fetchLogList(
+  search?: string | null,
+  sortBy: string = "created_at",
+  sortDir: string = "DESC",
+  limit: number = 10,
+  page: number = 1,
+): Promise<FetchLogListResponse> {
+  try {
+    const offset = Math.max(0, (page - 1) * limit);
+    const searchParam = search?.trim() ? search.trim() : null;
+
+    const logs = await sql<SystemLog[]>`
+      SELECT
+        log_id,
+        user_id,
+        username,
+        action,
+        details,
+        created_at
+      FROM logs_read(
+        ${searchParam},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+        );
+    `;
+
+    return {
+      success: true,
+      data: logs ? [...logs] : [],
+    };
+  } catch (error) {
+    console.error("Error executing fetchLogList:", error);
+    return {
+      success: false,
+      error:
+        (error as Error).message ||
+        "Failed to fetch logs. Please try again later.",
+    };
+  }
+}
+
+// Create
 export async function createLog(
   activeAccount: string,
   action: string,

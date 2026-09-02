@@ -522,7 +522,10 @@ export default function BreakPeriods() {
             assigning classes during these times.
           </p>
         </div>
-        <Button className={"min-w-40"} onClick={() => setOpenAddBreakModal(true)}>
+        <Button
+          className={"min-w-40"}
+          onClick={() => setOpenAddBreakModal(true)}
+        >
           <FaPlus className={`mr-2`} />
           Add Break
         </Button>
@@ -535,7 +538,7 @@ export default function BreakPeriods() {
               <TableHeadCell
                 onClick={() => handleBreakPeriodSorting("break_description")}
               >
-                <div className="flex cursor-pointer">
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
                   Description
                   {sortBreakPeriodsBy === "break_description" ? (
                     sortBreakPeriodsDir === "ASC" ? (
@@ -551,7 +554,7 @@ export default function BreakPeriods() {
               <TableHeadCell
                 onClick={() => handleBreakPeriodSorting("day_of_week")}
               >
-                <div className="flex cursor-pointer">
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
                   Day
                   {sortBreakPeriodsBy === "day_of_week" ? (
                     sortBreakPeriodsDir === "ASC" ? (
@@ -565,7 +568,7 @@ export default function BreakPeriods() {
                 </div>
               </TableHeadCell>
               <TableHeadCell
-                className="flex cursor-pointer"
+                className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300"
                 onClick={() => handleBreakPeriodSorting("start_time")}
               >
                 Start
@@ -582,7 +585,7 @@ export default function BreakPeriods() {
               <TableHeadCell
                 onClick={() => handleBreakPeriodSorting("end_time")}
               >
-                <div className="flex cursor-pointer">
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
                   End
                   {sortBreakPeriodsBy === "end_time" ? (
                     sortBreakPeriodsDir === "ASC" ? (
@@ -650,7 +653,9 @@ export default function BreakPeriods() {
       </Card>
 
       {/* break periods pagination */}
-      <div className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_button]:cursor-not-allowed [&_a]:cursor-not-allowed" : ""} flex w-full justify-center`}>
+      <div
+        className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
+      >
         <Pagination
           layout="table"
           currentPage={currentBreakPeriodPage ? currentBreakPeriodPage : 1}
@@ -867,7 +872,11 @@ export default function BreakPeriods() {
             >
               Save
             </Button>
-            <Button color="alternative" className={"ml-4"} onClick={handleCloseBreakPeriodModals}>
+            <Button
+              color="alternative"
+              className={"ml-4"}
+              onClick={handleCloseBreakPeriodModals}
+            >
               Cancel
             </Button>
           </div>

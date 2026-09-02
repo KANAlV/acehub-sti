@@ -354,7 +354,7 @@ export default function RoomTypes() {
           <TableHead>
             <TableRow>
               <TableHeadCell onClick={() => handleSorting("room_type")}>
-                <div className="flex cursor-pointer">
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
                   Room Type / Classification
                   {sortBy === "room_type" ? (
                     sortDir === "ASC" ? (

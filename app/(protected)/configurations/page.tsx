@@ -13,6 +13,7 @@ import FacultyLoad from "@/components/configurations/FacultyLoad";
 import ClassSettings from "@/components/configurations/ClassSettings";
 import { useRouter } from "next/navigation";
 import RoomTypes from "@/components/configurations/RoomTypes";
+import AuditLogs from "@/components/configurations/Logs";
 
 interface UserPermissions {
   booking: boolean;
@@ -135,7 +136,7 @@ export default function Configuration() {
             </TabItem>
 
             <TabItem title="Logs" icon={HiClipboardDocumentList}>
-              {activeTab === 5 && <div>{/* Users component here */}</div>}
+              {activeTab === 5 && <AuditLogs />}
             </TabItem>
           </Tabs>
         </div>
