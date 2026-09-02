@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Button,
   Sidebar,
@@ -54,7 +56,7 @@ interface UserPermissions {
   fcce: boolean;
   help: boolean;
   config: boolean;
-  super: boolean;
+  superuser: boolean;
 }
 
 export default function SidebarFunction({ account }: SidebarFunctionProps) {
@@ -90,7 +92,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
           fcce: Boolean(result.data.fcce),
           help: Boolean(result.data.help),
           config: Boolean(result.data.config),
-          super: Boolean(result.data.super),
+          superuser: Boolean(result.data.superuser),
         });
       } else {
         console.error("Failed to fetch permissions:", result.error);
@@ -158,7 +160,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
         <SidebarItems className="flex flex-1 flex-col justify-between">
           {/* Main Top Navigation */}
           <SidebarItemGroup>
-            {/* Moblie Sidebar Toggle */}
+            {/* Mobile Sidebar Toggle */}
             <div className="w-full md:hidden">
               {!collapsed ? (
                 <Button
@@ -486,7 +488,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/configurations")}
-                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.config ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
                 >
                   <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Configurations</span>}
@@ -511,7 +513,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                     outline
                     color="alternative"
                     onClick={() => router.push("/configurations")}
-                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.config ? "" : "hidden"}`}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
                   >
                     <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   </Button>

@@ -3,36 +3,42 @@
 import { useMsal } from "@azure/msal-react";
 import { DarkThemeToggle } from "flowbite-react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { syncUserToDatabase } from "@/app/actions/user";
 import Image from "next/image";
 
 export default function LoginPage() {
   const { instance, accounts, inProgress } = useMsal();
-  const activeAccount = instance.getActiveAccount() || accounts[0];
-
   const router = useRouter();
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Redirect to /dashboard as soon as authentication finishes and accounts exist
   useEffect(() => {
-    async function syncUser() {
-      await syncUserToDatabase(activeAccount.username!, activeAccount.name!);
-    }
+    async function handleAuthAndSync() {
+      if (inProgress !== "none" || accounts.length === 0) return;
 
-    if (inProgress === "none" && accounts.length > 0) {
       const activeAccount = instance.getActiveAccount() || accounts[0];
 
-      //if (activeAccount.name!.includes("Student")) {
-      //  router.push("/restricted_access");
-      //}
-      /*else*/ if (activeAccount.username!.includes("@alabang.sti.edu.ph")) {
-        syncUser();
-        router.push("/dashboard");
+      if (activeAccount?.username?.endsWith("@alabang.sti.edu.ph")) {
+        try {
+          setIsSyncing(true);
+          // 1. Wait for database insertion/update to complete
+          await syncUserToDatabase(
+            activeAccount.username,
+            activeAccount.name ?? ""
+          );
+          // 2. Only navigate AFTER sync completes successfully
+          router.push("/dashboard");
+        } catch (error) {
+          console.error("Failed to sync user before navigation:", error);
+          setIsSyncing(false);
+        }
       } else {
         router.push("/restricted_access");
       }
     }
-  }, [accounts, inProgress, router]);
+
+    handleAuthAndSync();
+  }, [accounts, inProgress, instance, router]);
 
   const handleLogin = () => {
     if (inProgress !== "none") return;
@@ -46,8 +52,8 @@ export default function LoginPage() {
     }
   };
 
-  // Prevent showing the login form briefly if the user is already authenticated
-  if (inProgress !== "none" || accounts.length > 0) {
+  // Prevent UI flashing during MSAL redirect or Server Action execution
+  if (inProgress !== "none" || accounts.length > 0 || isSyncing) {
     return null;
   }
 
@@ -57,18 +63,18 @@ export default function LoginPage() {
         <div className="mx-auto flex flex-col items-center justify-center px-6 py-8 md:h-screen lg:py-0">
           <div className="w-full rounded-xl bg-white shadow-lg sm:max-w-md md:mt-0 xl:p-0 dark:border dark:border-gray-700 dark:bg-gray-800">
             <div className="space-y-6 p-8">
-              <div className={"flex justify-end"}>
+              <div className="flex justify-end">
                 <DarkThemeToggle />
               </div>
 
               <div className="text-center">
                 <Image
-                  src={"/acehub-logo.png"}
-                  alt={"Acehub Logo"}
+                  src="/acehub-logo.png"
+                  alt="Acehub Logo"
                   height={0}
                   width={16}
                   unoptimized={true}
-                  className={"mx-auto mb-4 h-auto w-16"}
+                  className="mx-auto mb-4 h-auto w-16"
                 />
                 <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
                   Acehub Login Portal

@@ -14,6 +14,8 @@ import ClassSettings from "@/components/configurations/ClassSettings";
 import { useRouter } from "next/navigation";
 import RoomTypes from "@/components/configurations/RoomTypes";
 import AuditLogs from "@/components/configurations/Logs";
+import UsersManagement from "@/components/configurations/Users";
+import RolesManagement from "@/components/configurations/Roles";
 
 interface UserPermissions {
   booking: boolean;
@@ -28,13 +30,14 @@ interface UserPermissions {
   fcce: boolean;
   help: boolean;
   config: boolean;
-  super: boolean;
+  superuser: boolean;
 }
 
 export default function Configuration() {
   const router = useRouter();
   const [pageLoading, setPageLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(0);
+  const [usersActiveTab, setUsersActiveTab] = useState(0);
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -65,7 +68,7 @@ export default function Configuration() {
           fcce: Boolean(result.data.fcce),
           help: Boolean(result.data.help),
           config: Boolean(result.data.config),
-          super: Boolean(result.data.super),
+          superuser: Boolean(result.data.superuser),
         });
       } else {
         console.error("Failed to fetch permissions:", result.error);
@@ -73,10 +76,11 @@ export default function Configuration() {
         setShowToast(true);
         setPermissions(null);
       }
+      setPageLoading(false);
     }
 
     fetchPermissions();
-  }, [username]); // Pass username instead of activeAccount
+  }, [username]);
 
   function closeToast() {
     setShowToast(false);
@@ -84,84 +88,110 @@ export default function Configuration() {
   }
 
   useEffect(() => {
-    // Only evaluate permissions if they have loaded
+    // Evaluate initial tab selection and route guards based on permissions
     if (permissions !== null) {
-      if (!permissions.config && !permissions.super) {
+      if (!permissions.config && !permissions.superuser) {
         console.log(
           `[Access Denied]: User '${username}' requested access to protected route, but lacks required permissions.`,
         );
         router.push("/unauthorized_access");
+      } else if (!permissions.config && permissions.superuser) {
+        setActiveTab(4); // Default to first available tab for super users
       }
-    } else {
-      setPageLoading(false);
     }
   }, [permissions, router, username]);
 
-  if (!pageLoading) {
+  if (pageLoading || permissions === null) {
     return (
-      <>
-        <div className={`w-full overflow-auto p-8`}>
-          <h1 className={`mb-4 flex items-center text-2xl font-bold`}>
-            <HiMiniCog6Tooth className={`mr-2`} />
-            Configuration
-          </h1>
+      <div className="flex h-full w-full columns-1 flex-col items-center justify-center bg-white dark:bg-gray-900">
+        <Spinner />
+      </div>
+    );
+  }
 
-          <Tabs
-            aria-label="Default tabs"
-            variant="underline"
-            onActiveTabChange={(tabIndex) => setActiveTab(tabIndex)}
-          >
-            <TabItem active title="Break Periods" icon={FaCoffee}>
+  return (
+    <>
+      <div className="w-full overflow-auto p-8">
+        <h1 className="mb-4 flex items-center text-2xl font-bold">
+          <HiMiniCog6Tooth className="mr-2" />
+          Configuration
+        </h1>
+
+        <Tabs
+          aria-label="Configuration Tabs"
+          variant="underline"
+          onActiveTabChange={(tabIndex) => setActiveTab(tabIndex)}
+        >
+          {/* Tabs 0 - 3: Visible when permissions.config is true */}
+          {permissions.config && (
+            <TabItem active={activeTab === 0} title="Break Periods" icon={FaCoffee}>
               {activeTab === 0 && <BreakPeriods />}
             </TabItem>
+          )}
 
-            <TabItem title="Faculty Load" icon={FaWeight}>
+          {permissions.config && (
+            <TabItem active={activeTab === 1} title="Faculty Load" icon={FaWeight}>
               {activeTab === 1 && <FacultyLoad />}
             </TabItem>
+          )}
 
-            <TabItem title="Class Settings" icon={FaAddressBook}>
+          {permissions.config && (
+            <TabItem active={activeTab === 2} title="Class Settings" icon={FaAddressBook}>
               {activeTab === 2 && (
                 <div>
                   <ClassSettings />
                 </div>
               )}
             </TabItem>
+          )}
 
-            <TabItem title="Room Types" icon={FaBarsStaggered}>
+          {permissions.config && (
+            <TabItem active={activeTab === 3} title="Room Types" icon={FaBarsStaggered}>
               {activeTab === 3 && <RoomTypes />}
             </TabItem>
+          )}
 
-            <TabItem title="Users" icon={FaUsersCog}>
-              {activeTab === 4 && <div>{/* Users component here */}</div>}
+          {/* Tabs 4 - 5: Visible when permissions.super is true */}
+          {permissions.superuser && (
+            <TabItem active={activeTab === 4} title="User Management" icon={FaUsersCog}>
+              {activeTab === 4 && (
+                <Tabs
+                  aria-label="User Management Subtabs"
+                  onActiveTabChange={(usersTabIndex) =>
+                    setUsersActiveTab(usersTabIndex)
+                  }
+                >
+                  <TabItem title="Users" icon={FaUsersCog}>
+                    {usersActiveTab === 0 && <UsersManagement />}
+                  </TabItem>
+                  <TabItem title="Roles" icon={FaBarsStaggered}>
+                    {usersActiveTab === 1 && <RolesManagement />}
+                  </TabItem>
+                </Tabs>
+              )}
             </TabItem>
+          )}
 
-            <TabItem title="Logs" icon={HiClipboardDocumentList}>
+          {permissions.superuser && (
+            <TabItem active={activeTab === 5} title="Logs" icon={HiClipboardDocumentList}>
               {activeTab === 5 && <AuditLogs />}
             </TabItem>
-          </Tabs>
-        </div>
-
-        {/* --- Toast --- */}
-        {showToast && (
-          <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
-            <Toast>
-              <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200">
-                <HiExclamation className="h-5 w-5" />
-              </div>
-              <div className="ml-3 text-sm font-normal">{toastMessage}</div>
-              <ToastToggle onDismiss={() => closeToast()} />
-            </Toast>
-          </div>
-        )}
-      </>
-    );
-  } else {
-    return (
-      <div
-        className={`flex h-full w-full columns-1 flex-col items-center justify-center bg-white dark:bg-gray-900`}
-      >
-        <Spinner />
+          )}
+        </Tabs>
       </div>
-    );
-  }
+
+      {/* --- Toast --- */}
+      {showToast && (
+        <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
+          <Toast>
+            <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200">
+              <HiExclamation className="h-5 w-5" />
+            </div>
+            <div className="ml-3 text-sm font-normal">{toastMessage}</div>
+            <ToastToggle onDismiss={() => closeToast()} />
+          </Toast>
+        </div>
+      )}
+    </>
+  );
 }
