@@ -1,12 +1,7 @@
 "use client";
 
 import { HiMiniCog6Tooth } from "react-icons/hi2";
-import {
-  TabItem,
-  Tabs,
-  Toast,
-  ToastToggle,
-} from "flowbite-react";
+import { Spinner, TabItem, Tabs, Toast, ToastToggle } from "flowbite-react";
 import { FaCoffee, FaUsersCog, FaWeight } from "react-icons/fa";
 import BreakPeriods from "@/components/configurations/BreakPeriods";
 import { useEffect, useState } from "react";
@@ -16,6 +11,8 @@ import { fetchUserRole } from "@/app/actions/user";
 import { HiExclamation } from "react-icons/hi";
 import FacultyLoad from "@/components/configurations/FacultyLoad";
 import ClassSettings from "@/components/configurations/ClassSettings";
+import { useRouter } from "next/navigation";
+import RoomTypes from "@/components/configurations/RoomTypes";
 
 interface UserPermissions {
   booking: boolean;
@@ -34,7 +31,8 @@ interface UserPermissions {
 }
 
 export default function Configuration() {
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const [pageLoading, setPageLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(0);
 
   const [showToast, setShowToast] = useState(false);
@@ -74,8 +72,6 @@ export default function Configuration() {
         setShowToast(true);
         setPermissions(null);
       }
-
-      setLoading(false);
     }
 
     fetchPermissions();
@@ -86,59 +82,81 @@ export default function Configuration() {
     setToastMessage("");
   }
 
-  return (
-    <>
-      <div className={`w-full overflow-auto p-8`}>
-        <h1 className={`mb-4 flex items-center text-2xl font-bold`}>
-          <HiMiniCog6Tooth className={`mr-2`} />
-          Configuration
-        </h1>
+  useEffect(() => {
+    // Only evaluate permissions if they have loaded
+    if (permissions !== null) {
+      if (!permissions.config && !permissions.super) {
+        console.log(
+          `[Access Denied]: User '${username}' requested access to protected route, but lacks required permissions.`,
+        );
+        router.push("/unauthorized_access");
+      }
+    } else {
+      setPageLoading(false);
+    }
+  }, [permissions, router]);
 
-        <Tabs
-          aria-label="Default tabs"
-          variant="underline"
-          onActiveTabChange={(tabIndex) => setActiveTab(tabIndex)}
-        >
-          <TabItem active title="Break Periods" icon={FaCoffee}>
-            {activeTab === 0 && <BreakPeriods />}
-          </TabItem>
+  if (!pageLoading) {
+    return (
+      <>
+        <div className={`w-full overflow-auto p-8`}>
+          <h1 className={`mb-4 flex items-center text-2xl font-bold`}>
+            <HiMiniCog6Tooth className={`mr-2`} />
+            Configuration
+          </h1>
 
-          <TabItem title="Faculty Load" icon={FaWeight}>
-            {activeTab === 1 && <FacultyLoad />}
-          </TabItem>
+          <Tabs
+            aria-label="Default tabs"
+            variant="underline"
+            onActiveTabChange={(tabIndex) => setActiveTab(tabIndex)}
+          >
+            <TabItem active title="Break Periods" icon={FaCoffee}>
+              {activeTab === 0 && <BreakPeriods />}
+            </TabItem>
 
-          <TabItem title="Class Settings" icon={FaAddressBook}>
-            {activeTab === 2 && (
-              <div>
-                <ClassSettings />
-              </div>
-            )}
-          </TabItem>
+            <TabItem title="Faculty Load" icon={FaWeight}>
+              {activeTab === 1 && <FacultyLoad />}
+            </TabItem>
 
-          <TabItem title="Dropdown Values" icon={FaBarsStaggered}>
-            {activeTab === 3 && (
-              <div>{/* DropdownValues component here */}</div>
-            )}
-          </TabItem>
+            <TabItem title="Class Settings" icon={FaAddressBook}>
+              {activeTab === 2 && (
+                <div>
+                  <ClassSettings />
+                </div>
+              )}
+            </TabItem>
 
-          <TabItem title="Users" icon={FaUsersCog}>
-            {activeTab === 4 && <div>{/* Users component here */}</div>}
-          </TabItem>
-        </Tabs>
-      </div>
+            <TabItem title="Room Types" icon={FaBarsStaggered}>
+              {activeTab === 3 && <RoomTypes />}
+            </TabItem>
 
-      {/* --- Toast --- */}
-      {showToast && (
-        <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
-          <Toast>
-            <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200">
-              <HiExclamation className="h-5 w-5" />
-            </div>
-            <div className="ml-3 text-sm font-normal">{toastMessage}</div>
-            <ToastToggle onDismiss={() => closeToast()} />
-          </Toast>
+            <TabItem title="Users" icon={FaUsersCog}>
+              {activeTab === 4 && <div>{/* Users component here */}</div>}
+            </TabItem>
+          </Tabs>
         </div>
-      )}
-    </>
-  );
+
+        {/* --- Toast --- */}
+        {showToast && (
+          <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
+            <Toast>
+              <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200">
+                <HiExclamation className="h-5 w-5" />
+              </div>
+              <div className="ml-3 text-sm font-normal">{toastMessage}</div>
+              <ToastToggle onDismiss={() => closeToast()} />
+            </Toast>
+          </div>
+        )}
+      </>
+    );
+  } else {
+    return (
+      <div
+        className={`flex h-full w-full columns-1 flex-col items-center justify-center bg-white dark:bg-gray-900`}
+      >
+        <Spinner />
+      </div>
+    );
+  }
 }

@@ -1,6 +1,5 @@
 import {
   Button,
-  DarkThemeToggle,
   Sidebar,
   SidebarItemGroup,
   SidebarItems,
@@ -11,7 +10,7 @@ import {
 } from "flowbite-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { HiExclamation, HiLogout } from "react-icons/hi";
+import { HiExclamation } from "react-icons/hi";
 import {
   HiBookOpen,
   HiCalendar,

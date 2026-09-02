@@ -1,26 +1,9 @@
 "use client";
 
-import { useMsal } from "@azure/msal-react";
+import { useRouter } from "next/navigation";
 
-export default function RestrictedAccess() {
-  const { instance, accounts } = useMsal();
-
-  const handleLogout = () => {
-    try {
-      if (accounts.length > 0) {
-        instance.logoutRedirect({
-          account: accounts[0],
-          postLogoutRedirectUri: (window.location.href = "/"), // Prevents MSAL from redirecting to Microsoft's sign-out portal
-        });
-      }
-    } catch (error) {
-      console.error("Local logout failed:", error);
-    } finally {
-      // Clear all storage and force state reset
-      sessionStorage.clear();
-      localStorage.clear();
-    }
-  };
+export default function UnauthorizedAccess() {
+  const router = useRouter();
 
   return (
     <div className="flex min-h-screen min-w-screen flex-col items-center justify-center bg-gray-50 px-4 text-center dark:bg-gray-900">
@@ -28,7 +11,7 @@ export default function RestrictedAccess() {
         <div className={"w-full text-left"}>
           <button
             className="inline-flex cursor-pointer select-none items-center border-none bg-transparent text-sm font-medium text-blue-600 transition-colors hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-            onClick={() => handleLogout()}
+            onClick={() => router.push("/dashboard")}
           >
             <svg
               className="mr-2 h-4 w-4"
@@ -44,7 +27,7 @@ export default function RestrictedAccess() {
                 d="M10 19l-7-7m0 0l7-7m-7 7h18"
               ></path>
             </svg>
-            Return to Login
+            Go Back
           </button>
         </div>
         <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
@@ -64,11 +47,10 @@ export default function RestrictedAccess() {
           </svg>
         </div>
         <h1 className="mb-4 text-3xl font-bold text-gray-900 dark:text-white">
-          Restricted Access
+          Unauthorized Access
         </h1>
         <p className="mb-6 text-gray-600 dark:text-gray-400">
-          Only School faculty members of STI College Alabang are allowed to
-          access ACEHUB.
+          Oops! You don't have permission to access this area. Please return to the dashboard or reach out to support if you need access.
         </p>
         <div className="mb-6 text-sm text-gray-500 italic dark:text-gray-500">
           Thank you for your understanding.

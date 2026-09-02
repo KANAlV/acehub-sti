@@ -1,6 +1,5 @@
 "use server";
 import sql from "@/lib/database";
-import { AccountInfo } from "@azure/msal-common";
 
 /******************
  * CONFIGURATIONS *
@@ -17,6 +16,18 @@ export async function seedConfiguration(): Promise<boolean> {
     return result?.configuration_seed_default ?? false;
   } catch (error) {
     console.error("Failed to seed default configurations:", error);
+    return false;
+  }
+}
+export async function seedRoomTypes(): Promise<boolean> {
+  try {
+    const [result] = await sql<{ seed_room_types: boolean }[]>`
+      SELECT seed_room_types();
+    `;
+
+    return result?.seed_room_types ?? false;
+  } catch (error) {
+    console.error("Failed to seed room types:", error);
     return false;
   }
 }
@@ -71,7 +82,7 @@ export async function createBreakPeriod(
       ) AS break_id;
     `;
 
-    createLog(
+    await createLog(
       user,
       "create_break_period",
       `description: '${description}' | day: '${dayOfWeek}' | start: '${startTime}' | end: '${endTime}'`
@@ -138,7 +149,7 @@ export async function updateBreakPeriod(
       );
     `;
 
-    createLog(
+    await createLog(
       user,
       "update_break_period",
       `break_period_id: '${breakId}' | description: '${description}' | day: '${dayOfWeek}' | start: '${startTime}' | end: '${endTime}'`,
@@ -162,7 +173,7 @@ export async function deleteBreakPeriod(user: string, breakId: string) {
       SELECT break_periods_delete(${breakId}::UUID);
     `;
 
-    createLog(
+    await createLog(
       user,
       "delete_break_period",
       `break_period_id: '${breakId}'`,
@@ -392,7 +403,7 @@ export async function updateEnrollmentConstraints({
       );
     `;
 
-    createLog(
+    await createLog(
       userEmail,
       "update_enrollment_constraints",
       `max_students_per_section: '${maxStudentsPerSection}'`,
@@ -403,6 +414,131 @@ export async function updateEnrollmentConstraints({
     };
   } catch (error) {
     console.error("Failed to update enrollment constraints:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+/** --- Room Types --- **/
+
+export interface RoomType {
+  room_type_id: string;
+  value: string;
+}
+
+// Count
+export async function fetchRoomTypeCount(search?: string | null) {
+  try {
+    const pSearch = search ?? null;
+
+    const [result] = await sql<{ room_types_count: number }[]>`
+      SELECT room_types_count(${pSearch});
+    `;
+
+    return { success: true, count: result?.room_types_count ?? 0 };
+  } catch (error) {
+    console.error("Failed to fetch room types count:", error);
+    return { success: false, error: (error as Error).message, count: 0 };
+  }
+}
+
+// Create
+/** Create Room Type */
+export async function createRoomType(user: string, value: string) {
+  try {
+    await sql`
+      SELECT room_type_create(${value});
+    `;
+
+    await createLog(user, "create_room_type", `value: '${value}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to create room type:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+// Read
+export async function fetchRoomTypeList(
+  search?: string | null,
+  sortdir?: string,
+  limit?: number,
+  page?: number
+) {
+  try {
+    const pSearch = search ? `%${search}%` : null;
+    const pSortDir = sortdir?.toUpperCase() === "DESC" ? "DESC" : "ASC";
+    const pLimit = limit ?? 10;
+    const pPage = page ?? 1;
+    const offset = Math.max(0, (pPage - 1) * pLimit);
+
+    const data = await sql<RoomType[]>`
+      SELECT room_type_id, value 
+      FROM room_types
+      WHERE (${pSearch}::TEXT IS NULL OR value ILIKE ${pSearch})
+      ORDER BY 
+        CASE WHEN ${pSortDir} = 'ASC' THEN value END ASC,
+        CASE WHEN ${pSortDir} = 'DESC' THEN value END DESC
+      LIMIT ${pLimit} 
+      OFFSET ${offset};
+    `;
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to fetch room types list:", error);
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// Update
+export async function updateRoomType(
+  user: string,
+  roomTypeId: string,
+  value: string,
+) {
+  try {
+    const [result] = await sql<{ room_type_update: boolean }[]>`
+      SELECT room_type_update(${roomTypeId}::UUID, ${value});
+    `;
+
+    createLog(
+      user,
+      "update_room_type",
+      `room_type_id: '${roomTypeId}' | value: '${value}'`,
+    );
+
+    return {
+      success: result?.room_type_update ?? false,
+    };
+  } catch (error) {
+    console.error("Failed to update room type:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+// Delete
+export async function deleteRoomType(user: string, roomTypeId: string) {
+  try {
+    const [result] = await sql<{ room_type_delete: boolean }[]>`
+      SELECT room_type_delete(${roomTypeId}::UUID);
+    `;
+
+    createLog(user, "delete_room_type", `room_type_id: '${roomTypeId}'`);
+
+    return {
+      success: result?.room_type_delete ?? false,
+    };
+  } catch (error) {
+    console.error("Failed to delete room type:", error);
     return {
       success: false,
       error: (error as Error).message,
