@@ -67,7 +67,8 @@ export default function LoginPage() {
                   alt={"Acehub Logo"}
                   height={0}
                   width={16}
-                  className={"h-auto w-4"}
+                  unoptimized={true}
+                  className={"mx-auto mb-4 h-auto w-16"}
                 />
                 <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
                   Acehub Login Portal
