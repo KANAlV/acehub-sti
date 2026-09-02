@@ -1,6 +1,6 @@
 "use client";
 
-import { HiMiniCog6Tooth } from "react-icons/hi2";
+import { HiClipboardDocumentList, HiMiniCog6Tooth } from "react-icons/hi2";
 import { Spinner, TabItem, Tabs, Toast, ToastToggle } from "flowbite-react";
 import { FaCoffee, FaUsersCog, FaWeight } from "react-icons/fa";
 import BreakPeriods from "@/components/configurations/BreakPeriods";
@@ -132,6 +132,10 @@ export default function Configuration() {
 
             <TabItem title="Users" icon={FaUsersCog}>
               {activeTab === 4 && <div>{/* Users component here */}</div>}
+            </TabItem>
+
+            <TabItem title="Logs" icon={HiClipboardDocumentList}>
+              {activeTab === 5 && <div>{/* Users component here */}</div>}
             </TabItem>
           </Tabs>
         </div>

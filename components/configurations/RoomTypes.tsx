@@ -33,8 +33,8 @@ import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
 import { HiCheck, HiOutlineExclamationCircle, HiTrash } from "react-icons/hi2";
 import { useEffect, useState } from "react";
 import { HiExclamation, HiX } from "react-icons/hi";
-import { filterAlphanumericUnderscore } from "@/utils/validation";
 import { useMsal } from "@azure/msal-react";
+import { filterAlphaUnderscore } from "@/utils/validation";
 
 export default function RoomTypes() {
   const { instance, accounts } = useMsal();
@@ -54,7 +54,7 @@ export default function RoomTypes() {
   const [openDeleteModal, setOpenDeleteModal] = useState(false);
 
   // --- Form States --- //
-  const [rowID, setRowID] = useState(""); // Holds original 'room_type_id' or 'room_type' for edit/delete
+  const [rowID, setRowID] = useState("");
   const [roomTypeError, setRoomTypeError] = useState("");
 
   // Add State
@@ -114,7 +114,7 @@ export default function RoomTypes() {
 
   // Input Handlers
   const handleRoomTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = filterAlphanumericUnderscore(e.target.value);
+    const value = filterAlphaUnderscore(e.target.value).slice(0, 30);
     setRoomType(value);
     if (value) {
       setRoomTypeError("");
@@ -124,7 +124,7 @@ export default function RoomTypes() {
   };
 
   const handleNewRoomTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = filterAlphanumericUnderscore(e.target.value);
+    const value = filterAlphaUnderscore(e.target.value).slice(0, 30);
     editRoomType(value);
     if (value) {
       setRoomTypeError("");
@@ -454,14 +454,20 @@ export default function RoomTypes() {
                 placeholder="e.g. Computer Lab, Lecture Room"
                 value={roomType}
                 onChange={handleRoomTypeChange}
+                maxLength={30}
                 color={roomTypeError ? "failure" : "gray"}
                 required
               />
-              {roomTypeError && (
-                <p className="mt-1 text-sm font-medium text-red-600">
-                  {roomTypeError}
-                </p>
-              )}
+              <div className="mt-1 flex justify-between text-sm">
+                <div>
+                  {roomTypeError && (
+                    <p className="font-medium text-red-600">{roomTypeError}</p>
+                  )}
+                </div>
+                <span className="text-gray-400 dark:text-gray-500">
+                  {roomType.length}/30
+                </span>
+              </div>
             </div>
           </form>
         </ModalBody>
@@ -495,14 +501,20 @@ export default function RoomTypes() {
                 placeholder="e.g. Computer Lab, Lecture Room"
                 value={newRoomType}
                 onChange={handleNewRoomTypeChange}
+                maxLength={30}
                 color={roomTypeError ? "failure" : "gray"}
                 required
               />
-              {roomTypeError && (
-                <p className="mt-1 text-sm font-medium text-red-600">
-                  {roomTypeError}
-                </p>
-              )}
+              <div className="mt-1 flex justify-between text-sm">
+                <div>
+                  {roomTypeError && (
+                    <p className="font-medium text-red-600">{roomTypeError}</p>
+                  )}
+                </div>
+                <span className="text-gray-400 dark:text-gray-500">
+                  {newRoomType.length}/30
+                </span>
+              </div>
             </div>
           </form>
         </ModalBody>
