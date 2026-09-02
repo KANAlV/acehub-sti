@@ -5,7 +5,8 @@ import {
   SidebarItemGroup,
   SidebarItems,
   Spinner,
-  Toast, ToastToggle,
+  Toast,
+  ToastToggle,
   Tooltip,
 } from "flowbite-react";
 import { useRouter } from "next/navigation";
@@ -35,7 +36,7 @@ import Image from "next/image";
 import { FaCubes } from "react-icons/fa6";
 import { AccountInfo } from "@azure/msal-common";
 import { fetchUserRole } from "@/app/actions/user";
-import { seedConfiguration } from "@/app/actions/system";
+import { seedConfiguration, seedRoomTypes } from "@/app/actions/system";
 
 interface SidebarFunctionProps {
   account: AccountInfo | null;
@@ -109,22 +110,32 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       }
     }
 
+    async function initializeRoomTypes() {
+      const isSeeded = await seedRoomTypes();
+      if (isSeeded) {
+        console.log("[System] Default room types seeded successfully.");
+      }
+    }
+
+    /** --- Default Values Generation --- **/
     initializeConfiguration();
+    initializeRoomTypes();
+
     fetchPermissions();
   }, [account]);
 
-  function closeToast(){
-    setShowToast(false)
-    setToastMessage("")
+  function closeToast() {
+    setShowToast(false);
+    setToastMessage("");
   }
 
   return (
     <>
       {/* --- Loading Spinner --- */}
       <div
-        className={`${loading ? "" : "hidden"} absolute z-50 flex h-dvh w-dvw items-center justify-center bg-white dark:bg-gray-900`}
+        className={`${loading ? "" : "hidden"} absolute z-50 flex h-dvh w-dvw columns-1 flex-col items-center justify-center bg-white dark:bg-gray-900`}
       >
-        <Spinner />
+        <Spinner className={"mb-2"} /> <span>Loading sidebar items...</span>
       </div>
 
       {/* --- Toast --- */}
@@ -148,40 +159,35 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
         <SidebarItems className="flex flex-1 flex-col justify-between">
           {/* Main Top Navigation */}
           <SidebarItemGroup>
-
             {/* Moblie Sidebar Toggle */}
-            {!collapsed ? (
-              <>
+            <div className="w-full md:hidden">
+              {!collapsed ? (
                 <Button
                   outline
                   color="alternative"
                   onClick={() => setCollapsed(!collapsed)}
-                  className={`w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20 md:hidden`}
+                  className="w-full cursor-pointer justify-center p-2 text-gray-500 hover:bg-gray-500/20"
                 >
-                  {!collapsed ? (
-                    <>
-                      <TbLayoutSidebarLeftCollapse className="h-6 w-6 shrink-0" />
-                      <span className="ml-2">Collapse Sidebar</span>
-                    </>
-                  ) : (
-                    <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
-                  )}
+                  <TbLayoutSidebarLeftCollapse className="h-6 w-6 shrink-0" />
+                  <span className="ml-2">Collapse Sidebar</span>
                 </Button>
-              </>
-            ) : (
-              <>
-                <Tooltip content={"Expand Sidebar"} placement={"right"}>
+              ) : (
+                <Tooltip
+                  content="Expand Sidebar"
+                  placement="right"
+                  className="w-full px-2"
+                >
                   <Button
                     outline
                     color="alternative"
                     onClick={() => setCollapsed(!collapsed)}
-                    className={`md:hidden w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                    className="w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20"
                   >
                     <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
                   </Button>
                 </Tooltip>
-              </>
-            )}
+              )}
+            </div>
 
             {/* Sidebar Items */}
             {!collapsed ? (
@@ -190,7 +196,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/dashboard")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20`}
                 >
                   <HiChartPie className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Dashboard</span>}
@@ -200,7 +206,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push(`/booking`)}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.booking ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
                 >
                   <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Booking</span>}
@@ -210,7 +216,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/schedules")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.schedules ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.schedules ? "" : "hidden"}`}
                 >
                   <HiCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Schedules</span>}
@@ -220,7 +226,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => setDropdownCourses(!dropdownCourses)}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""} ${permissions?.courses ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""} ${permissions?.courses ? "" : "hidden"}`}
                 >
                   <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && (
@@ -271,7 +277,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/rooms")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.rooms ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.rooms ? "" : "hidden"}`}
                 >
                   <HiMiniBuildingOffice className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Rooms</span>}
@@ -281,7 +287,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/subjects")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.subjects ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.subjects ? "" : "hidden"}`}
                 >
                   <HiBookOpen className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Subjects</span>}
@@ -291,7 +297,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/teachers")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.teachers ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.teachers ? "" : "hidden"}`}
                 >
                   <HiUsers className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Teachers</span>}
@@ -301,7 +307,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/maq")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.maq ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.maq ? "" : "hidden"}`}
                 >
                   <HiDocumentCheck className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">MAQ</span>}
@@ -311,7 +317,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/fcce")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.fcce ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.fcce ? "" : "hidden"}`}
                 >
                   <HiClipboardDocument className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">FCCE</span>}
@@ -471,7 +477,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/help")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.help ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.help ? "" : "hidden"}`}
                 >
                   <HiQuestionMarkCircle className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Help</span>}
@@ -481,7 +487,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   outline
                   color="alternative"
                   onClick={() => router.push("/configurations")}
-                  className={`w-full cursor-pointer hover:bg-gray-500/20 ${collapsed ? "justify-center p-2" : "justify-start"} ${permissions?.config ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.config ? "" : "hidden"}`}
                 >
                   <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Configurations</span>}
@@ -567,7 +573,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                     outline
                     color="alternative"
                     onClick={() => setCollapsed(!collapsed)}
-                    className={`md:block w-full hidden cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                    className={`hidden w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 md:block`}
                   >
                     <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
                   </Button>
