@@ -50,7 +50,7 @@ export default function UnauthorizedAccess() {
           Unauthorized Access
         </h1>
         <p className="mb-6 text-gray-600 dark:text-gray-400">
-          Oops! You don't have permission to access this area. Please return to the dashboard or reach out to support if you need access.
+          Oops! You don`&apos;`t have permission to access this area. Please return to the dashboard or reach out to support if you need access.
         </p>
         <div className="mb-6 text-sm text-gray-500 italic dark:text-gray-500">
           Thank you for your understanding.

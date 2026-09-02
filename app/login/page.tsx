@@ -5,6 +5,7 @@ import { DarkThemeToggle } from "flowbite-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { syncUserToDatabase } from "@/app/actions/user";
+import Image from "next/image";
 
 export default function LoginPage() {
   const { instance, accounts, inProgress } = useMsal();
@@ -20,7 +21,6 @@ export default function LoginPage() {
 
     if (inProgress === "none" && accounts.length > 0) {
       const activeAccount = instance.getActiveAccount() || accounts[0];
-
 
       //if (activeAccount.name!.includes("Student")) {
       //  router.push("/restricted_access");
@@ -62,10 +62,12 @@ export default function LoginPage() {
               </div>
 
               <div className="text-center">
-                <img
-                  src="/acehub-logo.png"
-                  alt="Acehub Logo"
-                  className="mx-auto mb-4 w-16"
+                <Image
+                  src={"/acehub-logo.png"}
+                  alt={"Acehub Logo"}
+                  height={0}
+                  width={16}
+                  className={"h-auto w-4"}
                 />
                 <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
                   Acehub Login Portal

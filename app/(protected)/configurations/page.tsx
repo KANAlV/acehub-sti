@@ -94,7 +94,7 @@ export default function Configuration() {
     } else {
       setPageLoading(false);
     }
-  }, [permissions, router]);
+  }, [permissions, router, username]);
 
   if (!pageLoading) {
     return (
