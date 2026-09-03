@@ -5,7 +5,7 @@ import { Spinner, TabItem, Tabs, Toast, ToastToggle } from "flowbite-react";
 import { FaCoffee, FaUsersCog, FaWeight } from "react-icons/fa";
 import BreakPeriods from "@/components/configurations/BreakPeriods";
 import { useEffect, useState } from "react";
-import { FaAddressBook, FaBarsStaggered } from "react-icons/fa6";
+import { FaAddressBook, FaBarsStaggered, FaUserSlash } from "react-icons/fa6";
 import { useMsal } from "@azure/msal-react";
 import { fetchUserRole } from "@/app/actions/user";
 import { HiExclamation } from "react-icons/hi";
@@ -189,7 +189,7 @@ export default function Configuration() {
                   <TabItem title="Roles" icon={FaBarsStaggered}>
                     {usersActiveTab === 1 && <RolesManagement />}
                   </TabItem>
-                  <TabItem title="Blacklist" icon={FaBarsStaggered}>
+                  <TabItem title="Blacklist" icon={FaUserSlash}>
                     {usersActiveTab === 2 && <BlacklistManagement />}
                   </TabItem>
                 </Tabs>

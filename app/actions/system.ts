@@ -33,6 +33,7 @@ export async function seedRoomTypes(): Promise<boolean> {
 }
 
 /** --- Break Period --- **/
+
 interface BreakPeriod {
   break_id: string;
   break_description: string;
@@ -445,7 +446,6 @@ export async function fetchRoomTypeCount(search?: string | null) {
 }
 
 // Create
-/** Create Room Type */
 export async function createRoomType(user: string, value: string) {
   try {
     await sql`
@@ -553,6 +553,7 @@ export interface ManagedUser {
   email: string;
   username: string;
   role_name: string;
+  is_blacklisted: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -580,7 +581,8 @@ export async function fetchUsers(
         user_id, 
         email, 
         username, 
-        role_name, 
+        role_name,
+        is_blacklisted,
         created_at, 
         updated_at
       FROM manage_users_read(
@@ -605,7 +607,7 @@ export async function fetchUsers(
   }
 }
 
-/** Create User */
+// Create
 export async function createUser(
   actor: string,
   email: string,
@@ -636,7 +638,7 @@ export async function createUser(
   }
 }
 
-/** Update User */
+// Update
 export async function updateUser(
   actor: string,
   userId: string,
@@ -668,26 +670,7 @@ export async function updateUser(
   }
 }
 
-/** Delete User */
-export async function deleteUser(actor: string, userId: string) {
-  try {
-    await sql`
-      SELECT manage_users_delete(${userId}::UUID);
-    `;
-
-    createLog(actor, "delete_user", `user_id: '${userId}'`);
-
-    return { success: true };
-  } catch (error) {
-    console.error("Failed to delete user:", error);
-    return {
-      success: false,
-      error: (error as Error).message,
-    };
-  }
-}
-
-/** Fetch Users Total Count */
+// Count
 export async function fetchUsersCount(search?: string | null) {
   try {
     const pSearch = search?.trim() ? search.trim() : null;
@@ -706,6 +689,235 @@ export async function fetchUsersCount(search?: string | null) {
       success: false,
       error: (error as Error).message,
       count: 0,
+    };
+  }
+}
+
+/** --- Roles --- **/
+
+export interface Role {
+  role_id: string;
+  role_name: string;
+  booking: boolean;
+  personal_schedule: boolean;
+  academic_qualification: boolean;
+  schedules: boolean;
+  courses: boolean;
+  rooms: boolean;
+  subjects: boolean;
+  teachers: boolean;
+  maq: boolean;
+  fcce: boolean;
+  help: boolean;
+  config: boolean;
+  superuser: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FetchRolesResponse {
+  success: boolean;
+  data?: Role[];
+  error?: string;
+}
+
+/**
+ * Read
+ * Note: Setting limit to 0 (or a negative number) will fetch ALL records without limit.
+ */
+export async function fetchRoles(
+    search?: string | null,
+    sortBy: string = "role_name",
+    sortDir: string = "ASC",
+    limit: number = 10,
+    page: number = 1
+): Promise<FetchRolesResponse> {
+  try {
+    const offset = limit > 0 ? Math.max(0, (page - 1) * limit) : 0;
+    const searchParam = search?.trim() ? search.trim() : null;
+
+    const roles = await sql<Role[]>`
+      SELECT 
+        role_id,
+        role_name,
+        booking,
+        personal_schedule,
+        academic_qualification,
+        schedules,
+        courses,
+        rooms,
+        subjects,
+        teachers,
+        maq,
+        fcce,
+        help,
+        config,
+        superuser,
+        created_at,
+        updated_at
+      FROM roles_read(
+        ${searchParam},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data: roles ? [...roles] : [],
+    };
+  } catch (error) {
+    console.error("Error executing fetchRoles:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch roles.",
+    };
+  }
+}
+
+/** --- Blacklist --- **/
+
+export interface BlacklistedUser {
+  blacklist_id: string;
+  user_id: string;
+  email: string;
+  username: string;
+  created_at: string;
+}
+
+export interface FetchBlacklistResponse {
+  success: boolean;
+  data?: BlacklistedUser[];
+  error?: string;
+}
+
+// Validation
+
+export async function checkIsUserBlacklistedByEmail(email: string) {
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+
+    const [result] = await sql<{ is_user_blacklisted_by_email: boolean }[]>`
+      SELECT is_user_blacklisted_by_email(${cleanEmail});
+    `;
+
+    return {
+      success: true,
+      isBlacklisted: result?.is_user_blacklisted_by_email ?? false,
+    };
+  } catch (error) {
+    console.error("Failed to check blacklist status:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+      isBlacklisted: false,
+    };
+  }
+}
+
+// Read
+export async function fetchBlacklist(
+    search?: string | null,
+    sortBy: string = "created_at",
+    sortDir: string = "DESC",
+    limit: number = 10,
+    page: number = 1
+): Promise<FetchBlacklistResponse> {
+  try {
+    const offset = Math.max(0, (page - 1) * limit);
+    const searchParam = search?.trim() ? search.trim() : null;
+
+    const items = await sql<BlacklistedUser[]>`
+      SELECT 
+        blacklist_id, 
+        user_id, 
+        email, 
+        username, 
+        created_at
+      FROM manage_blacklist_read(
+        ${searchParam}, 
+        ${sortBy}, 
+        ${sortDir}, 
+        ${limit}, 
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data: items ? [...items] : [],
+    };
+  } catch (error) {
+    console.error("Error executing fetchBlacklist:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch blacklist entries.",
+    };
+  }
+}
+
+// Count
+export async function fetchBlacklistCount(search?: string | null) {
+  try {
+    const searchParam = search?.trim() ? search.trim() : null;
+
+    const [result] = await sql<{ manage_blacklist_count: number }[]>`
+      SELECT manage_blacklist_count(${searchParam});
+    `;
+
+    return {
+      success: true,
+      count: result?.manage_blacklist_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch blacklist count:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+      count: 0,
+    };
+  }
+}
+
+// Create
+export async function addToBlacklist(actor: string, userId: string) {
+  try {
+    const [result] = await sql<{ manage_blacklist_create: string }[]>`
+      SELECT manage_blacklist_create(${userId}::UUID);
+    `;
+
+    createLog(actor, "add_blacklist", `user_id: '${userId}'`);
+
+    return {
+      success: true,
+      blacklistId: result?.manage_blacklist_create
+    };
+  } catch (error) {
+    console.error("Failed to blacklist user:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
+    };
+  }
+}
+
+// Delete
+export async function removeFromBlacklist(actor: string, blacklistId: string) {
+  try {
+    await sql`
+      SELECT manage_blacklist_delete(${blacklistId}::UUID);
+    `;
+
+    createLog(actor, "remove_blacklist", `blacklist_id: '${blacklistId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to remove from blacklist:", error);
+    return {
+      success: false,
+      error: (error as Error).message,
     };
   }
 }

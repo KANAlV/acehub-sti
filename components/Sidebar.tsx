@@ -10,7 +10,7 @@ import {
   ToastToggle,
   Tooltip,
 } from "flowbite-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { HiExclamation } from "react-icons/hi";
 import {
@@ -38,6 +38,7 @@ import { FaCubes } from "react-icons/fa6";
 import { AccountInfo } from "@azure/msal-common";
 import { fetchUserRole } from "@/app/actions/user";
 import { seedConfiguration, seedRoomTypes } from "@/app/actions/system";
+import { VerifyBlacklistStatus } from "@/utils/verifyBlacklistStatus";
 
 interface SidebarFunctionProps {
   account: AccountInfo | null;
@@ -61,6 +62,7 @@ interface UserPermissions {
 
 export default function SidebarFunction({ account }: SidebarFunctionProps) {
   const router = useRouter();
+  const pathname = usePathname();
 
   const [collapsed, setCollapsed] = useState(false);
   const [dropdownCourses, setDropdownCourses] = useState(false);
@@ -124,6 +126,9 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
 
     fetchPermissions();
   }, [account]);
+
+  /** --- Blacklist Checker --- **/
+  useEffect(() => {VerifyBlacklistStatus(account!.username);}, [pathname]);
 
   function closeToast() {
     setShowToast(false);

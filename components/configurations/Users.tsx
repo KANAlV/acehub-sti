@@ -20,20 +20,25 @@ import {
   TableRow,
   TextInput,
   Toast,
-  ToastToggle,
+  ToastToggle, Tooltip,
 } from "flowbite-react";
 import {
+  addToBlacklist,
   createUser,
-  deleteUser,
   fetchUsers,
   fetchUsersCount,
   updateUser,
+  fetchRoles,
 } from "@/app/actions/system";
-import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
+import {
+  FaBan,
+  FaPlus,
+  FaSortDown,
+  FaSortUp,
+  FaUserSlash,
+} from "react-icons/fa6";
 import {
   HiCheck,
-  HiOutlineExclamationCircle,
-  HiTrash,
 } from "react-icons/hi2";
 import { useEffect, useState } from "react";
 import { HiExclamation, HiX, HiSearch } from "react-icons/hi";
@@ -44,6 +49,12 @@ interface User {
   user_id: string;
   username: string;
   email: string;
+  role_name: string;
+  is_blacklisted: boolean;
+}
+
+interface Roles {
+  role_id: string;
   role_name: string;
 }
 
@@ -63,12 +74,13 @@ export default function UsersManagement() {
   // --- Modal Constants --- //
   const [openAddUserModal, setOpenAddUserModal] = useState(false);
   const [openEditUserModal, setOpenEditUserModal] = useState(false);
-  const [openDeleteUserModal, setOpenDeleteUserModal] = useState(false);
+  const [openBlacklistModal, setOpenBlacklistModal] = useState(false);
 
   // --- User Form states --- //
   const [rowID, setRowID] = useState("");
   const [usernameError, setUsernameError] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [roles, setRoles] =useState<Roles[]>([]);
 
   // Add State
   const [inputUsername, setInputUsername] = useState("");
@@ -201,7 +213,7 @@ export default function UsersManagement() {
     setEmailError("");
     setOpenAddUserModal(false);
     setOpenEditUserModal(false);
-    setOpenDeleteUserModal(false);
+    setOpenBlacklistModal(false);
 
     // add consts
     setInputUsername("");
@@ -326,17 +338,17 @@ export default function UsersManagement() {
   }
 
   // Delete
-  async function handleUserDelete() {
-    const response = await deleteUser(username ?? "system", rowID);
+  async function handleUserBlacklist() {
+    const response = await addToBlacklist(username ?? "system", rowID);
 
     if (response.success) {
-      const msg = "User deleted successfully";
+      const msg = "User blacklisted successfully";
       setToastMessage(msg);
       setToastType("success");
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[DeleteUser]: An unexpected error occurred",
+        response?.error ?? "[BlacklistUser]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -389,6 +401,25 @@ export default function UsersManagement() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
+  useEffect(() =>{
+    async function getRoles() {
+      const response = await fetchRoles(null, "role_name", "ASC", 0);
+
+      if (response.success && response.data) {
+        setRoles(response.data);
+      } else {
+        setToastMessage(
+          response?.error ?? "[fetchRoles]: An unexpected error occurred",
+        );
+        setToastType("error");
+        setShowToast(true);
+        setRoles([]);
+      }
+    }
+
+    getRoles();
+  },[]);
+
   return (
     <>
       {/* --- Toast --- */}
@@ -420,7 +451,11 @@ export default function UsersManagement() {
       )}
 
       {/* --- Header Section with Search & Add Button --- */}
-      <div className={"mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center"}>
+      <div
+        className={
+          "mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center"
+        }
+      >
         <div>
           <h2 className={`mb-1 text-lg font-bold`}>User Management</h2>
           <p className={`text-gray-500`}>
@@ -519,10 +554,19 @@ export default function UsersManagement() {
               users.map((item) => (
                 <TableRow
                   key={item.user_id}
-                  className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                  className={`${item.is_blacklisted && "text-red-500"} bg-white dark:border-gray-700 dark:bg-gray-800`}
                 >
-                  <TableCell className="font-medium whitespace-nowrap text-gray-900 dark:text-white">
-                    {item.username || "—"}
+                  <TableCell className="font-medium whitespace-nowrap">
+                    {item.is_blacklisted ? (
+                      <Tooltip content={"Blacklisted"}>
+                        <span className="flex items-center">
+                          <FaUserSlash className="mr-2" />
+                          {item.username || "—"}
+                        </span>
+                      </Tooltip>
+                    ) : (
+                      item.username || "—"
+                    )}
                   </TableCell>
                   <TableCell>{item.email}</TableCell>
                   <TableCell className="capitalize">{item.role_name}</TableCell>
@@ -554,7 +598,9 @@ export default function UsersManagement() {
                   colSpan={4}
                   className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
                 >
-                  {searchTerm ? `No users matching "${searchTerm}" found.` : "No user entries found yet."}
+                  {searchTerm
+                    ? `No users matching "${searchTerm}" found.`
+                    : "No user entries found yet."}
                 </TableCell>
               </TableRow>
             )}
@@ -628,18 +674,23 @@ export default function UsersManagement() {
                 onChange={(e) => setInputRoleName(e.target.value)}
                 required
               >
-                <option value="superuser">Superuser</option>
-                <option value="teacher">Teacher</option>
-                <option value="viewer">Viewer</option>
+                {roles.length > 0 ? (
+                  roles.map((option) => (
+                    <option key={option.role_id} value={option.role_name}>
+                      {option.role_name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>
+                    No Roles
+                  </option>
+                )}
               </Select>
             </div>
           </form>
         </ModalBody>
         <ModalFooter>
-          <Button
-            onClick={handleUserSubmit}
-            disabled={!inputEmail.trim()}
-          >
+          <Button onClick={handleUserSubmit} disabled={!inputEmail.trim()}>
             Save
           </Button>
           <Button color="alternative" onClick={handleCloseUserModals}>
@@ -693,9 +744,17 @@ export default function UsersManagement() {
                 onChange={(e) => editRoleName(e.target.value)}
                 required
               >
-                <option value="superuser">Superuser</option>
-                <option value="teacher">Teacher</option>
-                <option value="viewer">Viewer</option>
+                {roles.length > 0 ? (
+                  roles.map((option) => (
+                    <option key={option.role_id} value={option.role_name}>
+                      {option.role_name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>
+                    No Roles
+                  </option>
+                )}
               </Select>
             </div>
           </form>
@@ -719,33 +778,33 @@ export default function UsersManagement() {
               Cancel
             </Button>
           </div>
-          <Button color={"red"} onClick={() => setOpenDeleteUserModal(true)}>
-            <HiTrash />
+          <Button color={"red"} onClick={() => setOpenBlacklistModal(true)}>
+            <FaBan />
           </Button>
         </ModalFooter>
       </Modal>
 
-      {/* --- Delete Modal --- */}
+      {/* --- Blacklist Modal --- */}
       <Modal
-        show={openDeleteUserModal}
+        show={openBlacklistModal}
         size="md"
-        onClose={() => setOpenDeleteUserModal(false)}
+        onClose={() => setOpenBlacklistModal(false)}
         popup
       >
         <ModalHeader />
         <ModalBody>
           <div className="text-center">
-            <HiOutlineExclamationCircle className="mx-auto mb-4 h-14 w-14 text-gray-400 dark:text-gray-200" />
+            <FaUserSlash className="mx-auto mb-4 h-14 w-14 text-gray-400 dark:text-gray-200" />
             <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-              Are you sure you want to delete this User?
+              Are you sure you want to blacklist this User?
             </h3>
             <div className="flex justify-center gap-4">
-              <Button color="red" onClick={() => handleUserDelete()}>
-                <p>Yes, I am sure</p>
+              <Button color="red" onClick={() => handleUserBlacklist()}>
+                <p>Yes, I&#39;m sure</p>
               </Button>
               <Button
                 color="alternative"
-                onClick={() => setOpenDeleteUserModal(false)}
+                onClick={() => setOpenBlacklistModal(false)}
               >
                 No, cancel
               </Button>
