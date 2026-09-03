@@ -395,7 +395,7 @@ export default function UsersManagement() {
   // Trigger search with debounce
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      getUsers(searchTerm, sortUsersBy, sortUsersDir, maxRowUser, currentUserPage);
+      void getUsers(searchTerm, sortUsersBy, sortUsersDir, maxRowUser, currentUserPage);
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
@@ -417,7 +417,7 @@ export default function UsersManagement() {
       }
     }
 
-    getRoles();
+    void getRoles();
   },[]);
 
   return (
@@ -712,12 +712,7 @@ export default function UsersManagement() {
               <div className="mb-2 block">
                 <Label htmlFor="edit_email">Email Address</Label>
               </div>
-              <TextInput
-                id="edit_email"
-                type="email"
-                value={newEmail}
-                disabled
-              />
+              {newEmail}
             </div>
 
             {/* Username Field */}
@@ -725,12 +720,7 @@ export default function UsersManagement() {
               <div className="mb-2 block">
                 <Label htmlFor="edit_username">Username</Label>
               </div>
-              <TextInput
-                id="edit_username"
-                placeholder="e.g. jdoe"
-                value={newUsername}
-                onChange={handleNewUsernameChange}
-              />
+              {newUsername}
             </div>
 
             {/* Role Name Field */}

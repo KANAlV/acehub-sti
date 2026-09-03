@@ -14,7 +14,6 @@ import ClassSettings from "@/components/configurations/ClassSettings";
 import { useRouter } from "next/navigation";
 import RoomTypes from "@/components/configurations/RoomTypes";
 import AuditLogs from "@/components/configurations/Logs";
-import UsersManagement from "@/components/configurations/Users";
 import RolesManagement from "@/components/configurations/Roles";
 import UsersManagementPage from "@/components/configurations/Users";
 import BlacklistManagement from "@/components/configurations/Blacklist";
@@ -38,8 +37,10 @@ interface UserPermissions {
 export default function Configuration() {
   const router = useRouter();
   const [pageLoading, setPageLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState(0);
-  const [usersActiveTab, setUsersActiveTab] = useState(0);
+
+  // Use explicit tab key string state instead of hardcoded numbers
+  const [activeTabKey, setActiveTabKey] = useState<string>("");
+  const [usersActiveTabKey, setUsersActiveTabKey] = useState<string>("users");
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -89,19 +90,34 @@ export default function Configuration() {
     setToastMessage("");
   }
 
+  // Define tab keys dynamically based on active permissions
+  const availableMainTabs: string[] = [];
+
+  if (permissions?.config) {
+    availableMainTabs.push(
+      "break-periods",
+      "faculty-load",
+      "class-settings",
+      "room-types",
+    );
+  }
+  if (permissions?.superuser) {
+    availableMainTabs.push("user-management", "logs");
+  }
+
   useEffect(() => {
-    // Evaluate initial tab selection and route guards based on permissions
     if (permissions !== null) {
       if (!permissions.config && !permissions.superuser) {
         console.log(
           `[Access Denied]: User '${username}' requested access to protected route, but lacks required permissions.`,
         );
         router.push("/unauthorized_access");
-      } else if (!permissions.config && permissions.superuser) {
-        setActiveTab(4); // Default to first available tab for super users
+      } else if (!activeTabKey && availableMainTabs.length > 0) {
+        // Automatically default to the first available tab key
+        setActiveTabKey(availableMainTabs[0]);
       }
     }
-  }, [permissions, router, username]);
+  }, [permissions, router, username, activeTabKey, availableMainTabs]);
 
   if (pageLoading || permissions === null) {
     return (
@@ -122,36 +138,40 @@ export default function Configuration() {
         <Tabs
           aria-label="Configuration Tabs"
           variant="underline"
-          onActiveTabChange={(tabIndex) => setActiveTab(tabIndex)}
+          onActiveTabChange={(index) => {
+            if (availableMainTabs[index]) {
+              setActiveTabKey(availableMainTabs[index]);
+            }
+          }}
         >
-          {/* Tabs 0 - 3: Visible when permissions.config is true */}
+          {/* Tabs: Visible when permissions.config is true */}
           {permissions.config && (
             <TabItem
-              active={activeTab === 0}
+              active={activeTabKey === "break-periods"}
               title="Break Periods"
               icon={FaCoffee}
             >
-              {activeTab === 0 && <BreakPeriods />}
+              {activeTabKey === "break-periods" && <BreakPeriods />}
             </TabItem>
           )}
 
           {permissions.config && (
             <TabItem
-              active={activeTab === 1}
+              active={activeTabKey === "faculty-load"}
               title="Faculty Load"
               icon={FaWeight}
             >
-              {activeTab === 1 && <FacultyLoad />}
+              {activeTabKey === "faculty-load" && <FacultyLoad />}
             </TabItem>
           )}
 
           {permissions.config && (
             <TabItem
-              active={activeTab === 2}
+              active={activeTabKey === "class-settings"}
               title="Class Settings"
               icon={FaAddressBook}
             >
-              {activeTab === 2 && (
+              {activeTabKey === "class-settings" && (
                 <div>
                   <ClassSettings />
                 </div>
@@ -161,36 +181,52 @@ export default function Configuration() {
 
           {permissions.config && (
             <TabItem
-              active={activeTab === 3}
+              active={activeTabKey === "room-types"}
               title="Room Types"
               icon={FaBarsStaggered}
             >
-              {activeTab === 3 && <RoomTypes />}
+              {activeTabKey === "room-types" && <RoomTypes />}
             </TabItem>
           )}
 
-          {/* Tabs 4 - 5: Visible when permissions.super is true */}
+          {/* Tabs: Visible when permissions.superuser is true */}
           {permissions.superuser && (
             <TabItem
-              active={activeTab === 4}
+              active={activeTabKey === "user-management"}
               title="User Management"
               icon={FaUsersCog}
             >
-              {activeTab === 4 && (
+              {activeTabKey === "user-management" && (
                 <Tabs
                   aria-label="User Management Subtabs"
-                  onActiveTabChange={(usersTabIndex) =>
-                    setUsersActiveTab(usersTabIndex)
-                  }
+                  onActiveTabChange={(subIndex) => {
+                    const subKeys = ["users", "roles", "blacklist"];
+                    if (subKeys[subIndex])
+                      setUsersActiveTabKey(subKeys[subIndex]);
+                  }}
                 >
-                  <TabItem title="Users" icon={FaUsersCog}>
-                    {usersActiveTab === 0 && <UsersManagementPage />}
+                  <TabItem
+                    active={usersActiveTabKey === "users"}
+                    title="Users"
+                    icon={FaUsersCog}
+                  >
+                    {usersActiveTabKey === "users" && <UsersManagementPage />}
                   </TabItem>
-                  <TabItem title="Roles" icon={FaBarsStaggered}>
-                    {usersActiveTab === 1 && <RolesManagement />}
+                  <TabItem
+                    active={usersActiveTabKey === "roles"}
+                    title="Roles"
+                    icon={FaBarsStaggered}
+                  >
+                    {usersActiveTabKey === "roles" && <RolesManagement />}
                   </TabItem>
-                  <TabItem title="Blacklist" icon={FaUserSlash}>
-                    {usersActiveTab === 2 && <BlacklistManagement />}
+                  <TabItem
+                    active={usersActiveTabKey === "blacklist"}
+                    title="Blacklist"
+                    icon={FaUserSlash}
+                  >
+                    {usersActiveTabKey === "blacklist" && (
+                      <BlacklistManagement />
+                    )}
                   </TabItem>
                 </Tabs>
               )}
@@ -199,11 +235,11 @@ export default function Configuration() {
 
           {permissions.superuser && (
             <TabItem
-              active={activeTab === 5}
+              active={activeTabKey === "logs"}
               title="Logs"
               icon={HiClipboardDocumentList}
             >
-              {activeTab === 5 && <AuditLogs />}
+              {activeTabKey === "logs" && <AuditLogs />}
             </TabItem>
           )}
         </Tabs>

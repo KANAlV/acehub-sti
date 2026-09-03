@@ -42,7 +42,7 @@ interface BreakPeriod {
   end_time: string;
 }
 
-// Count
+// Count Break Period
 export async function fetchBreakPeriodsCount(search?: string | null) {
   try {
     const pSearch = search ?? null;
@@ -65,7 +65,7 @@ export async function fetchBreakPeriodsCount(search?: string | null) {
   }
 }
 
-// Create
+// Create Break Period
 export async function createBreakPeriod(
   user: string,
   description: string,
@@ -95,7 +95,7 @@ export async function createBreakPeriod(
   }
 }
 
-// Read
+// Read Break Period
 export async function fetchBreakPeriods(
   search?: string | null,
   sortby?: string,
@@ -130,7 +130,7 @@ export async function fetchBreakPeriods(
   }
 }
 
-// Update
+// Update Break Period
 export async function updateBreakPeriod(
   user: string,
   breakId: string,
@@ -167,7 +167,7 @@ export async function updateBreakPeriod(
   }
 }
 
-// Delete
+// Delete Break Period
 export async function deleteBreakPeriod(user: string, breakId: string) {
   try {
     const [result] = await sql<{ break_periods_delete: boolean }[]>`
@@ -240,7 +240,7 @@ interface UpdateOverloadMaxParams {
   configurationId?: string;
 }
 
-// Read
+// Read Faculty Load
 export async function fetchFacultyLoadConfig({
   search = null,
   sortBy = "configuration_id",
@@ -429,7 +429,7 @@ export interface RoomType {
   value: string;
 }
 
-// Count
+// Count Room
 export async function fetchRoomTypeCount(search?: string | null) {
   try {
     const pSearch = search ?? null;
@@ -445,7 +445,7 @@ export async function fetchRoomTypeCount(search?: string | null) {
   }
 }
 
-// Create
+// Create Room
 export async function createRoomType(user: string, value: string) {
   try {
     await sql`
@@ -464,7 +464,7 @@ export async function createRoomType(user: string, value: string) {
   }
 }
 
-// Read
+// Read Room
 export async function fetchRoomTypeList(
   search?: string | null,
   sortdir?: string,
@@ -496,7 +496,7 @@ export async function fetchRoomTypeList(
   }
 }
 
-// Update
+// Update Room
 export async function updateRoomType(
   user: string,
   roomTypeId: string,
@@ -507,7 +507,7 @@ export async function updateRoomType(
       SELECT room_type_update(${roomTypeId}::UUID, ${value});
     `;
 
-    createLog(
+    await createLog(
       user,
       "update_room_type",
       `room_type_id: '${roomTypeId}' | value: '${value}'`,
@@ -525,14 +525,14 @@ export async function updateRoomType(
   }
 }
 
-// Delete
+// Delete Room
 export async function deleteRoomType(user: string, roomTypeId: string) {
   try {
     const [result] = await sql<{ room_type_delete: boolean }[]>`
       SELECT room_type_delete(${roomTypeId}::UUID);
     `;
 
-    createLog(user, "delete_room_type", `room_type_id: '${roomTypeId}'`);
+    await createLog(user, "delete_room_type", `room_type_id: '${roomTypeId}'`);
 
     return {
       success: result?.room_type_delete ?? false,
@@ -564,7 +564,7 @@ export interface FetchUsersListResponse {
   error?: string;
 }
 
-// Read
+// Read User
 export async function fetchUsers(
   search?: string | null,
   sortBy: string = "email",
@@ -607,7 +607,7 @@ export async function fetchUsers(
   }
 }
 
-// Create
+// Create User
 export async function createUser(
   actor: string,
   email: string,
@@ -619,7 +619,7 @@ export async function createUser(
       SELECT manage_users_create(${email}, ${username ?? null}, ${roleName});
     `;
 
-    createLog(
+    await createLog(
       actor,
       "create_user",
       `email: '${email}' | role: '${roleName}'`
@@ -638,7 +638,7 @@ export async function createUser(
   }
 }
 
-// Update
+// Update User
 export async function updateUser(
   actor: string,
   userId: string,
@@ -654,10 +654,10 @@ export async function updateUser(
       );
     `;
 
-    createLog(
+    await createLog(
       actor,
       "update_user",
-      `user_id: '${userId}' | username: '${username}' | role: '${roleName}'`
+      `user_id: '${userId}' | username: '${username}' | role: '${roleName}'`,
     );
 
     return { success: true };
@@ -670,7 +670,7 @@ export async function updateUser(
   }
 }
 
-// Count
+// Count User
 export async function fetchUsersCount(search?: string | null) {
   try {
     const pSearch = search?.trim() ? search.trim() : null;
@@ -715,6 +715,23 @@ export interface Role {
   updated_at: string;
 }
 
+export interface RoleInput {
+  role_name: string;
+  booking?: boolean;
+  personal_schedule?: boolean;
+  academic_qualification?: boolean;
+  schedules?: boolean;
+  courses?: boolean;
+  rooms?: boolean;
+  subjects?: boolean;
+  teachers?: boolean;
+  maq?: boolean;
+  fcce?: boolean;
+  help?: boolean;
+  config?: boolean;
+  superuser?: boolean;
+}
+
 export interface FetchRolesResponse {
   success: boolean;
   data?: Role[];
@@ -722,7 +739,7 @@ export interface FetchRolesResponse {
 }
 
 /**
- * Read
+ * Read Roles
  * Note: Setting limit to 0 (or a negative number) will fetch ALL records without limit.
  */
 export async function fetchRoles(
@@ -777,6 +794,101 @@ export async function fetchRoles(
   }
 }
 
+// Create Role
+export async function createRole(actor: string, input: RoleInput) {
+  try {
+    const [result] = await sql<{ roles_create: string }[]>`
+      SELECT roles_create(
+        ${input.role_name},
+        ${input.booking ?? false},
+        ${input.personal_schedule ?? false},
+        ${input.academic_qualification ?? false},
+        ${input.schedules ?? false},
+        ${input.courses ?? false},
+        ${input.rooms ?? false},
+        ${input.subjects ?? false},
+        ${input.teachers ?? false},
+        ${input.maq ?? false},
+        ${input.fcce ?? false},
+        ${input.help ?? false},
+        ${input.config ?? false},
+        ${input.superuser ?? false}
+      );
+    `;
+
+    await createLog(actor, "create_role", `role_name: '${input.role_name}'`);
+
+    return {
+      success: true,
+      roleId: result?.roles_create,
+    };
+  } catch (error) {
+    console.error("Failed to create role:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create role.",
+    };
+  }
+}
+
+// Update Role
+export async function updateRole(
+  actor: string,
+  roleId: string,
+  input: Partial<RoleInput>,
+) {
+  try {
+    await sql`
+      SELECT roles_update(
+        ${roleId}::UUID,
+        ${input.role_name ?? null},
+        ${input.booking ?? null},
+        ${input.personal_schedule ?? null},
+        ${input.academic_qualification ?? null},
+        ${input.schedules ?? null},
+        ${input.courses ?? null},
+        ${input.rooms ?? null},
+        ${input.subjects ?? null},
+        ${input.teachers ?? null},
+        ${input.maq ?? null},
+        ${input.fcce ?? null},
+        ${input.help ?? null},
+        ${input.config ?? null},
+        ${input.superuser ?? null}
+      );
+    `;
+
+    await createLog(actor, "update_role", `role_id: '${roleId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update role:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update role.",
+    };
+  }
+}
+
+// Delete Role
+export async function deleteRole(actor: string, roleId: string) {
+  try {
+    await sql`
+      SELECT roles_delete(${roleId}::UUID);
+    `;
+
+    await createLog(actor, "delete_role", `role_id: '${roleId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete role:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete role.",
+    };
+  }
+}
+
 /** --- Blacklist --- **/
 
 export interface BlacklistedUser {
@@ -817,7 +929,7 @@ export async function checkIsUserBlacklistedByEmail(email: string) {
   }
 }
 
-// Read
+// Read Blacklist
 export async function fetchBlacklist(
     search?: string | null,
     sortBy: string = "created_at",
@@ -858,7 +970,7 @@ export async function fetchBlacklist(
   }
 }
 
-// Count
+// Count Blacklist
 export async function fetchBlacklistCount(search?: string | null) {
   try {
     const searchParam = search?.trim() ? search.trim() : null;
@@ -881,14 +993,14 @@ export async function fetchBlacklistCount(search?: string | null) {
   }
 }
 
-// Create
+// Create Blacklist
 export async function addToBlacklist(actor: string, userId: string) {
   try {
     const [result] = await sql<{ manage_blacklist_create: string }[]>`
       SELECT manage_blacklist_create(${userId}::UUID);
     `;
 
-    createLog(actor, "add_blacklist", `user_id: '${userId}'`);
+    await createLog(actor, "add_blacklist", `user_id: '${userId}'`);
 
     return {
       success: true,
@@ -903,14 +1015,18 @@ export async function addToBlacklist(actor: string, userId: string) {
   }
 }
 
-// Delete
+// Delete Blacklist
 export async function removeFromBlacklist(actor: string, blacklistId: string) {
   try {
     await sql`
       SELECT manage_blacklist_delete(${blacklistId}::UUID);
     `;
 
-    createLog(actor, "remove_blacklist", `blacklist_id: '${blacklistId}'`);
+    await createLog(
+      actor,
+      "remove_blacklist",
+      `blacklist_id: '${blacklistId}'`,
+    );
 
     return { success: true };
   } catch (error) {
@@ -940,7 +1056,7 @@ export interface FetchLogListResponse {
   error?: string;
 }
 
-// Read
+// Read Logs
 export async function fetchLogList(
   search?: string | null,
   sortBy: string = "created_at",
@@ -984,7 +1100,7 @@ export async function fetchLogList(
   }
 }
 
-// Create
+// Create Logs
 export async function createLog(
   activeAccount: string,
   action: string,

@@ -232,7 +232,7 @@ export default function BlacklistManagement() {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      getBlacklistData(
+      void getBlacklistData(
         searchTerm,
         sortUsersBy,
         sortUsersDir,
