@@ -79,7 +79,6 @@ export default function Configuration() {
         setShowToast(true);
         setPermissions(null);
       }
-      setPageLoading(false);
     }
 
     fetchPermissions();
@@ -113,6 +112,7 @@ export default function Configuration() {
         );
         router.push("/unauthorized_access");
       } else if (!activeTabKey && availableMainTabs.length > 0) {
+        setPageLoading(false);
         // Automatically default to the first available tab key
         setActiveTabKey(availableMainTabs[0]);
       }

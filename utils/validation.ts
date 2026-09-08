@@ -17,6 +17,13 @@ export const filterAlpha = (str: string): string =>
   str.replace(/[^a-zA-Z ]/g, "").replace(/\s+/g, " ");
 
 /**
+ * Strips all non-alphabetic characters (a-zA-Z) and no spaces.
+ */
+export const filterAlphaNoSpace = (str: string): string =>
+  str.replace(/[^a-zA-Z]/g, "");
+
+
+/**
  * Strips all non-alphanumeric characters (a-zA-Z0-9) and collapse consecutive spaces into one.
  */
 export const filterAlphanumeric = (str: string): string =>
@@ -53,6 +60,16 @@ export const filterAlphanumericDashUnderscore = (str: string): string =>
   str
     .replace(/[^a-zA-Z0-9_\- ]/g, "")
     .replace(/[_-]{2,}/g, (match) => match[0])
+    .replace(/\s+/g, " ");
+
+/**
+ * Allows alphanumeric characters, spaces, hyphens, commas, and underscores.
+ * Collapses consecutive or mixed special characters (e.g., "--", "__", "-_") into a single character.
+ */
+export const filterAlphanumericDashUnderscoreComma = (str: string): string =>
+  str
+    .replace(/[^a-zA-Z0-9_,\- ]/g, "")
+    .replace(/[,_-]{2,}/g, (match) => match[0])
     .replace(/\s+/g, " ");
 
 /**

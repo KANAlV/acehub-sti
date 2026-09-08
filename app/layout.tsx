@@ -1,5 +1,6 @@
 import { Providers } from "./providers";
 import type { Metadata } from "next";
+import { ThemeModeScript } from "flowbite-react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -14,7 +15,6 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Acehub | Faculty Scheduling",
   description: "Web-based faculty scheduling management system",
 };
 
@@ -24,13 +24,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <title>Acehub | Faculty Scheduling</title>
+        <ThemeModeScript />
+      </head>
       <body
         className={`block md:flex ${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Providers>
-          {children}
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

@@ -1,6 +1,414 @@
 "use server";
 import sql from "@/lib/database";
 
+/************
+ * PROGRAMS *
+ ************/
+
+export interface ProgramRecord {
+  program_code: string;
+  program_name: string;
+  year_level: string;
+  students: Record<string, unknown> | Array<unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProgramInput {
+  program_code: string;
+  program_name?: string;
+  year_level?: string;
+  students?: Record<string, unknown> | Array<unknown>;
+}
+
+/* FETCH PROGRAMS (READ) */
+export async function fetchPrograms(
+  search: string | null = null,
+  yearLevel: string = "all",
+  sortBy: string = "program_code",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1,
+) {
+  try {
+    // If limit is 0, we set offset to 0 to fetch all records without pagination
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<ProgramRecord[]>`
+      SELECT * FROM programs_read(
+        ${search || null},
+        ${yearLevel},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch programs:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch programs.",
+      data: [],
+    };
+  }
+}
+
+/* FETCH PROGRAMS COUNT */
+export async function fetchProgramsCount(
+  search: string | null = null,
+  yearLevel: string = "all",
+) {
+  try {
+    const [result] = await sql<{ programs_count: number }[]>`
+      SELECT programs_count(
+        ${search || null},
+        ${yearLevel}
+      );
+    `;
+
+    return {
+      success: true,
+      count: result?.programs_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch programs count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count programs.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE PROGRAM */
+export async function createProgram(actor: string, input: ProgramInput) {
+  try {
+    const [result] = await sql<{ programs_create: string }[]>`
+      SELECT programs_create(
+        ${input.program_code},
+        ${input.program_name ?? null},
+        ${input.year_level ?? null},
+        ${input.students ? JSON.stringify(input.students) : "[]"}::json
+      );
+    `;
+
+    createLog(
+      actor,
+      "create_program",
+      `program_code: '${input.program_code}'`
+    );
+
+    return {
+      success: true,
+      programCode: result?.programs_create,
+    };
+  } catch (error) {
+    console.error("Failed to create program:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create program record.",
+    };
+  }
+}
+
+/* UPDATE PROGRAM */
+export async function updateProgram(
+  actor: string,
+  programCode: string,
+  input: Partial<Omit<ProgramInput, "program_code">>
+) {
+  try {
+    await sql`
+      SELECT programs_update(
+        ${programCode},
+        ${input.program_name ?? null},
+        ${input.year_level ?? null},
+        ${input.students ? JSON.stringify(input.students) : null}::json
+      );
+    `;
+
+    createLog(actor, "update_program", `program_code: '${programCode}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update program:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update program record.",
+    };
+  }
+}
+
+/* DELETE PROGRAM */
+export async function deleteProgram(actor: string, programCode: string) {
+  try {
+    await sql`
+      SELECT programs_delete(${programCode});
+    `;
+
+    createLog(actor, "delete_program", `program_code: '${programCode}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete program:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete program record.",
+    };
+  }
+}
+
+/************
+ * TEACHERS *
+ ************/
+
+export interface TeacherInput {
+  pscs_id?: string;
+  email?: string;
+  f_name?: string;
+  m_name?: string;
+  surname?: string;
+  suffix?: string;
+  teacher_code?: string;
+  specialization?: string;
+  employment_type?: string;
+  availability?: Record<string, unknown> | Array<unknown>;
+  preferences?: Record<string, unknown> | Array<unknown>;
+}
+
+export interface TeacherRecord {
+  teacher_id: string;
+  pscs_id: string | null;
+  email: string | null;
+  f_name: string | null;
+  m_name: string | null;
+  surname: string | null;
+  suffix: string | null;
+  full_name: string;
+  teacher_code: string | null;
+  specialization: string | null;
+  employment_type: string | null;
+  availability: Record<string, unknown> | Array<unknown>;
+  preferences: Record<string, unknown> | Array<unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+// Read Teachers
+export async function fetchTeachers(
+  search: string | null = null,
+  sortBy: string = "surname",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<TeacherRecord[]>`
+      SELECT * FROM teachers_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch teachers:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch teachers.",
+      data: [],
+    };
+  }
+}
+
+// Count Teachers
+export async function fetchTeachersCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ teachers_count: number }[]>`
+      SELECT teachers_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.teachers_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch teachers count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count teachers.",
+      count: 0,
+    };
+  }
+}
+
+// Create Teachers
+export async function createTeacher(actor: string, input: TeacherInput) {
+  try {
+    const [result] = await sql<{ teachers_create: string }[]>`
+      SELECT teachers_create(
+        ${input.pscs_id ?? null},
+        ${input.email ?? null},
+        ${input.f_name ?? null},
+        ${input.m_name ?? null},
+        ${input.surname ?? null},
+        ${input.suffix ?? null},
+        ${input.teacher_code ?? null},
+        ${input.specialization ?? null},
+        ${input.employment_type ?? null},
+        ${input.availability ? JSON.stringify(input.availability) : "{}"}::jsonb,
+        ${input.preferences ? JSON.stringify(input.preferences) : "{}"}::jsonb
+      );
+    `;
+
+    createLog(
+      actor,
+      "create_teacher",
+      `email: '${input.email}', teacher_code: '${input.teacher_code}'`
+    );
+
+    return {
+      success: true,
+      teacherId: result?.teachers_create,
+    };
+  } catch (error) {
+    console.error("Failed to create teacher:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create teacher record.",
+    };
+  }
+}
+
+// Update Teachers
+export async function updateTeacher(
+  actor: string,
+  teacherId: string,
+  input: Partial<TeacherInput>,
+) {
+  try {
+    await sql`
+      SELECT teachers_update(
+               ${teacherId}::UUID,
+               ${input.pscs_id ?? null},
+               ${input.email ?? null},
+               ${input.f_name ?? null},
+               ${input.m_name ?? null},
+               ${input.surname ?? null},
+               ${input.suffix ?? null},
+               ${input.teacher_code ?? null},
+               ${input.specialization ?? null},
+               ${input.employment_type ?? null},
+               ${input.availability ? JSON.stringify(input.availability) : null}::jsonb,
+               ${input.preferences ? JSON.stringify(input.preferences) : null}::jsonb
+             );
+    `;
+
+    createLog(actor, "update_teacher", `teacher_id: '${teacherId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update teacher:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update teacher record.",
+    };
+  }
+}
+
+// Delete Teachers
+export async function deleteTeacher(actor: string, teacherId: string) {
+  try {
+    await sql`
+      SELECT teachers_delete(${teacherId}::UUID);
+    `;
+
+    createLog(actor, "delete_teacher", `teacher_id: '${teacherId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete teacher:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete teacher record.",
+    };
+  }
+}
+
+/*******
+ * MAQ *
+ *******/
+
+export interface MaqClusterRecord {
+  cluster_name: string;
+}
+
+/* FETCH MAQ CLUSTERS (READ) */
+export async function fetchMaqClusters(
+  search: string | null = null,
+  limit: number = 10,
+  page: number = 1,
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<MaqClusterRecord[]>`
+      SELECT * FROM maq_cluster_read(
+        ${search || null},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch MAQ clusters:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch MAQ clusters.",
+      data: [],
+    };
+  }
+}
+
+/* FETCH MAQ CLUSTERS COUNT */
+export async function fetchMaqClustersCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ maq_cluster_count: number }[]>`
+      SELECT maq_cluster_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.maq_cluster_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch MAQ clusters count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count MAQ clusters.",
+      count: 0,
+    };
+  }
+}
+
 /******************
  * CONFIGURATIONS *
  ******************/

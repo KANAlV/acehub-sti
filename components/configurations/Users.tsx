@@ -574,6 +574,7 @@ export default function UsersManagement() {
                     <a
                       onClick={() => loadEditData(item.user_id)}
                       className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
+                      hidden={item.is_blacklisted}
                     >
                       Edit
                     </a>

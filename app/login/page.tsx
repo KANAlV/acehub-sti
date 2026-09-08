@@ -1,7 +1,7 @@
 "use client";
 
 import { useMsal } from "@azure/msal-react";
-import { DarkThemeToggle } from "flowbite-react";
+import { DarkThemeToggle, Spinner } from "flowbite-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { syncUserToDatabase } from "@/app/actions/user";
@@ -24,7 +24,7 @@ export default function LoginPage() {
           // 1. Wait for database insertion/update to complete
           await syncUserToDatabase(
             activeAccount.username,
-            activeAccount.name ?? ""
+            activeAccount.name ?? "",
           );
           // 2. Only navigate AFTER sync completes successfully
           router.push("/dashboard");
@@ -52,9 +52,18 @@ export default function LoginPage() {
     }
   };
 
-  // Prevent UI flashing during MSAL redirect or Server Action execution
+  // Show a full-screen loading spinner while MSAL resolves redirect or syncs the account
   if (inProgress !== "none" || accounts.length > 0 || isSyncing) {
-    return null;
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner size="xl" aria-label="Authenticating..." />
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
+            {isSyncing ? "Syncing account details..." : "Authenticating..."}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

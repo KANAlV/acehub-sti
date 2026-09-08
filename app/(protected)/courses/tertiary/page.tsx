@@ -10,7 +10,6 @@ import {
   ModalHeader,
   Pagination,
   Progress,
-  Select,
   Spinner,
   Table,
   TableBody,
@@ -33,36 +32,44 @@ import { useEffect, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import {
   filterAlphanumericDashUnderscore,
-  filterAlphaDashSpace,
+  filterAlphanumericDashUnderscoreComma,
+  filterNumeric,
 } from "@/utils/validation";
+import {
+  fetchPrograms,
+  fetchProgramsCount,
+  createProgram,
+  updateProgram,
+  deleteProgram,
+  ProgramRecord,
+  ProgramInput,
+} from "@/app/actions/system";
 
-// Models the student distribution per year level inside the JSON column
-export interface YearLevelDistribution {
-  first_year?: number;
-  second_year?: number;
-  third_year?: number;
-  fourth_year?: number;
+// Matches {"1": 100, "2": 80, "3": 60, "4": 40} structure in DB
+export interface CollegeYearLevelDistribution {
+  "1"?: number;
+  "2"?: number;
+  "3"?: number;
+  "4"?: number;
   [key: string]: unknown;
 }
 
-// Matches the "programs" table schema
-export interface Program {
+export interface CollegeProgram {
   program_code: string;
   program_name: string | null;
-  year_level: string | null;
-  students: YearLevelDistribution | null;
+  students: CollegeYearLevelDistribution | null;
   created_at?: string;
   updated_at?: string;
 }
 
-export default function ProgramsManagement() {
+export default function CollegeProgramsManagement() {
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
-  const activeUser = activeAccount?.username;
+  const activeUser = activeAccount?.username || "system";
   const [isLoading, setLoading] = useState(false);
 
   // --- Table & Filter States --- //
-  const [programs, setPrograms] = useState<Program[]>([]);
+  const [programs, setPrograms] = useState<CollegeProgram[]>([]);
   const [programsCount, setProgramsCount] = useState(0);
   const [sortProgramsBy, setSortProgramsBy] = useState("program_code");
   const [sortProgramsDir, setSortProgramsDir] = useState<"ASC" | "DESC">("ASC");
@@ -79,27 +86,24 @@ export default function ProgramsManagement() {
   // Add State
   const [inputProgramCode, setInputProgramCode] = useState("");
   const [inputProgramName, setInputProgramName] = useState("");
-  const [inputYearLevel, setInputYearLevel] = useState("1st Year");
-  const [inputFirstYearCount, setInputFirstYearCount] = useState<number | "">(0);
-  const [inputSecondYearCount, setInputSecondYearCount] = useState<number | "">(0);
-  const [inputThirdYearCount, setInputThirdYearCount] = useState<number | "">(0);
-  const [inputFourthYearCount, setInputFourthYearCount] = useState<number | "">(0);
+  const [inputYear1Count, setInputYear1Count] = useState<number | "">(0);
+  const [inputYear2Count, setInputYear2Count] = useState<number | "">(0);
+  const [inputYear3Count, setInputYear3Count] = useState<number | "">(0);
+  const [inputYear4Count, setInputYear4Count] = useState<number | "">(0);
 
   // Update State
   const [editProgramName, setEditProgramName] = useState("");
-  const [editYearLevel, setEditYearLevel] = useState("1st Year");
-  const [editFirstYearCount, setEditFirstYearCount] = useState<number | "">(0);
-  const [editSecondYearCount, setEditSecondYearCount] = useState<number | "">(0);
-  const [editThirdYearCount, setEditThirdYearCount] = useState<number | "">(0);
-  const [editFourthYearCount, setEditFourthYearCount] = useState<number | "">(0);
+  const [editYear1Count, setEditYear1Count] = useState<number | "">(0);
+  const [editYear2Count, setEditYear2Count] = useState<number | "">(0);
+  const [editYear3Count, setEditYear3Count] = useState<number | "">(0);
+  const [editYear4Count, setEditYear4Count] = useState<number | "">(0);
 
   // Baseline Comparison State for Edit Form
   const [baseProgramName, setBaseProgramName] = useState("");
-  const [baseYearLevel, setBaseYearLevel] = useState("1st Year");
-  const [baseFirstYearCount, setBaseFirstYearCount] = useState<number | "">(0);
-  const [baseSecondYearCount, setBaseSecondYearCount] = useState<number | "">(0);
-  const [baseThirdYearCount, setBaseThirdYearCount] = useState<number | "">(0);
-  const [baseFourthYearCount, setBaseFourthYearCount] = useState<number | "">(0);
+  const [baseYear1Count, setBaseYear1Count] = useState<number | "">(0);
+  const [baseYear2Count, setBaseYear2Count] = useState<number | "">(0);
+  const [baseYear3Count, setBaseYear3Count] = useState<number | "">(0);
+  const [baseYear4Count, setBaseYear4Count] = useState<number | "">(0);
 
   // Validation States
   const [programCodeError, setProgramCodeError] = useState("");
@@ -133,13 +137,13 @@ export default function ProgramsManagement() {
 
   const handleProgramNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value.slice(0, 100);
-    const val = filterAlphaDashSpace(rawVal);
+    const val = filterAlphanumericDashUnderscoreComma(rawVal);
     setInputProgramName(val);
   };
 
   const handleEditProgramNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value.slice(0, 100);
-    const val = filterAlphaDashSpace(rawVal);
+    const val = filterAlphanumericDashUnderscoreComma(rawVal);
     setEditProgramName(val);
   };
 
@@ -154,15 +158,26 @@ export default function ProgramsManagement() {
    * HELPER UTILITIES *
    ***********************/
 
-  const getTotalStudents = (students: YearLevelDistribution | null): number => {
+  const parseStudentsJSON = (students: unknown): CollegeYearLevelDistribution => {
+    if (!students) return { "1": 0, "2": 0, "3": 0, "4": 0 };
+    if (typeof students === "string") {
+      try {
+        return JSON.parse(students);
+      } catch {
+        return { "1": 0, "2": 0, "3": 0, "4": 0 };
+      }
+    }
+    return students as CollegeYearLevelDistribution;
+  };
+
+  const getTotalStudents = (students: CollegeYearLevelDistribution | null): number => {
     if (!students) return 0;
-    const { first_year = 0, second_year = 0, third_year = 0, fourth_year = 0 } = students;
-    return (
-      (Number(first_year) || 0) +
-      (Number(second_year) || 0) +
-      (Number(third_year) || 0) +
-      (Number(fourth_year) || 0)
-    );
+    const parsed = parseStudentsJSON(students);
+    const y1 = parsed["1"] ?? 0;
+    const y2 = parsed["2"] ?? 0;
+    const y3 = parsed["3"] ?? 0;
+    const y4 = parsed["4"] ?? 0;
+    return (Number(y1) || 0) + (Number(y2) || 0) + (Number(y3) || 0) + (Number(y4) || 0);
   };
 
   /***********************
@@ -175,14 +190,14 @@ export default function ProgramsManagement() {
     setSortProgramsDir(newDir);
     setPrograms([]);
     setCurrentProgramPage(1);
-    getPrograms(searchTerm, sortBy, newDir, maxRowPrograms, 1);
+    getCollegePrograms(searchTerm, sortBy, newDir, maxRowPrograms, 1);
   };
 
   const onPageChangePrograms = (page: number) => {
     if (pageChangingPrograms) return;
     setPageChangingPrograms(true);
     setPrograms([]);
-    getPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, page);
+    getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, page);
     setPageChangingPrograms(false);
     setCurrentProgramPage(page);
   };
@@ -202,24 +217,23 @@ export default function ProgramsManagement() {
     const selected = programs.find((item) => item.program_code === program_code);
 
     if (selected) {
-      const first = selected.students?.first_year ?? 0;
-      const second = selected.students?.second_year ?? 0;
-      const third = selected.students?.third_year ?? 0;
-      const fourth = selected.students?.fourth_year ?? 0;
+      const parsed = parseStudentsJSON(selected.students);
+      const y1 = parsed["1"] ?? 0;
+      const y2 = parsed["2"] ?? 0;
+      const y3 = parsed["3"] ?? 0;
+      const y4 = parsed["4"] ?? 0;
 
       setBaseProgramName(selected.program_name ?? "");
-      setBaseYearLevel(selected.year_level ?? "1st Year");
-      setBaseFirstYearCount(first);
-      setBaseSecondYearCount(second);
-      setBaseThirdYearCount(third);
-      setBaseFourthYearCount(fourth);
+      setBaseYear1Count(y1);
+      setBaseYear2Count(y2);
+      setBaseYear3Count(y3);
+      setBaseYear4Count(y4);
 
       setEditProgramName(selected.program_name ?? "");
-      setEditYearLevel(selected.year_level ?? "1st Year");
-      setEditFirstYearCount(first);
-      setEditSecondYearCount(second);
-      setEditThirdYearCount(third);
-      setEditFourthYearCount(fourth);
+      setEditYear1Count(y1);
+      setEditYear2Count(y2);
+      setEditYear3Count(y3);
+      setEditYear4Count(y4);
 
       setOpenEditProgramModal(true);
     }
@@ -232,35 +246,26 @@ export default function ProgramsManagement() {
     setOpenEditProgramModal(false);
     setOpenDeleteProgramModal(false);
 
-    // Reset add state
     setInputProgramCode("");
     setInputProgramName("");
-    setInputYearLevel("1st Year");
-    setInputFirstYearCount(0);
-    setInputSecondYearCount(0);
-    setInputThirdYearCount(0);
-    setInputFourthYearCount(0);
+    setInputYear1Count(0);
+    setInputYear2Count(0);
+    setInputYear3Count(0);
+    setInputYear4Count(0);
 
-    // Reset edit state
     setEditProgramName("");
-    setEditYearLevel("1st Year");
-    setEditFirstYearCount(0);
-    setEditSecondYearCount(0);
-    setEditThirdYearCount(0);
-    setEditFourthYearCount(0);
+    setEditYear1Count(0);
+    setEditYear2Count(0);
+    setEditYear3Count(0);
+    setEditYear4Count(0);
   };
 
   /**********************
-   * STUBBED CRUD LOGIC *
+   * INTEGRATED CRUD LOGIC *
    **********************/
 
-  // Count
-  async function getProgramCount(search?: string | null) {
-    // TODO: Plug in server action -> fetchProgramsCount(search)
-  }
-
   // Read
-  async function getPrograms(
+  async function getCollegePrograms(
     search: string | null = searchTerm,
     sortby: string = sortProgramsBy,
     sortdir: "ASC" | "DESC" = sortProgramsDir,
@@ -269,7 +274,31 @@ export default function ProgramsManagement() {
   ) {
     setLoading(true);
 
-    // TODO: Plug in server action -> fetchPrograms(search, sortby, sortdir, limit, page)
+    const [dataRes, countRes] = await Promise.all([
+      fetchPrograms(search, "tertiary", sortby, sortdir, limit, page),
+      fetchProgramsCount(search, "tertiary"),
+    ]);
+
+    if (dataRes.success && Array.isArray(dataRes.data)) {
+      const mappedPrograms: CollegeProgram[] = dataRes.data.map((item: ProgramRecord) => ({
+        program_code: item.program_code,
+        program_name: item.program_name,
+        students: parseStudentsJSON(item.students),
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+      }));
+
+      setPrograms(mappedPrograms);
+    } else {
+      triggerToast("error", dataRes.error || "Failed to fetch college programs.");
+      setPrograms([]);
+    }
+
+    if (countRes.success) {
+      setProgramsCount(countRes.count);
+    } else {
+      setProgramsCount(0);
+    }
 
     setLoading(false);
   }
@@ -281,40 +310,64 @@ export default function ProgramsManagement() {
       return;
     }
 
-    const studentsDistribution: YearLevelDistribution = {
-      first_year: Number(inputFirstYearCount) || 0,
-      second_year: Number(inputSecondYearCount) || 0,
-      third_year: Number(inputThirdYearCount) || 0,
-      fourth_year: Number(inputFourthYearCount) || 0,
+    const payload: ProgramInput = {
+      program_code: inputProgramCode.trim(),
+      program_name: inputProgramName.trim() || undefined,
+      year_level: "tertiary",
+      students: {
+        "1": Number(inputYear1Count) || 0,
+        "2": Number(inputYear2Count) || 0,
+        "3": Number(inputYear3Count) || 0,
+        "4": Number(inputYear4Count) || 0,
+      },
     };
 
-    // TODO: Plug in server action -> createProgram(activeUser, { program_code, program_name, year_level, students: studentsDistribution })
+    const res = await createProgram(activeUser, payload);
 
-    handleCloseProgramModals();
-    getPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+    if (res.success) {
+      triggerToast("success", `College Program "${inputProgramCode}" created successfully.`);
+      handleCloseProgramModals();
+      getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+    } else {
+      triggerToast("error", res.error || "Failed to create college program.");
+    }
   }
 
   // Update
   async function handleProgramUpdate() {
-    const studentsDistribution: YearLevelDistribution = {
-      first_year: Number(editFirstYearCount) || 0,
-      second_year: Number(editSecondYearCount) || 0,
-      third_year: Number(editThirdYearCount) || 0,
-      fourth_year: Number(editFourthYearCount) || 0,
+    const payload = {
+      program_name: editProgramName.trim() || undefined,
+      year_level: "tertiary",
+      students: {
+        "1": Number(editYear1Count) || 0,
+        "2": Number(editYear2Count) || 0,
+        "3": Number(editYear3Count) || 0,
+        "4": Number(editYear4Count) || 0,
+      },
     };
 
-    // TODO: Plug in server action -> updateProgram(activeUser, selectedProgramCode, { program_name, year_level, students: studentsDistribution })
+    const res = await updateProgram(activeUser, selectedProgramCode, payload);
 
-    handleCloseProgramModals();
-    getPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+    if (res.success) {
+      triggerToast("success", `College Program "${selectedProgramCode}" updated successfully.`);
+      handleCloseProgramModals();
+      getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+    } else {
+      triggerToast("error", res.error || "Failed to update college program.");
+    }
   }
 
   // Delete
   async function handleProgramDelete() {
-    // TODO: Plug in server action -> deleteProgram(activeUser, selectedProgramCode)
+    const res = await deleteProgram(activeUser, selectedProgramCode);
 
-    handleCloseProgramModals();
-    getPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+    if (res.success) {
+      triggerToast("success", `College Program "${selectedProgramCode}" deleted successfully.`);
+      handleCloseProgramModals();
+      getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+    } else {
+      triggerToast("error", res.error || "Failed to delete college program.");
+    }
   }
 
   /*******************
@@ -357,7 +410,7 @@ export default function ProgramsManagement() {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      void getPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+      void getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
@@ -393,172 +446,160 @@ export default function ProgramsManagement() {
         </div>
       )}
 
-      {/* --- Header Section with Search & Add Button --- */}
-      <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-        <div>
-          <h2 className="mb-1 text-lg font-bold">Programs Management</h2>
-          <p className="text-gray-500">
-            Manage academic programs, year levels, and student counts per batch.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="relative mr-4 w-full md:w-64">
-            <TextInput
-              id="search-programs"
-              type="text"
-              placeholder="Search code, program name..."
-              value={searchTerm}
-              onChange={handleSearchChange}
-              icon={HiSearch}
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
-              >
-                <HiX className="h-4 w-4" />
-              </button>
-            )}
+      <div className={"m-8"}>
+        {/* --- Header Section with Search & Add Button --- */}
+        <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+          <div>
+            <h2 className="mb-1 text-lg font-bold">College Programs Management</h2>
+            <p className="text-gray-500">
+              Manage college degree programs and student counts per year level (1st - 4th Year).
+            </p>
           </div>
 
-          <Button
-            className="whitespace-nowrap"
-            onClick={() => setOpenAddProgramModal(true)}
-          >
-            <FaPlus className="mr-2" />
-            Add Program
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="relative mr-4 w-full md:w-64">
+              <TextInput
+                id="search-college-programs"
+                type="text"
+                placeholder="Search code, program name..."
+                value={searchTerm}
+                onChange={handleSearchChange}
+                icon={HiSearch}
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+                >
+                  <HiX className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            <Button
+              className="whitespace-nowrap"
+              onClick={() => setOpenAddProgramModal(true)}
+            >
+              <FaPlus className="mr-2" />
+              Add Program
+            </Button>
+          </div>
+        </div>
+
+        {/* --- Main College Programs Table --- */}
+        <Card className="overflow-x-auto">
+          <Table hoverable>
+            <TableHead>
+              <TableRow>
+                <TableHeadCell onClick={() => handleProgramSorting("program_code")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                    Program Code
+                    {sortProgramsBy === "program_code" && (
+                      sortProgramsDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />
+                    )}
+                  </div>
+                </TableHeadCell>
+
+                <TableHeadCell onClick={() => handleProgramSorting("program_name")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                    Program Name
+                    {sortProgramsBy === "program_name" && (
+                      sortProgramsDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />
+                    )}
+                  </div>
+                </TableHeadCell>
+
+                <TableHeadCell>Student Distribution (1st - 4th Year)</TableHeadCell>
+
+                <TableHeadCell>Total Students</TableHeadCell>
+
+                <TableHeadCell>
+                  <span className="sr-only">Edit</span>
+                </TableHeadCell>
+              </TableRow>
+            </TableHead>
+
+            <TableBody className="divide-y">
+              {programs.length > 0 ? (
+                programs.map((item) => {
+                  const total = getTotalStudents(item.students);
+                  const st = parseStudentsJSON(item.students);
+                  return (
+                    <TableRow
+                      key={item.program_code}
+                      className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                    >
+                      <TableCell className="font-medium whitespace-nowrap">
+                        {item.program_code}
+                      </TableCell>
+                      <TableCell>{item.program_name || "—"}</TableCell>
+                      <TableCell>
+                        <span className="text-xs">
+                          1st Yr: <strong>{st["1"] ?? 0}</strong> | 2nd Yr:{" "}
+                          <strong>{st["2"] ?? 0}</strong> | 3rd Yr:{" "}
+                          <strong>{st["3"] ?? 0}</strong> | 4th Yr:{" "}
+                          <strong>{st["4"] ?? 0}</strong>
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-semibold">{total}</TableCell>
+                      <TableCell>
+                        <a
+                          onClick={() => loadEditData(item.program_code)}
+                          className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
+                        >
+                          Edit
+                        </a>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : isLoading ? (
+                <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                  <TableCell
+                    colSpan={5}
+                    className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                  >
+                    <div className="flex items-center justify-center">
+                      <Spinner />
+                      <span className="ml-4">fetching data...</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                  <TableCell
+                    colSpan={5}
+                    className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                  >
+                    {searchTerm
+                      ? `No college programs matching "${searchTerm}" found.`
+                      : "No college program entries found yet."}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+
+        {/* --- Pagination --- */}
+        <div
+          className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
+        >
+          <Pagination
+            layout="table"
+            currentPage={currentProgramPage || 1}
+            itemsPerPage={maxRowPrograms}
+            totalItems={programsCount || 1}
+            onPageChange={onPageChangePrograms}
+            showIcons
+          />
         </div>
       </div>
 
-      {/* --- Main Programs Table --- */}
-      <Card className="overflow-x-auto">
-        <Table hoverable>
-          <TableHead>
-            <TableRow>
-              <TableHeadCell onClick={() => handleProgramSorting("program_code")}>
-                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                  Program Code
-                  {sortProgramsBy === "program_code" && (
-                    sortProgramsDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />
-                  )}
-                </div>
-              </TableHeadCell>
-
-              <TableHeadCell onClick={() => handleProgramSorting("program_name")}>
-                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                  Program Name
-                  {sortProgramsBy === "program_name" && (
-                    sortProgramsDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />
-                  )}
-                </div>
-              </TableHeadCell>
-
-              <TableHeadCell onClick={() => handleProgramSorting("year_level")}>
-                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                  Active Year Level
-                  {sortProgramsBy === "year_level" && (
-                    sortProgramsDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />
-                  )}
-                </div>
-              </TableHeadCell>
-
-              <TableHeadCell>Student Distribution (1st - 4th Yr)</TableHeadCell>
-
-              <TableHeadCell>Total Students</TableHeadCell>
-
-              <TableHeadCell>
-                <span className="sr-only">Edit</span>
-              </TableHeadCell>
-            </TableRow>
-          </TableHead>
-
-          <TableBody className="divide-y">
-            {programs.length > 0 ? (
-              programs.map((item) => {
-                const total = getTotalStudents(item.students);
-                const st = item.students;
-                return (
-                  <TableRow
-                    key={item.program_code}
-                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    <TableCell className="font-medium whitespace-nowrap">
-                      {item.program_code}
-                    </TableCell>
-                    <TableCell>{item.program_name || "—"}</TableCell>
-                    <TableCell>{item.year_level || "—"}</TableCell>
-                    <TableCell>
-                      {st ? (
-                        <span className="text-xs">
-                          1st: <strong>{st.first_year ?? 0}</strong> | 2nd:{" "}
-                          <strong>{st.second_year ?? 0}</strong> | 3rd:{" "}
-                          <strong>{st.third_year ?? 0}</strong> | 4th:{" "}
-                          <strong>{st.fourth_year ?? 0}</strong>
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell className="font-semibold">{total}</TableCell>
-                    <TableCell>
-                      <a
-                        onClick={() => loadEditData(item.program_code)}
-                        className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
-                      >
-                        Edit
-                      </a>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            ) : isLoading ? (
-              <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                <TableCell
-                  colSpan={6}
-                  className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
-                >
-                  <div className="flex items-center justify-center">
-                    <Spinner />
-                    <span className="ml-4">fetching data...</span>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                <TableCell
-                  colSpan={6}
-                  className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
-                >
-                  {searchTerm
-                    ? `No programs matching "${searchTerm}" found.`
-                    : "No program entries found yet."}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
-
-      {/* --- Pagination --- */}
-      <div
-        className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
-      >
-        <Pagination
-          layout="table"
-          currentPage={currentProgramPage || 1}
-          itemsPerPage={maxRowPrograms}
-          totalItems={programsCount || 1}
-          onPageChange={onPageChangePrograms}
-          showIcons
-        />
-      </div>
-
-      {/* --- Add Program Modal --- */}
+      {/* --- Add College Program Modal --- */}
       <Modal show={openAddProgramModal} onClose={handleCloseProgramModals}>
-        <ModalHeader>Add Program</ModalHeader>
+        <ModalHeader>Add College Program</ModalHeader>
         <ModalBody>
           <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
             <div>
@@ -600,86 +641,70 @@ export default function ProgramsManagement() {
 
             <div>
               <div className="mb-2 block">
-                <Label htmlFor="year_level">Active Year Level</Label>
-              </div>
-              <Select
-                id="year_level"
-                value={inputYearLevel}
-                onChange={(e) => setInputYearLevel(e.target.value)}
-              >
-                <option value="1st Year">1st Year</option>
-                <option value="2nd Year">2nd Year</option>
-                <option value="3rd Year">3rd Year</option>
-                <option value="4th Year">4th Year</option>
-              </Select>
-            </div>
-
-            <div>
-              <div className="mb-2 block">
                 <Label>Student Distribution by Year Level (Max 1,000 per year)</Label>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label htmlFor="input_first_year" className="text-xs">
+                  <Label htmlFor="input_year_1" className="text-xs">
                     1st Year Students
                   </Label>
                   <TextInput
-                    id="input_first_year"
-                    type="number"
+                    id="input_year_1"
+                    type="text"
                     min={0}
                     max={1000}
                     placeholder="0"
-                    value={inputFirstYearCount}
+                    value={inputYear1Count}
                     onChange={(e) =>
-                      setInputFirstYearCount(clampStudentCount(e.target.value))
+                      setInputYear1Count(clampStudentCount(filterNumeric(e.target.value)))
                     }
                   />
                 </div>
                 <div>
-                  <Label htmlFor="input_second_year" className="text-xs">
+                  <Label htmlFor="input_year_2" className="text-xs">
                     2nd Year Students
                   </Label>
                   <TextInput
-                    id="input_second_year"
-                    type="number"
+                    id="input_year_2"
+                    type="text"
                     min={0}
                     max={1000}
                     placeholder="0"
-                    value={inputSecondYearCount}
+                    value={inputYear2Count}
                     onChange={(e) =>
-                      setInputSecondYearCount(clampStudentCount(e.target.value))
+                      setInputYear2Count(clampStudentCount(filterNumeric(e.target.value)))
                     }
                   />
                 </div>
                 <div>
-                  <Label htmlFor="input_third_year" className="text-xs">
+                  <Label htmlFor="input_year_3" className="text-xs">
                     3rd Year Students
                   </Label>
                   <TextInput
-                    id="input_third_year"
-                    type="number"
+                    id="input_year_3"
+                    type="text"
                     min={0}
                     max={1000}
                     placeholder="0"
-                    value={inputThirdYearCount}
+                    value={inputYear3Count}
                     onChange={(e) =>
-                      setInputThirdYearCount(clampStudentCount(e.target.value))
+                      setInputYear3Count(clampStudentCount(filterNumeric(e.target.value)))
                     }
                   />
                 </div>
                 <div>
-                  <Label htmlFor="input_fourth_year" className="text-xs">
+                  <Label htmlFor="input_year_4" className="text-xs">
                     4th Year Students
                   </Label>
                   <TextInput
-                    id="input_fourth_year"
-                    type="number"
+                    id="input_year_4"
+                    type="text"
                     min={0}
                     max={1000}
                     placeholder="0"
-                    value={inputFourthYearCount}
+                    value={inputYear4Count}
                     onChange={(e) =>
-                      setInputFourthYearCount(clampStudentCount(e.target.value))
+                      setInputYear4Count(clampStudentCount(filterNumeric(e.target.value)))
                     }
                   />
                 </div>
@@ -697,9 +722,9 @@ export default function ProgramsManagement() {
         </ModalFooter>
       </Modal>
 
-      {/* --- Edit Program Modal --- */}
+      {/* --- Edit College Program Modal --- */}
       <Modal show={openEditProgramModal} onClose={handleCloseProgramModals}>
-        <ModalHeader>Edit Program ({selectedProgramCode})</ModalHeader>
+        <ModalHeader>Edit College Program ({selectedProgramCode})</ModalHeader>
         <ModalBody>
           <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
             <div>
@@ -719,86 +744,70 @@ export default function ProgramsManagement() {
 
             <div>
               <div className="mb-2 block">
-                <Label htmlFor="edit_year_level">Active Year Level</Label>
-              </div>
-              <Select
-                id="edit_year_level"
-                value={editYearLevel}
-                onChange={(e) => setEditYearLevel(e.target.value)}
-              >
-                <option value="1st Year">1st Year</option>
-                <option value="2nd Year">2nd Year</option>
-                <option value="3rd Year">3rd Year</option>
-                <option value="4th Year">4th Year</option>
-              </Select>
-            </div>
-
-            <div>
-              <div className="mb-2 block">
                 <Label>Student Distribution by Year Level (Max 1,000 per year)</Label>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label htmlFor="edit_first_year" className="text-xs">
+                  <Label htmlFor="edit_year_1" className="text-xs">
                     1st Year Students
                   </Label>
                   <TextInput
-                    id="edit_first_year"
-                    type="number"
+                    id="edit_year_1"
+                    type="text"
                     min={0}
                     max={1000}
                     placeholder="0"
-                    value={editFirstYearCount}
+                    value={editYear1Count}
                     onChange={(e) =>
-                      setEditFirstYearCount(clampStudentCount(e.target.value))
+                      setEditYear1Count(clampStudentCount(filterNumeric(e.target.value)))
                     }
                   />
                 </div>
                 <div>
-                  <Label htmlFor="edit_second_year" className="text-xs">
+                  <Label htmlFor="edit_year_2" className="text-xs">
                     2nd Year Students
                   </Label>
                   <TextInput
-                    id="edit_second_year"
-                    type="number"
+                    id="edit_year_2"
+                    type="text"
                     min={0}
                     max={1000}
                     placeholder="0"
-                    value={editSecondYearCount}
+                    value={editYear2Count}
                     onChange={(e) =>
-                      setEditSecondYearCount(clampStudentCount(e.target.value))
+                      setEditYear2Count(clampStudentCount(filterNumeric(e.target.value)))
                     }
                   />
                 </div>
                 <div>
-                  <Label htmlFor="edit_third_year" className="text-xs">
+                  <Label htmlFor="edit_year_3" className="text-xs">
                     3rd Year Students
                   </Label>
                   <TextInput
-                    id="edit_third_year"
-                    type="number"
+                    id="edit_year_3"
+                    type="text"
                     min={0}
                     max={1000}
                     placeholder="0"
-                    value={editThirdYearCount}
+                    value={editYear3Count}
                     onChange={(e) =>
-                      setEditThirdYearCount(clampStudentCount(e.target.value))
+                      setEditYear3Count(clampStudentCount(filterNumeric(e.target.value)))
                     }
                   />
                 </div>
                 <div>
-                  <Label htmlFor="edit_fourth_year" className="text-xs">
+                  <Label htmlFor="edit_year_4" className="text-xs">
                     4th Year Students
                   </Label>
                   <TextInput
-                    id="edit_fourth_year"
-                    type="number"
+                    id="edit_year_4"
+                    type="text"
                     min={0}
                     max={1000}
                     placeholder="0"
-                    value={editFourthYearCount}
+                    value={editYear4Count}
                     onChange={(e) =>
-                      setEditFourthYearCount(clampStudentCount(e.target.value))
+                      setEditYear4Count(clampStudentCount(filterNumeric(e.target.value)))
                     }
                   />
                 </div>
@@ -812,11 +821,10 @@ export default function ProgramsManagement() {
               onClick={handleProgramUpdate}
               disabled={
                 baseProgramName === editProgramName.trim() &&
-                baseYearLevel === editYearLevel &&
-                baseFirstYearCount === editFirstYearCount &&
-                baseSecondYearCount === editSecondYearCount &&
-                baseThirdYearCount === editThirdYearCount &&
-                baseFourthYearCount === editFourthYearCount
+                baseYear1Count === editYear1Count &&
+                baseYear2Count === editYear2Count &&
+                baseYear3Count === editYear3Count &&
+                baseYear4Count === editYear4Count
               }
             >
               Save

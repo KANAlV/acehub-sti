@@ -96,6 +96,9 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
           config: Boolean(result.data.config),
           superuser: Boolean(result.data.superuser),
         });
+
+
+
       } else {
         console.error("Failed to fetch permissions:", result.error);
         setToastMessage(result?.error ?? "An unexpected error occurred");
@@ -128,7 +131,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
   }, [account]);
 
   /** --- Blacklist Checker --- **/
-  useEffect(() => {VerifyBlacklistStatus(account!.username);}, [pathname]);
+  useEffect(() => {if(account){VerifyBlacklistStatus(account!.username);}}, [account, pathname]);
 
   function closeToast() {
     setShowToast(false);
@@ -158,7 +161,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       )}
 
       <Sidebar
-        className={`fixed top-[58px] bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent border-r border-gray-200 bg-gray-200 shadow-lg shadow-gray-400/60 transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
+        className={`fixed top-17 bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent border-r border-gray-200 bg-gray-200 shadow-lg shadow-gray-400/60 transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
         aria-label="Sidebar"
       >
         {/* Navigation Items (Stretches to fill remaining vertical space) */}
@@ -592,7 +595,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
 
       {/* Mobile Sidebar On-Click Outside */}
       <div
-        className={`fixed top-[64px] bottom-0 left-0 z-10 h-[calc(100vh-64px)] w-full bg-gray-500/30 ${collapsed ? "hidden md:hidden" : "md:hidden"} `}
+        className={`fixed top-[0px] bottom-0 left-0 z-10 h-full w-full ${collapsed ? "hidden md:hidden" : "md:hidden"} `}
         onClick={() => setCollapsed(true)}
       />
 
