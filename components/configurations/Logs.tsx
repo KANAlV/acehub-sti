@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
 import { FaSortDown, FaSortUp } from "react-icons/fa6";
 import { HiCheck, HiMagnifyingGlass } from "react-icons/hi2";
 import { HiExclamation, HiX } from "react-icons/hi";
-import { fetchLogList, SystemLog } from "@/app/actions/system";
+import { fetchLogList, fetchLogsCount, SystemLog } from "@/app/actions/system";
 
 export default function AuditLogs() {
   const [isLoading, setLoading] = useState(true);
@@ -89,33 +89,33 @@ export default function AuditLogs() {
     setLoading(true);
 
     const activePage = pageParam ?? currentPage;
-    const response = await fetchLogList(
-      search,
-      sortColParam ?? sortBy,
-      sortDirParam ?? sortDir,
-      limitParam ?? maxRows,
-      activePage,
-    );
+    const activeSearch = search ?? searchQuery;
 
-    if (response.success && response.data) {
-      setLogList(response.data);
+    const [dataRes, countRes] = await Promise.all([
+      fetchLogList(
+        activeSearch,
+        sortColParam ?? sortBy,
+        sortDirParam ?? sortDir,
+        limitParam ?? maxRows,
+        activePage,
+      ),
+      fetchLogsCount(activeSearch),
+    ]);
 
-      if (typeof response.count === "number") {
-        setLogCount(response.count);
-      } else {
-        const estimatedTotal =
-          response.data.length === maxRows
-            ? activePage * maxRows + 1
-            : (activePage - 1) * maxRows + response.data.length;
-        setLogCount(estimatedTotal);
-      }
+    if (dataRes.success && dataRes.data) {
+      setLogList(dataRes.data);
     } else {
       setToastMessage(
-        response?.error ?? "[fetchLogList]: An unexpected error occurred",
+        dataRes?.error ?? "[fetchLogList]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
       setLogList([]);
+    }
+
+    if (countRes.success) {
+      setLogCount(countRes.count);
+    } else {
       setLogCount(0);
     }
 

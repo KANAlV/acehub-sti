@@ -3,6 +3,7 @@
 import {
   Button,
   Card,
+  HelperText,
   Label,
   Modal,
   ModalBody,
@@ -20,18 +21,20 @@ import {
   TableRow,
   TextInput,
   Toast,
-  ToastToggle, Tooltip,
+  ToastToggle,
+  ToggleSwitch,
+  Tooltip,
 } from "flowbite-react";
 import {
   addToBlacklist,
   createUser,
+  deleteUser,
   fetchUsers,
   fetchUsersCount,
   updateUser,
   fetchRoles,
 } from "@/app/actions/system";
 import {
-  FaBan,
   FaPlus,
   FaSortDown,
   FaSortUp,
@@ -39,9 +42,12 @@ import {
 } from "react-icons/fa6";
 import {
   HiCheck,
-} from "react-icons/hi2";
+  HiExclamation,
+  HiX,
+  HiSearch,
+  HiTrash,
+} from "react-icons/hi";
 import { useEffect, useState } from "react";
-import { HiExclamation, HiX, HiSearch } from "react-icons/hi";
 import { filterAlphanumericUnderscore, filterEmail } from "@/utils/validation";
 import { useMsal } from "@azure/msal-react";
 
@@ -75,12 +81,16 @@ export default function UsersManagement() {
   const [openAddUserModal, setOpenAddUserModal] = useState(false);
   const [openEditUserModal, setOpenEditUserModal] = useState(false);
   const [openBlacklistModal, setOpenBlacklistModal] = useState(false);
+  const [openDeleteUserModal, setOpenDeleteUserModal] = useState(false);
+
+  // --- Toggle Switch States for Edit Mode --- //
+  const [isEditUsernameEnabled, setIsEditUsernameEnabled] = useState(false);
 
   // --- User Form states --- //
   const [rowID, setRowID] = useState("");
   const [usernameError, setUsernameError] = useState("");
   const [emailError, setEmailError] = useState("");
-  const [roles, setRoles] =useState<Roles[]>([]);
+  const [roles, setRoles] = useState<Roles[]>([]);
 
   // Add State
   const [inputUsername, setInputUsername] = useState("");
@@ -114,44 +124,27 @@ export default function UsersManagement() {
    **************/
 
   /** --- Table Related Functions --- **/
-  // Sorting
   function handleUserSorting(sortBy: string) {
     const newDir = sortBy === sortUsersBy && sortUsersDir === "ASC" ? "DESC" : "ASC";
     setSortUsersBy(sortBy);
     setSortUsersDir(newDir);
     setUsers([]);
     setCurrentUserPage(1);
-    getUsers(
-      searchTerm,
-      sortBy,
-      newDir,
-      maxRowUser,
-      1,
-    );
+    getUsers(searchTerm, sortBy, newDir, maxRowUser, 1);
   }
 
-  // Page Change
   function onPageChangeUsers(page: number) {
-    if (pageChangingUsers) {
-      return;
-    }
+    if (pageChangingUsers) return;
 
     setPageChangingUsers(true);
     setUsers([]);
 
-    getUsers(
-      searchTerm,
-      sortUsersBy,
-      sortUsersDir,
-      maxRowUser,
-      page,
-    );
+    getUsers(searchTerm, sortUsersBy, sortUsersDir, maxRowUser, page);
 
     setPageChangingUsers(false);
     setCurrentUserPage(page);
   }
 
-  // Search Handler
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchTerm(value);
@@ -164,7 +157,6 @@ export default function UsersManagement() {
   };
 
   /** --- Form Related Functions --- **/
-
   function loadEditData(row_id: string) {
     setRowID(row_id);
     setOpenEditUserModal(true);
@@ -172,7 +164,7 @@ export default function UsersManagement() {
     const selectedUser = users.find((item) => item.user_id === row_id);
 
     if (selectedUser) {
-      // Baseline state for comparison
+      // Baseline state
       setBaseUsername(selectedUser.username ?? "");
       setBaseEmail(selectedUser.email ?? "");
       setBaseRoleName(selectedUser.role_name ?? "viewer");
@@ -182,7 +174,17 @@ export default function UsersManagement() {
       editEmail(selectedUser.email ?? "");
       editRoleName(selectedUser.role_name ?? "viewer");
     }
+
+    setIsEditUsernameEnabled(false);
   }
+
+  // --- Toggle Handlers with Auto-Reset --- //
+  const handleToggleUsernameEdit = (checked: boolean) => {
+    setIsEditUsernameEnabled(checked);
+    if (!checked) {
+      editUsername(baseUsername); // Reset back to original when toggled off
+    }
+  };
 
   // --- Create Handlers --- //
   const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -206,7 +208,6 @@ export default function UsersManagement() {
     editUsername(val);
   };
 
-  // Clear Constants
   const handleCloseUserModals = () => {
     setRowID("");
     setUsernameError("");
@@ -214,21 +215,22 @@ export default function UsersManagement() {
     setOpenAddUserModal(false);
     setOpenEditUserModal(false);
     setOpenBlacklistModal(false);
+    setOpenDeleteUserModal(false);
 
-    // add consts
+    setIsEditUsernameEnabled(false);
+
+    // reset add
     setInputUsername("");
     setInputEmail("");
     setInputRoleName("viewer");
 
-    // update consts
+    // reset update
     editUsername("");
     editEmail("");
     editRoleName("viewer");
   };
 
   /** --- CRUD Related --- **/
-
-  // Count
   async function getUserCount(search?: string | null) {
     const response = await fetchUsersCount(search);
 
@@ -236,8 +238,7 @@ export default function UsersManagement() {
       setUsersCount(response.count);
     } else {
       setToastMessage(
-        response?.error ??
-        "[fetchUsersCount]: An unexpected error occurred",
+        response?.error ?? "[fetchUsersCount]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
@@ -245,7 +246,6 @@ export default function UsersManagement() {
     }
   }
 
-  // Create
   async function handleUserSubmit() {
     if (!inputEmail.trim()) {
       setEmailError("Email is required.");
@@ -256,17 +256,16 @@ export default function UsersManagement() {
       username ?? "system",
       inputEmail.trim(),
       inputUsername.trim() || undefined,
-      inputRoleName,
+      inputRoleName
     );
 
     if (response.success) {
-      const msg = "User added successfully";
-      setToastMessage(msg);
+      setToastMessage("User added successfully");
       setToastType("success");
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[AddUser]: An unexpected error occurred",
+        response?.error ?? "[AddUser]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
@@ -276,30 +275,23 @@ export default function UsersManagement() {
     getUsers(searchTerm, sortUsersBy, sortUsersDir, maxRowUser, currentUserPage);
   }
 
-  // Read
   async function getUsers(
     search: string | null = searchTerm,
     sortby: string = sortUsersBy,
     sortdir: string = sortUsersDir,
     limit: number = maxRowUser,
-    page: number = currentUserPage,
+    page: number = currentUserPage
   ) {
     setLoading(true);
 
-    const response = await fetchUsers(
-      search,
-      sortby,
-      sortdir,
-      limit,
-      page,
-    );
+    const response = await fetchUsers(search, sortby, sortdir, limit, page);
 
     if (response.success && response.data) {
       setUsers(response.data);
       setLoading(false);
     } else {
       setToastMessage(
-        response?.error ?? "[fetchUsers]: An unexpected error occurred",
+        response?.error ?? "[fetchUsers]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
@@ -310,24 +302,22 @@ export default function UsersManagement() {
     await getUserCount(search);
   }
 
-  // Update
   async function handleUserUpdate() {
     const response = await updateUser(
       username ?? "system",
       rowID,
       newUsername.trim(),
-      newRoleName,
+      newRoleName
     );
 
     if (response.success) {
-      const msg = "User updated successfully";
-      setToastMessage(msg);
+      setToastMessage("User updated successfully");
       setToastType("success");
       setShowToast(true);
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[UpdateUser]: An unexpected error occurred",
+        response?.error ?? "[UpdateUser]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
@@ -337,18 +327,35 @@ export default function UsersManagement() {
     getUsers(searchTerm, sortUsersBy, sortUsersDir, maxRowUser, currentUserPage);
   }
 
-  // Delete
   async function handleUserBlacklist() {
     const response = await addToBlacklist(username ?? "system", rowID);
 
     if (response.success) {
-      const msg = "User blacklisted successfully";
-      setToastMessage(msg);
+      setToastMessage("User blacklisted successfully");
       setToastType("success");
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[BlacklistUser]: An unexpected error occurred",
+        response?.error ?? "[BlacklistUser]: An unexpected error occurred"
+      );
+      setToastType("error");
+      setShowToast(true);
+    }
+
+    handleCloseUserModals();
+    getUsers(searchTerm, sortUsersBy, sortUsersDir, maxRowUser, currentUserPage);
+  }
+
+  async function handleUserDelete() {
+    const response = await deleteUser(username ?? "system", rowID);
+
+    if (response.success) {
+      setToastMessage("User deleted successfully");
+      setToastType("success");
+      toastTimer();
+    } else {
+      setToastMessage(
+        response?.error ?? "[DeleteUser]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
@@ -359,7 +366,6 @@ export default function UsersManagement() {
   }
 
   /** --- Toast Related Functions --- **/
-
   function toastTimer() {
     setShowToastTimer(true);
     setShowToast(true);
@@ -391,8 +397,6 @@ export default function UsersManagement() {
   }
 
   /** --- UseEffects --- **/
-
-  // Trigger search with debounce
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       void getUsers(searchTerm, sortUsersBy, sortUsersDir, maxRowUser, currentUserPage);
@@ -401,7 +405,7 @@ export default function UsersManagement() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
-  useEffect(() =>{
+  useEffect(() => {
     async function getRoles() {
       const response = await fetchRoles(null, "role_name", "ASC", 0);
 
@@ -409,7 +413,7 @@ export default function UsersManagement() {
         setRoles(response.data);
       } else {
         setToastMessage(
-          response?.error ?? "[fetchRoles]: An unexpected error occurred",
+          response?.error ?? "[fetchRoles]: An unexpected error occurred"
         );
         setToastType("error");
         setShowToast(true);
@@ -418,7 +422,7 @@ export default function UsersManagement() {
     }
 
     void getRoles();
-  },[]);
+  }, []);
 
   return (
     <>
@@ -450,21 +454,16 @@ export default function UsersManagement() {
         </div>
       )}
 
-      {/* --- Header Section with Search & Add Button --- */}
-      <div
-        className={
-          "mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center"
-        }
-      >
+      {/* --- Header Section --- */}
+      <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
         <div>
-          <h2 className={`mb-1 text-lg font-bold`}>User Management</h2>
-          <p className={`text-gray-500`}>
+          <h2 className="mb-1 text-lg font-bold">User Management</h2>
+          <p className="text-gray-500">
             Manage system users, assigned roles, and account access permissions.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Search Input Bar */}
           <div className="relative mr-4 w-full md:w-64">
             <TextInput
               id="search-users"
@@ -486,61 +485,52 @@ export default function UsersManagement() {
           </div>
 
           <Button
-            className={"whitespace-nowrap"}
+            className="whitespace-nowrap"
             onClick={() => setOpenAddUserModal(true)}
           >
-            <FaPlus className={`mr-2`} />
+            <FaPlus className="mr-2" />
             Add User
           </Button>
         </div>
       </div>
 
-      <Card className={`overflow-x-auto`}>
+      <Card className="overflow-x-auto">
         <Table hoverable>
           <TableHead>
             <TableRow>
               <TableHeadCell onClick={() => handleUserSorting("username")}>
                 <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
                   Username
-                  {sortUsersBy === "username" ? (
-                    sortUsersDir === "ASC" ? (
+                  {sortUsersBy === "username" &&
+                    (sortUsersDir === "ASC" ? (
                       <FaSortUp className="ml-1" />
                     ) : (
                       <FaSortDown className="ml-1" />
-                    )
-                  ) : (
-                    ""
-                  )}
+                    ))}
                 </div>
               </TableHeadCell>
 
               <TableHeadCell onClick={() => handleUserSorting("email")}>
                 <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
                   Email
-                  {sortUsersBy === "email" ? (
-                    sortUsersDir === "ASC" ? (
+                  {sortUsersBy === "email" &&
+                    (sortUsersDir === "ASC" ? (
                       <FaSortUp className="ml-1" />
                     ) : (
                       <FaSortDown className="ml-1" />
-                    )
-                  ) : (
-                    ""
-                  )}
+                    ))}
                 </div>
               </TableHeadCell>
 
               <TableHeadCell onClick={() => handleUserSorting("role_name")}>
                 <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
                   Role
-                  {sortUsersBy === "role_name" ? (
-                    sortUsersDir === "ASC" ? (
+                  {sortUsersBy === "role_name" &&
+                    (sortUsersDir === "ASC" ? (
                       <FaSortUp className="ml-1" />
                     ) : (
                       <FaSortDown className="ml-1" />
-                    )
-                  ) : (
-                    ""
-                  )}
+                    ))}
                 </div>
               </TableHeadCell>
 
@@ -609,7 +599,7 @@ export default function UsersManagement() {
         </Table>
       </Card>
 
-      {/* users pagination */}
+      {/* Pagination */}
       <div
         className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
       >
@@ -623,7 +613,6 @@ export default function UsersManagement() {
         />
       </div>
 
-      {/* --- Modals --- */}
       {/* --- Add User Modal --- */}
       <Modal show={openAddUserModal} onClose={handleCloseUserModals}>
         <ModalHeader>Add User</ModalHeader>
@@ -632,7 +621,7 @@ export default function UsersManagement() {
             className="flex flex-col gap-4"
             onSubmit={(e) => e.preventDefault()}
           >
-            {/* Email Field (Required) */}
+            {/* Email Field */}
             <div>
               <div className="mb-2 block">
                 <Label htmlFor="email">Email Address *</Label>
@@ -640,18 +629,25 @@ export default function UsersManagement() {
               <TextInput
                 id="email"
                 type="email"
-                placeholder="e.g. john@example.com"
+                placeholder="e.g. instructor@alabang.sti.edu.ph"
                 value={inputEmail}
                 onChange={handleEmailChange}
                 color={emailError ? "failure" : "gray"}
-                required
+                maxLength={100}
               />
+              <div className="mt-1 flex items-center justify-between">
+                {emailError ? (
+                  <HelperText color="failure">{emailError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {inputEmail.length}/100
+                </span>
+              </div>
             </div>
-            {emailError && (
-              <p className="text-sm font-medium text-red-600">{emailError}</p>
-            )}
 
-            {/* Username Field (Optional) */}
+            {/* Username Field */}
             <div>
               <div className="mb-2 block">
                 <Label htmlFor="username">Username (Optional)</Label>
@@ -664,7 +660,7 @@ export default function UsersManagement() {
               />
             </div>
 
-            {/* Role Name Field */}
+            {/* Role Field */}
             <div>
               <div className="mb-2 block">
                 <Label htmlFor="role_name">Assigned Role</Label>
@@ -708,23 +704,38 @@ export default function UsersManagement() {
             className="flex flex-col gap-4"
             onSubmit={(e) => e.preventDefault()}
           >
-            {/* Email Field (Read-only on update) */}
+            {/* Disabled Read-Only Email Field */}
             <div>
               <div className="mb-2 block">
                 <Label htmlFor="edit_email">Email Address</Label>
               </div>
-              {newEmail}
+              <TextInput
+                id="edit_email"
+                type="email"
+                value={newEmail}
+                disabled
+              />
             </div>
 
-            {/* Username Field */}
+            {/* Username Field with ToggleSwitch */}
             <div>
-              <div className="mb-2 block">
+              <div className="mb-2 flex items-center justify-between">
                 <Label htmlFor="edit_username">Username</Label>
+                <ToggleSwitch
+                  checked={isEditUsernameEnabled}
+                  label="Edit"
+                  onChange={handleToggleUsernameEdit}
+                />
               </div>
-              {newUsername}
+              <TextInput
+                id="edit_username"
+                value={newUsername}
+                onChange={handleNewUsernameChange}
+                disabled={!isEditUsernameEnabled}
+              />
             </div>
 
-            {/* Role Name Field */}
+            {/* Role Field */}
             <div>
               <div className="mb-2 block">
                 <Label htmlFor="edit_role_name">Assigned Role</Label>
@@ -750,8 +761,8 @@ export default function UsersManagement() {
             </div>
           </form>
         </ModalBody>
-        <ModalFooter className={"flex w-full justify-between"}>
-          <div className={"flex"}>
+        <ModalFooter className="flex w-full justify-between">
+          <div className="flex gap-3">
             <Button
               onClick={handleUserUpdate}
               disabled={
@@ -761,17 +772,26 @@ export default function UsersManagement() {
             >
               Save
             </Button>
-            <Button
-              color="alternative"
-              className={"ml-4"}
-              onClick={handleCloseUserModals}
-            >
+            <Button color="alternative" onClick={handleCloseUserModals}>
               Cancel
             </Button>
           </div>
-          <Button color={"red"} onClick={() => setOpenBlacklistModal(true)}>
-            <FaBan />
-          </Button>
+
+          <div className="flex gap-2">
+            {/* Blacklist Button (FaUserSlash) */}
+            <Tooltip content="Blacklist User">
+              <Button color="yellow" onClick={() => setOpenBlacklistModal(true)}>
+                <FaUserSlash className="h-4 w-4" />
+              </Button>
+            </Tooltip>
+
+            {/* Delete Button (HiTrash) */}
+            <Tooltip content="Delete User">
+              <Button color="red" onClick={() => setOpenDeleteUserModal(true)}>
+                <HiTrash className="h-4 w-4" />
+              </Button>
+            </Tooltip>
+          </div>
         </ModalFooter>
       </Modal>
 
@@ -785,17 +805,46 @@ export default function UsersManagement() {
         <ModalHeader />
         <ModalBody>
           <div className="text-center">
-            <FaUserSlash className="mx-auto mb-4 h-14 w-14 text-gray-400 dark:text-gray-200" />
+            <FaUserSlash className="mx-auto mb-4 h-14 w-14 text-yellow-500 dark:text-yellow-400" />
             <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-              Are you sure you want to blacklist this User?
+              Are you sure you want to blacklist this user?
             </h3>
             <div className="flex justify-center gap-4">
-              <Button color="red" onClick={() => handleUserBlacklist()}>
-                <p>Yes, I&#39;m sure</p>
+              <Button color="yellow" onClick={handleUserBlacklist}>
+                Yes, I&#39;m sure
               </Button>
               <Button
                 color="alternative"
                 onClick={() => setOpenBlacklistModal(false)}
+              >
+                No, cancel
+              </Button>
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* --- Delete Confirmation Modal --- */}
+      <Modal
+        show={openDeleteUserModal}
+        size="md"
+        onClose={() => setOpenDeleteUserModal(false)}
+        popup
+      >
+        <ModalHeader />
+        <ModalBody>
+          <div className="text-center">
+            <HiTrash className="mx-auto mb-4 h-14 w-14 text-red-500 dark:text-red-400" />
+            <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+              Are you sure you want to delete this user?
+            </h3>
+            <div className="flex justify-center gap-4">
+              <Button color="red" onClick={handleUserDelete}>
+                Yes, I&#39;m sure
+              </Button>
+              <Button
+                color="alternative"
+                onClick={() => setOpenDeleteUserModal(false)}
               >
                 No, cancel
               </Button>

@@ -13,7 +13,6 @@ export interface ProgramRecord {
   created_at: string;
   updated_at: string;
 }
-
 export interface ProgramInput {
   program_code: string;
   program_name?: string;
@@ -42,7 +41,7 @@ export async function fetchPrograms(
         ${sortDir},
         ${limit},
         ${offset}
-      );
+                    );
     `;
 
     return {
@@ -67,9 +66,9 @@ export async function fetchProgramsCount(
   try {
     const [result] = await sql<{ programs_count: number }[]>`
       SELECT programs_count(
-        ${search || null},
-        ${yearLevel}
-      );
+               ${search || null},
+               ${yearLevel}
+             );
     `;
 
     return {
@@ -91,14 +90,14 @@ export async function createProgram(actor: string, input: ProgramInput) {
   try {
     const [result] = await sql<{ programs_create: string }[]>`
       SELECT programs_create(
-        ${input.program_code},
-        ${input.program_name ?? null},
-        ${input.year_level ?? null},
-        ${input.students ? JSON.stringify(input.students) : "[]"}::json
-      );
+               ${input.program_code},
+               ${input.program_name ?? null},
+               ${input.year_level ?? null},
+               ${input.students ? JSON.stringify(input.students) : "[]"}::json
+             );
     `;
 
-    createLog(
+    await createLog(
       actor,
       "create_program",
       `program_code: '${input.program_code}'`
@@ -126,14 +125,14 @@ export async function updateProgram(
   try {
     await sql`
       SELECT programs_update(
-        ${programCode},
-        ${input.program_name ?? null},
-        ${input.year_level ?? null},
-        ${input.students ? JSON.stringify(input.students) : null}::json
-      );
+               ${programCode},
+               ${input.program_name ?? null},
+               ${input.year_level ?? null},
+               ${input.students ? JSON.stringify(input.students) : null}::json
+             );
     `;
 
-    createLog(actor, "update_program", `program_code: '${programCode}'`);
+    await createLog(actor, "update_program", `program_code: '${programCode}'`);
 
     return { success: true };
   } catch (error) {
@@ -152,7 +151,7 @@ export async function deleteProgram(actor: string, programCode: string) {
       SELECT programs_delete(${programCode});
     `;
 
-    createLog(actor, "delete_program", `program_code: '${programCode}'`);
+    await createLog(actor, "delete_program", `program_code: '${programCode}'`);
 
     return { success: true };
   } catch (error) {
@@ -181,7 +180,6 @@ export interface TeacherInput {
   availability?: Record<string, unknown> | Array<unknown>;
   preferences?: Record<string, unknown> | Array<unknown>;
 }
-
 export interface TeacherRecord {
   teacher_id: string;
   pscs_id: string | null;
@@ -218,7 +216,7 @@ export async function fetchTeachers(
         ${sortDir},
         ${limit},
         ${offset}
-      );
+                    );
     `;
 
     return {
@@ -261,21 +259,21 @@ export async function createTeacher(actor: string, input: TeacherInput) {
   try {
     const [result] = await sql<{ teachers_create: string }[]>`
       SELECT teachers_create(
-        ${input.pscs_id ?? null},
-        ${input.email ?? null},
-        ${input.f_name ?? null},
-        ${input.m_name ?? null},
-        ${input.surname ?? null},
-        ${input.suffix ?? null},
-        ${input.teacher_code ?? null},
-        ${input.specialization ?? null},
-        ${input.employment_type ?? null},
-        ${input.availability ? JSON.stringify(input.availability) : "{}"}::jsonb,
-        ${input.preferences ? JSON.stringify(input.preferences) : "{}"}::jsonb
-      );
+               ${input.pscs_id ?? null},
+               ${input.email ?? null},
+               ${input.f_name ?? null},
+               ${input.m_name ?? null},
+               ${input.surname ?? null},
+               ${input.suffix ?? null},
+               ${input.teacher_code ?? null},
+               ${input.specialization ?? null},
+               ${input.employment_type ?? null},
+               ${input.availability ? JSON.stringify(input.availability) : "{}"}::jsonb,
+               ${input.preferences ? JSON.stringify(input.preferences) : "{}"}::jsonb
+             );
     `;
 
-    createLog(
+    await createLog(
       actor,
       "create_teacher",
       `email: '${input.email}', teacher_code: '${input.teacher_code}'`
@@ -318,7 +316,7 @@ export async function updateTeacher(
              );
     `;
 
-    createLog(actor, "update_teacher", `teacher_id: '${teacherId}'`);
+    await createLog(actor, "update_teacher", `teacher_id: '${teacherId}'`);
 
     return { success: true };
   } catch (error) {
@@ -337,7 +335,7 @@ export async function deleteTeacher(actor: string, teacherId: string) {
       SELECT teachers_delete(${teacherId}::UUID);
     `;
 
-    createLog(actor, "delete_teacher", `teacher_id: '${teacherId}'`);
+    await createLog(actor, "delete_teacher", `teacher_id: '${teacherId}'`);
 
     return { success: true };
   } catch (error) {
@@ -356,6 +354,140 @@ export async function deleteTeacher(actor: string, teacherId: string) {
 export interface MaqClusterRecord {
   cluster_name: string;
 }
+export interface MaqRecord {
+  aq: string;
+}
+export interface MaqClusterEntryItem {
+  mce_id: string;
+  aq: string;
+}
+export interface MaqClusterWithEntriesRecord {
+  cluster_name: string;
+  entries: MaqClusterEntryItem[];
+}
+
+/** MAQ **/
+
+/* FETCH MAQ (READ) */
+export async function fetchMaq(
+  search: string | null = null,
+  sortBy: string = "aq",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<MaqRecord[]>`
+      SELECT * FROM maq_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+                    );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch MAQ records:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch MAQ records.",
+      data: [],
+    };
+  }
+}
+
+/* FETCH MAQ COUNT */
+export async function fetchMaqCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ maq_count: number }[]>`
+      SELECT maq_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.maq_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch MAQ count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count MAQ records.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE MAQ */
+export async function createMaq(actor: string, aq: string) {
+  try {
+    const [result] = await sql<{ maq_create: string }[]>`
+      SELECT maq_create(${aq});
+    `;
+
+    await createLog(actor, "create_maq", `aq: '${aq}'`);
+
+    return {
+      success: true,
+      aq: result?.maq_create,
+    };
+  } catch (error) {
+    console.error("Failed to create MAQ record:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create MAQ record.",
+    };
+  }
+}
+
+/* DELETE MAQ */
+export async function deleteMaq(actor: string, aq: string) {
+  try {
+    await sql`
+      SELECT maq_delete(${aq});
+    `;
+
+    await createLog(actor, "delete_maq", `aq: '${aq}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete MAQ record:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete MAQ record.",
+    };
+  }
+}
+
+/** --- MAQ Cluster ---  **/
+
+/* CREATE MAQ CLUSTER */
+export async function createMaqCluster(actor: string, clusterName: string) {
+  try {
+    const [result] = await sql<{ maq_cluster_create: string }[]>`
+      SELECT maq_cluster_create(${clusterName});
+    `;
+
+    await createLog(actor, "create_maq_cluster", `cluster_name: '${clusterName}'`);
+
+    return {
+      success: true,
+      clusterName: result?.maq_cluster_create,
+    };
+  } catch (error) {
+    console.error("Failed to create MAQ cluster:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create MAQ cluster.",
+    };
+  }
+}
 
 /* FETCH MAQ CLUSTERS (READ) */
 export async function fetchMaqClusters(
@@ -371,7 +503,7 @@ export async function fetchMaqClusters(
         ${search || null},
         ${limit},
         ${offset}
-      );
+                    );
     `;
 
     return {
@@ -405,6 +537,90 @@ export async function fetchMaqClustersCount(search: string | null = null) {
       success: false,
       error: (error as Error).message || "Failed to count MAQ clusters.",
       count: 0,
+    };
+  }
+}
+
+/* FETCH MAQ CLUSTERS WITH ENTRIES (READ) */
+export async function fetchMaqClustersWithEntries(
+  search: string | null = null,
+  sortBy: string = "cluster_name",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<MaqClusterWithEntriesRecord[]>`
+      SELECT * FROM maq_cluster_with_entries_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+                    );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch MAQ clusters with entries:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch MAQ clusters with entries.",
+      data: [],
+    };
+  }
+}
+
+export async function deleteMaqCluster(actor: string, clusterName: string) {
+  try {
+    await sql`
+      SELECT maq_cluster_delete(${clusterName});
+    `;
+
+    await createLog(actor, "delete_maq_cluster", `cluster_name: '${clusterName}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete MAQ cluster:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete MAQ cluster.",
+    };
+  }
+}
+
+/** Cluster Entries **/
+
+export async function syncMaqClusterEntries(
+  actor: string,
+  clusterName: string,
+  aqs: string[],
+) {
+  try {
+    await sql`
+      SELECT maq_cluster_entries_sync(
+               ${clusterName},
+               ${aqs}::text[]
+             );
+    `;
+
+    await createLog(
+      actor,
+      "sync_maq_cluster_entries",
+      `cluster_name: '${clusterName}', count: ${aqs.length}`,
+    );
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to sync MAQ cluster entries:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to sync cluster entries.",
     };
   }
 }
@@ -484,11 +700,11 @@ export async function createBreakPeriod(
   try {
     const [result] = await sql<{ break_id: string }[]>`
       SELECT break_periods_create(
-        ${description},
-        ${dayOfWeek},
-        ${startTime}::TIME,
-        ${endTime}::TIME
-      ) AS break_id;
+               ${description},
+               ${dayOfWeek},
+               ${startTime}::TIME,
+               ${endTime}::TIME
+             ) AS break_id;
     `;
 
     await createLog(
@@ -1078,6 +1294,24 @@ export async function updateUser(
   }
 }
 
+export async function deleteUser(actor: string, userId: string) {
+  try {
+    await sql`
+      SELECT manage_users_delete(${userId}::UUID);
+    `;
+
+    createLog(actor, "delete_user", `user_id: '${userId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete user:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete user record.",
+    };
+  }
+}
+
 // Count User
 export async function fetchUsersCount(search?: string | null) {
   try {
@@ -1462,6 +1696,27 @@ export interface FetchLogListResponse {
   data?: SystemLog[];
   count?: number;
   error?: string;
+}
+
+/* FETCH LOGS COUNT */
+export async function fetchLogsCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ logs_count: number }[]>`
+      SELECT logs_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: Number(result?.logs_count ?? 0),
+    };
+  } catch (error) {
+    console.error("Failed to fetch logs count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count log records.",
+      count: 0,
+    };
+  }
 }
 
 // Read Logs

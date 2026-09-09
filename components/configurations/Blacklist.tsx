@@ -21,6 +21,7 @@ import {
   ToastToggle,
 } from "flowbite-react";
 import {
+  deleteUser,
   fetchBlacklist,
   fetchBlacklistCount,
   removeFromBlacklist,
@@ -29,11 +30,12 @@ import {
   FaSortDown,
   FaSortUp,
   FaUserCheck,
+  FaUserMinus,
   FaUserSlash,
 } from "react-icons/fa6";
 import { HiCheck } from "react-icons/hi2";
 import { useEffect, useState } from "react";
-import { HiExclamation, HiX, HiSearch } from "react-icons/hi";
+import { HiExclamation, HiX, HiSearch, HiTrash } from "react-icons/hi";
 import { useMsal } from "@azure/msal-react";
 
 interface BlacklistedUser {
@@ -61,6 +63,10 @@ export default function BlacklistManagement() {
   const [openRemoveModal, setOpenRemoveModal] = useState(false);
   const [selectedBlacklistId, setSelectedBlacklistId] = useState("");
   const [selectedEmail, setSelectedEmail] = useState("");
+
+  const [openDeleteUserModal, setOpenDeleteUserModal] = useState(false);
+  const [deleteID, setDeleteID] = useState("");
+  const [deleteEmail, setDeleteEmail] = useState("");
 
   // --- Pagination State --- //
   const maxRowUser = 10;
@@ -187,6 +193,33 @@ export default function BlacklistManagement() {
     }
 
     handleCloseModal();
+    getBlacklistData(
+      searchTerm,
+      sortUsersBy,
+      sortUsersDir,
+      maxRowUser,
+      currentUserPage,
+    );
+  }
+
+  async function handleUserDelete() {
+    const response = await deleteUser(username ?? "system", deleteID);
+
+    if (response.success) {
+      setToastMessage("User deleted successfully");
+      setToastType("success");
+      toastTimer();
+    } else {
+      setToastMessage(
+        response?.error ?? "[DeleteUser]: An unexpected error occurred",
+      );
+      setToastType("error");
+      setShowToast(true);
+    }
+
+    setDeleteID("");
+    setDeleteEmail("");
+    setOpenDeleteUserModal(false);
     getBlacklistData(
       searchTerm,
       sortUsersBy,
@@ -362,7 +395,7 @@ export default function BlacklistManagement() {
                   className="bg-white dark:border-gray-700 dark:bg-gray-800"
                 >
                   <TableCell className="font-medium whitespace-nowrap text-gray-900 dark:text-white">
-                    <span className="flex items-center text-red-500">
+                    <span className="flex items-center">
                       <FaUserSlash className="mr-2" />
                       {item.username || "—"}
                     </span>
@@ -382,7 +415,20 @@ export default function BlacklistManagement() {
                       className="inline-flex items-center text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400"
                     >
                       <FaUserCheck className="mr-1 h-3.5 w-3.5" />
-                      Remove
+                      Unblock
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => (
+                        setDeleteID(item.user_id),
+                        setDeleteEmail(item.email),
+                        setOpenDeleteUserModal(true)
+                      )}
+                      className="ml-4 inline-flex items-center text-sm font-medium text-red-600 hover:underline dark:text-red-400"
+                    >
+                      <FaUserMinus className="mr-1 h-3.5 w-3.5" />
+                      Delete
                     </button>
                   </TableCell>
                 </TableRow>
@@ -451,6 +497,35 @@ export default function BlacklistManagement() {
               </Button>
               <Button color="alternative" onClick={handleCloseModal}>
                 Cancel
+              </Button>
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* --- Delete Confirmation Modal --- */}
+      <Modal
+        show={openDeleteUserModal}
+        size="md"
+        onClose={() => setOpenDeleteUserModal(false)}
+        popup
+      >
+        <ModalHeader />
+        <ModalBody>
+          <div className="text-center">
+            <HiTrash className="mx-auto mb-4 h-14 w-14 text-red-500 dark:text-red-400" />
+            <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+              Are you sure you want to delete {deleteEmail}?
+            </h3>
+            <div className="flex justify-center gap-4">
+              <Button color="red" onClick={handleUserDelete}>
+                Yes, I&#39;m sure
+              </Button>
+              <Button
+                color="alternative"
+                onClick={() => (setDeleteID(""), setDeleteEmail(""), setOpenDeleteUserModal(false))}
+              >
+                No, cancel
               </Button>
             </div>
           </div>

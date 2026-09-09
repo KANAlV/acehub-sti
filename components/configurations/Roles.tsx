@@ -76,7 +76,7 @@ const PERMISSION_KEYS: Array<{ key: keyof Omit<RolePermissions, "role_name">; la
   { key: "fcce", label: "FCCE" },
   { key: "help", label: "Help" },
   { key: "config", label: "Config" },
-  { key: "superuser", label: "Superuser" },
+  { key: "superuser", label: "Admin" },
 ];
 
 const initialPermissionState: RolePermissions = {
@@ -173,6 +173,20 @@ export default function RolesManagement() {
     setSearchTerm("");
     setCurrentRolePage(1);
   };
+
+  function isDefault(r_name: string): boolean {
+    const defaultRoles = [
+      "academic assistant",
+      "academic head",
+      "admin",
+      "registrar",
+      "superuser",
+      "teacher",
+      "viewer",
+    ];
+
+    return defaultRoles.includes(r_name.toLowerCase().trim());
+  }
 
   /** --- Form Related Functions --- **/
   function loadEditData(row_id: string) {
@@ -422,7 +436,7 @@ export default function RolesManagement() {
                 </div>
               </TableHeadCell>
 
-              <TableHeadCell>Superuser</TableHeadCell>
+              <TableHeadCell>is admin</TableHeadCell>
               <TableHeadCell>Active Permissions</TableHeadCell>
               <TableHeadCell>
                 <span className="sr-only">Edit</span>
@@ -433,7 +447,7 @@ export default function RolesManagement() {
             {roles.length > 0 ? (
               roles.map((item) => {
                 const activeCount = PERMISSION_KEYS.filter(
-                  (p) => item[p.key as keyof Role] === true
+                  (p) => item[p.key as keyof Role] === true,
                 ).length;
 
                 return (
@@ -513,7 +527,10 @@ export default function RolesManagement() {
       <Modal show={openAddRoleModal} onClose={handleCloseRoleModals} size="lg">
         <ModalHeader>Add Role</ModalHeader>
         <ModalBody>
-          <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => e.preventDefault()}
+          >
             <div>
               <div className="mb-2 block">
                 <Label htmlFor="role_name">Role Name *</Label>
@@ -533,12 +550,16 @@ export default function RolesManagement() {
                 required
               />
               {roleNameError && (
-                <p className="mt-1 text-sm font-medium text-red-600">{roleNameError}</p>
+                <p className="mt-1 text-sm font-medium text-red-600">
+                  {roleNameError}
+                </p>
               )}
             </div>
 
             <div>
-              <Label className="mb-2 block font-semibold">Module Access Permissions</Label>
+              <Label className="mb-2 block font-semibold">
+                Module Access Permissions
+              </Label>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {PERMISSION_KEYS.map(({ key, label }) => (
                   <div key={key} className="flex items-center gap-2">
@@ -562,7 +583,10 @@ export default function RolesManagement() {
           </form>
         </ModalBody>
         <ModalFooter>
-          <Button onClick={handleRoleSubmit} disabled={!addFormData.role_name.trim()}>
+          <Button
+            onClick={handleRoleSubmit}
+            disabled={!addFormData.role_name.trim()}
+          >
             Save
           </Button>
           <Button color="alternative" onClick={handleCloseRoleModals}>
@@ -575,22 +599,36 @@ export default function RolesManagement() {
       <Modal show={openEditRoleModal} onClose={handleCloseRoleModals} size="lg">
         <ModalHeader>Edit Role Permissions</ModalHeader>
         <ModalBody>
-          <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => e.preventDefault()}
+          >
             <div>
               <div className="mb-2 block">
                 <Label htmlFor="edit_role_name">Role Name</Label>
               </div>
-              <TextInput
-                id="edit_role_name"
-                value={editFormData.role_name}
-                onChange={(e) =>
-                  setEditFormData((prev) => ({ ...prev, role_name: filterAlphanumericUnderscore(e.target.value) }))
-                }
-              />
+              {isDefault(editFormData.role_name) ? (
+                <p className={"font-extrabold dark:text-white capitalize"}>
+                  {editFormData.role_name}
+                </p>
+              ) : (
+                <TextInput
+                  id="edit_role_name"
+                  value={editFormData.role_name}
+                  onChange={(e) =>
+                    setEditFormData((prev) => ({
+                      ...prev,
+                      role_name: filterAlphanumericUnderscore(e.target.value),
+                    }))
+                  }
+                />
+              )}
             </div>
 
             <div>
-              <Label className="mb-2 block font-semibold">Module Access Permissions</Label>
+              <Label className="mb-2 block font-semibold">
+                Module Access Permissions
+              </Label>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {PERMISSION_KEYS.map(({ key, label }) => (
                   <div key={key} className="flex items-center gap-2">
@@ -622,9 +660,12 @@ export default function RolesManagement() {
               Cancel
             </Button>
           </div>
-          <Button color="red" onClick={() => setOpenDeleteModal(true)}>
-            <FaTrash />
-          </Button>
+
+          {!isDefault(editFormData.role_name) && (
+            <Button color="red" onClick={() => setOpenDeleteModal(true)}>
+              <FaTrash />
+            </Button>
+          )}
         </ModalFooter>
       </Modal>
 
@@ -646,7 +687,10 @@ export default function RolesManagement() {
               <Button color="red" onClick={handleRoleDelete}>
                 Yes, I&#39;m sure
               </Button>
-              <Button color="alternative" onClick={() => setOpenDeleteModal(false)}>
+              <Button
+                color="alternative"
+                onClick={() => setOpenDeleteModal(false)}
+              >
                 No, cancel
               </Button>
             </div>
