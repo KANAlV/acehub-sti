@@ -11,7 +11,7 @@ export default function Blacklisted() {
         <div className="w-full text-left">
           <button
             className="inline-flex cursor-pointer items-center border-none bg-transparent text-sm font-medium text-blue-600 transition-colors select-none hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-            onClick={() => router.push("/login")}
+            onClick={() => router.push("/logout")}
           >
             <svg
               className="mr-2 h-4 w-4"
