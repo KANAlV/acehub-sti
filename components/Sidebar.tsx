@@ -36,9 +36,14 @@ import {
 import Image from "next/image";
 import { FaCubes } from "react-icons/fa6";
 import { AccountInfo } from "@azure/msal-common";
-import { fetchUserRole } from "@/app/actions/user";
-import { seedConfiguration, seedRoomTypes } from "@/app/actions/system";
+import { fetchUserLogoffStatus, fetchUserRole } from "@/app/actions/user";
+import {
+  seedConfiguration,
+  seedDepartments,
+  seedRoomTypes,
+} from "@/app/actions/system";
 import { VerifyBlacklistStatus } from "@/utils/verifyBlacklistStatus";
+import { MdOutlineEditCalendar } from "react-icons/md";
 
 interface SidebarFunctionProps {
   account: AccountInfo | null;
@@ -74,6 +79,13 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
   const [toastMessage, setToastMessage] = useState("");
 
   useEffect(() => {
+    async function logoff(){
+      if (!account?.username) return;
+      const logoffUser = await fetchUserLogoffStatus(account.username);
+
+      if (logoffUser.logoff) {router.push("/logout");}
+    }
+
     async function fetchPermissions() {
       if (!account?.username) return;
 
@@ -123,9 +135,20 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       }
     }
 
+    async function initializeDepartments() {
+      const isSeeded = await seedDepartments();
+      if (isSeeded) {
+        console.log("[System] Default departments types seeded successfully.");
+      }
+    }
+
+    /** Logoff User on Role Change **/
+    logoff()
+
     /** --- Default Values Generation --- **/
     initializeConfiguration();
     initializeRoomTypes();
+    initializeDepartments();
 
     fetchPermissions();
   }, [account]);
@@ -214,10 +237,20 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                 <Button
                   outline
                   color="alternative"
+                  onClick={() => router.push(`/user`)}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.personal_schedule ? "" : "hidden"}`}
+                >
+                  <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  {!collapsed && <span className="ml-2">Personal Info</span>}
+                </Button>
+
+                <Button
+                  outline
+                  color="alternative"
                   onClick={() => router.push(`/booking`)}
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
                 >
-                  <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  <MdOutlineEditCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   {!collapsed && <span className="ml-2">Booking</span>}
                 </Button>
 
@@ -346,6 +379,17 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   </Button>
                 </Tooltip>
 
+                <Tooltip content={"Personal Info"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push(`/user`)}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.personal_schedule ? "" : "hidden"}`}
+                  >
+                    <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
                 <Tooltip content={"Booking"} placement={"right"}>
                   <Button
                     outline
@@ -353,7 +397,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                     onClick={() => router.push(`/booking`)}
                     className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
                   >
-                    <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                    <MdOutlineEditCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   </Button>
                 </Tooltip>
 

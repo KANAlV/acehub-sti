@@ -561,13 +561,15 @@ export default function UsersManagement() {
                   <TableCell>{item.email}</TableCell>
                   <TableCell className="capitalize">{item.role_name}</TableCell>
                   <TableCell>
-                    <a
-                      onClick={() => loadEditData(item.user_id)}
-                      className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
-                      hidden={item.is_blacklisted}
-                    >
-                      Edit
-                    </a>
+                    {!(item.role_name === "superuser") &&
+                      <a
+                        onClick={() => loadEditData(item.user_id)}
+                        className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
+                        hidden={item.is_blacklisted}
+                      >
+                        Edit
+                      </a>
+                    }
                   </TableCell>
                 </TableRow>
               ))
@@ -672,7 +674,8 @@ export default function UsersManagement() {
                 required
               >
                 {roles.length > 0 ? (
-                  roles.map((option) => (
+                  roles.filter((users) => users.role_name !== "superuser")
+                    .map((option) => (
                     <option key={option.role_id} value={option.role_name}>
                       {option.role_name}
                     </option>
@@ -704,35 +707,24 @@ export default function UsersManagement() {
             className="flex flex-col gap-4"
             onSubmit={(e) => e.preventDefault()}
           >
-            {/* Disabled Read-Only Email Field */}
+            {/* Read-Only Email Display */}
             <div>
-              <div className="mb-2 block">
-                <Label htmlFor="edit_email">Email Address</Label>
-              </div>
-              <TextInput
-                id="edit_email"
-                type="email"
-                value={newEmail}
-                disabled
-              />
+              <span className="text-xs font-semibold text-gray-500 uppercase dark:text-gray-400">
+                Email Address
+              </span>
+              <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {newEmail || "N/A"}
+              </p>
             </div>
 
-            {/* Username Field with ToggleSwitch */}
+            {/* Read-Only Username Display */}
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <Label htmlFor="edit_username">Username</Label>
-                <ToggleSwitch
-                  checked={isEditUsernameEnabled}
-                  label="Edit"
-                  onChange={handleToggleUsernameEdit}
-                />
-              </div>
-              <TextInput
-                id="edit_username"
-                value={newUsername}
-                onChange={handleNewUsernameChange}
-                disabled={!isEditUsernameEnabled}
-              />
+              <span className="text-xs font-semibold text-gray-500 uppercase dark:text-gray-400">
+                Username
+              </span>
+              <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {newUsername || "N/A"}
+              </p>
             </div>
 
             {/* Role Field */}
@@ -747,7 +739,8 @@ export default function UsersManagement() {
                 required
               >
                 {roles.length > 0 ? (
-                  roles.map((option) => (
+                  roles.filter((users) => users.role_name !== "superuser")
+                    .map((option) => (
                     <option key={option.role_id} value={option.role_name}>
                       {option.role_name}
                     </option>
@@ -765,10 +758,7 @@ export default function UsersManagement() {
           <div className="flex gap-3">
             <Button
               onClick={handleUserUpdate}
-              disabled={
-                baseUsername === newUsername.trim() &&
-                baseRoleName === newRoleName
-              }
+              disabled={baseRoleName === newRoleName}
             >
               Save
             </Button>
@@ -780,7 +770,10 @@ export default function UsersManagement() {
           <div className="flex gap-2">
             {/* Blacklist Button (FaUserSlash) */}
             <Tooltip content="Blacklist User">
-              <Button color="yellow" onClick={() => setOpenBlacklistModal(true)}>
+              <Button
+                color="yellow"
+                onClick={() => setOpenBlacklistModal(true)}
+              >
                 <FaUserSlash className="h-4 w-4" />
               </Button>
             </Tooltip>

@@ -445,7 +445,8 @@ export default function RolesManagement() {
           </TableHead>
           <TableBody className="divide-y">
             {roles.length > 0 ? (
-              roles.map((item) => {
+              roles.filter((user) => user.role_name !== "superuser")
+                .map((item) => {
                 const activeCount = PERMISSION_KEYS.filter(
                   (p) => item[p.key as keyof Role] === true,
                 ).length;

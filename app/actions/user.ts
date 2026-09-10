@@ -33,3 +33,28 @@ export async function fetchUserRole(email: string) {
     return { success: false, error: (error as Error).message };
   }
 }
+
+export async function fetchUserLogoffStatus(
+  email: string
+): Promise<{ success: boolean; logoff?: boolean; error?: string }> {
+  try {
+    if (!email || !email.trim()) {
+      return { success: false, error: "Email parameter is required." };
+    }
+
+    const [result] = await sql<{ get_user_logoff_status: boolean }[]>`
+      SELECT get_user_logoff_status(${email.trim()});
+    `;
+
+    return {
+      success: true,
+      logoff: result?.get_user_logoff_status ?? false,
+    };
+  } catch (error) {
+    console.error("Failed to fetch logoff status:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch logoff status.",
+    };
+  }
+}

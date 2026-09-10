@@ -42,11 +42,10 @@ import {
   fetchTeachersCount,
   updateTeacher,
   deleteTeacher,
-  fetchMaqClusters,
-  type MaqClusterRecord,
+  fetchDepartments,
 } from "@/app/actions/system";
 
-export interface Teacher {
+export interface TeacherRecord {
   teacher_id: string;
   pscs_id: string | null;
   email: string | null;
@@ -54,14 +53,21 @@ export interface Teacher {
   m_name: string | null;
   surname: string | null;
   suffix: string | null;
+  full_name: string;
   teacher_code: string | null;
-  specialization: string | null;
+  department: string | null;
   employment_type: string | null;
-  availability?: unknown[] | Record<string, unknown> | null;
-  preferences?: unknown[] | Record<string, unknown> | null;
-  created_at?: string;
-  updated_at?: string;
-  is_archived?: boolean;
+  availability: Record<string, unknown> | Array<unknown>;
+  preferences: Record<string, unknown> | Array<unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DepartmentRecord {
+  dept_id: string;
+  dept_code?: string;
+  dept_name: string;
+  [key: string]: unknown;
 }
 
 export interface AvailabilitySlot {
@@ -94,7 +100,7 @@ export default function TeachersManagement() {
   const [isLoading, setLoading] = useState(true);
 
   // --- Table Constants --- //
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [teachers, setTeachers] = useState<TeacherRecord[]>([]);
   const [teachersCount, setTeachersCount] = useState(0);
   const [sortTeachersBy, setSortTeachersBy] = useState("surname");
   const [sortTeachersDir, setSortTeachersDir] = useState("ASC");
@@ -112,7 +118,7 @@ export default function TeachersManagement() {
   const [fNameError, setFNameError] = useState("");
   const [surnameError, setSurnameError] = useState("");
   const [emailError, setEmailError] = useState("");
-  const [specializationError, setSpecializationError] = useState("");
+  const [departmentError, setDepartmentError] = useState("");
   const [availError, setAvailError] = useState("");
 
   const [editPscsIdError, setEditPscsIdError] = useState("");
@@ -120,14 +126,14 @@ export default function TeachersManagement() {
   const [editFNameError, setEditFNameError] = useState("");
   const [editSurnameError, setEditSurnameError] = useState("");
   const [editEmailError, setEditEmailError] = useState("");
-  const [editSpecializationError, setEditSpecializationError] = useState("");
+  const [editDepartmentError, setEditDepartmentError] = useState("");
   const [editAvailError, setEditAvailError] = useState("");
 
-  // --- Cluster / Specialization States --- //
-  const [allClusters, setAllClusters] = useState<string[]>([]);
-  const [clusterOptions, setClusterOptions] = useState<string[]>([]);
-  const [showAddClusterDropdown, setShowAddClusterDropdown] = useState(false);
-  const [showEditClusterDropdown, setShowEditClusterDropdown] = useState(false);
+  // --- Department Autosuggestion States --- //
+  const [allDepartments, setAllDepartments] = useState<string[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
+  const [showAddDeptDropdown, setShowAddDeptDropdown] = useState(false);
+  const [showEditDeptDropdown, setShowEditDeptDropdown] = useState(false);
 
   // --- Add Form State --- //
   const [inputPscsId, setInputPscsId] = useState("");
@@ -137,7 +143,7 @@ export default function TeachersManagement() {
   const [inputSurname, setInputSurname] = useState("");
   const [inputSuffix, setInputSuffix] = useState("");
   const [inputTeacherCode, setInputTeacherCode] = useState("");
-  const [inputSpecialization, setInputSpecialization] = useState("");
+  const [inputDepartment, setInputDepartment] = useState("");
   const [inputEmploymentType, setInputEmploymentType] = useState("Full-Time");
   const [availabilityList, setAvailabilityList] = useState<AvailabilitySlot[]>(
     DEFAULT_FULLTIME_AVAILABILITY,
@@ -156,7 +162,7 @@ export default function TeachersManagement() {
   const [newSurname, editSurname] = useState("");
   const [newSuffix, editSuffix] = useState("");
   const [newTeacherCode, editTeacherCode] = useState("");
-  const [newSpecialization, editSpecialization] = useState("");
+  const [newDepartment, editDepartment] = useState("");
   const [newEmploymentType, editEmploymentType] = useState("Full-Time");
   const [editAvailabilityList, setEditAvailabilityList] = useState<
     AvailabilitySlot[]
@@ -175,7 +181,7 @@ export default function TeachersManagement() {
   const [baseSurname, setBaseSurname] = useState("");
   const [baseSuffix, setBaseSuffix] = useState("");
   const [baseTeacherCode, setBaseTeacherCode] = useState("");
-  const [baseSpecialization, setBaseSpecialization] = useState("");
+  const [baseDepartment, setBaseDepartment] = useState("");
   const [baseEmploymentType, setBaseEmploymentType] = useState("Full-Time");
   const [baseAvailabilityList, setBaseAvailabilityList] = useState<
     AvailabilitySlot[]
@@ -204,7 +210,7 @@ export default function TeachersManagement() {
   };
 
   /** --- Availability Display Formatter --- **/
-  const renderAvailability = (item: Teacher) => {
+  const renderAvailability = (item: TeacherRecord) => {
     const isPartTime =
       item.employment_type === "Part-Time" ||
       item.employment_type === "Part-Time Full Load";
@@ -248,79 +254,83 @@ export default function TeachersManagement() {
     return email.toLowerCase().endsWith("@alabang.sti.edu.ph");
   };
 
-  /** --- Initial Load: All MAQ Clusters --- **/
+  /** --- Initial Load: All Departments --- **/
   useEffect(() => {
-    async function loadAllClusters() {
-      const response = await fetchMaqClusters("", 0);
+    async function loadAllDepartments() {
+      const response = await fetchDepartments("", "dept_name", "ASC", 0, 1);
       if (response?.success && response.data) {
-        const names = response.data.map(
-          (c: MaqClusterRecord) => c.cluster_name,
+        const names = (response.data as DepartmentRecord[]).map(
+          (d) => d.dept_name,
         );
-        setAllClusters(names);
+        setAllDepartments(names);
       }
     }
-    void loadAllClusters();
+    void loadAllDepartments();
   }, []);
 
-  /** --- MAQ Cluster Search & Validation --- **/
-  async function searchClusters(query: string) {
-    const response = await fetchMaqClusters(query || null, 20, 1);
+  /** --- Department Search & Validation --- **/
+  async function searchDepts(query: string) {
+    const response = await fetchDepartments(
+      query || null,
+      "dept_name",
+      "ASC",
+      20,
+      1,
+    );
     if (response?.success && response.data) {
-      const names = response.data.map((c: MaqClusterRecord) => c.cluster_name);
-      setClusterOptions(names);
+      const names = (response.data as DepartmentRecord[]).map(
+        (d) => d.dept_name,
+      );
+      setDepartmentOptions(names);
       return names;
     }
-    setClusterOptions([]);
+    setDepartmentOptions([]);
     return [];
   }
 
-  const handleAddSpecializationChange = async (value: string) => {
+  const handleAddDepartmentChange = async (value: string) => {
     const val = filterAlphaDashSpace(value).slice(0, 80);
-    setInputSpecialization(val);
-    setShowAddClusterDropdown(true);
+    setInputDepartment(val);
+    setShowAddDeptDropdown(true);
 
     if (!val.trim()) {
-      setSpecializationError("");
-      setClusterOptions([]);
+      setDepartmentError("");
+      setDepartmentOptions([]);
       return;
     }
 
-    const fetchedNames = await searchClusters(val);
+    const fetchedNames = await searchDepts(val);
     const hasMatch = fetchedNames.some(
       (name) => name.toLowerCase() === val.trim().toLowerCase(),
     );
 
     if (!hasMatch) {
-      setSpecializationError(
-        "Specialization must match an existing MAQ Cluster.",
-      );
+      setDepartmentError("Department must match an existing department.");
     } else {
-      setSpecializationError("");
+      setDepartmentError("");
     }
   };
 
-  const handleEditSpecializationChange = async (value: string) => {
+  const handleEditDepartmentChange = async (value: string) => {
     const val = filterAlphaDashSpace(value).slice(0, 80);
-    editSpecialization(val);
-    setShowEditClusterDropdown(true);
+    editDepartment(val);
+    setShowEditDeptDropdown(true);
 
     if (!val.trim()) {
-      setEditSpecializationError("");
-      setClusterOptions([]);
+      setEditDepartmentError("");
+      setDepartmentOptions([]);
       return;
     }
 
-    const fetchedNames = await searchClusters(val);
+    const fetchedNames = await searchDepts(val);
     const hasMatch = fetchedNames.some(
       (name) => name.toLowerCase() === val.trim().toLowerCase(),
     );
 
     if (!hasMatch) {
-      setEditSpecializationError(
-        "Specialization must match an existing MAQ Cluster.",
-      );
+      setEditDepartmentError("Department must match an existing department.");
     } else {
-      setEditSpecializationError("");
+      setEditDepartmentError("");
     }
   };
 
@@ -328,7 +338,7 @@ export default function TeachersManagement() {
   const handleAddEmploymentChange = (type: string) => {
     setInputEmploymentType(type);
     setAvailError("");
-    if (type === "Part-Time") {
+    if (type === "Part-Time" || type === "Part-Time Full Load") {
       setAvailabilityList([]);
     } else {
       setAvailabilityList(DEFAULT_FULLTIME_AVAILABILITY);
@@ -338,7 +348,7 @@ export default function TeachersManagement() {
   const handleEditEmploymentChange = (type: string) => {
     editEmploymentType(type);
     setEditAvailError("");
-    if (type === "Part-Time") {
+    if (type === "Part-Time" || type === "Part-Time Full Load") {
       setEditAvailabilityList([]);
     } else {
       setEditAvailabilityList(DEFAULT_FULLTIME_AVAILABILITY);
@@ -524,7 +534,7 @@ export default function TeachersManagement() {
     setFNameError("");
     setSurnameError("");
     setEmailError("");
-    setSpecializationError("");
+    setDepartmentError("");
     setAvailError("");
 
     setEditPscsIdError("");
@@ -532,11 +542,11 @@ export default function TeachersManagement() {
     setEditFNameError("");
     setEditSurnameError("");
     setEditEmailError("");
-    setEditSpecializationError("");
+    setEditDepartmentError("");
     setEditAvailError("");
 
-    setShowAddClusterDropdown(false);
-    setShowEditClusterDropdown(false);
+    setShowAddDeptDropdown(false);
+    setShowEditDeptDropdown(false);
     setOpenAddTeacherModal(false);
     setOpenEditTeacherModal(false);
     setOpenDeleteModal(false);
@@ -548,7 +558,7 @@ export default function TeachersManagement() {
     setInputSurname("");
     setInputSuffix("");
     setInputTeacherCode("");
-    setInputSpecialization("");
+    setInputDepartment("");
     setInputEmploymentType("Full-Time");
     setAvailabilityList(DEFAULT_FULLTIME_AVAILABILITY);
 
@@ -559,7 +569,7 @@ export default function TeachersManagement() {
     editSurname("");
     editSuffix("");
     editTeacherCode("");
-    editSpecialization("");
+    editDepartment("");
     editEmploymentType("Full-Time");
     setEditAvailabilityList([]);
   };
@@ -576,7 +586,7 @@ export default function TeachersManagement() {
       const sname = selectedTeacher.surname ?? "";
       const sfx = selectedTeacher.suffix ?? "";
       const code = selectedTeacher.teacher_code ?? "";
-      const spec = selectedTeacher.specialization ?? "";
+      const dept = selectedTeacher.department ?? "";
       const emp = selectedTeacher.employment_type ?? "Full-Time";
 
       let slots: AvailabilitySlot[] = [];
@@ -593,7 +603,7 @@ export default function TeachersManagement() {
       const avail =
         slots.length > 0
           ? slots
-          : emp === "Part-Time"
+          : emp === "Part-Time" || emp === "Part-Time Full Load"
             ? []
             : DEFAULT_FULLTIME_AVAILABILITY;
 
@@ -604,7 +614,7 @@ export default function TeachersManagement() {
       setBaseSurname(sname);
       setBaseSuffix(sfx);
       setBaseTeacherCode(code);
-      setBaseSpecialization(spec);
+      setBaseDepartment(dept);
       setBaseEmploymentType(emp);
       setBaseAvailabilityList(avail);
 
@@ -615,16 +625,21 @@ export default function TeachersManagement() {
       editSurname(sname);
       editSuffix(sfx);
       editTeacherCode(code);
-      editSpecialization(spec);
+      editDepartment(dept);
       editEmploymentType(emp);
       setEditAvailabilityList(avail);
 
-      const isValid = allClusters.includes(spec);
+      const isValid = allDepartments.some(
+        (department) =>
+          department.toLowerCase() === dept.trim().toLowerCase(),
+      );
 
-      if (!isValid && spec !== "") {
-        setEditSpecializationError("Invalid specialization code or cluster missing.");
+      if (!isValid && dept !== "") {
+        setEditDepartmentError(
+          "Invalid department code or department missing.",
+        );
       } else {
-        setEditSpecializationError("");
+        setEditDepartmentError("");
       }
 
       setOpenEditTeacherModal(true);
@@ -642,7 +657,7 @@ export default function TeachersManagement() {
     !!fNameError ||
     !!surnameError ||
     !!emailError ||
-    !!specializationError;
+    !!departmentError;
 
   const isEditFormInvalid =
     !newPscsId.trim() ||
@@ -655,7 +670,7 @@ export default function TeachersManagement() {
     !!editFNameError ||
     !!editSurnameError ||
     !!editEmailError ||
-    !!editSpecializationError;
+    !!editDepartmentError;
 
   const isEditFormUnchanged =
     newPscsId === basePscsId &&
@@ -665,10 +680,10 @@ export default function TeachersManagement() {
     newSurname === baseSurname &&
     newSuffix === baseSuffix &&
     newTeacherCode === baseTeacherCode &&
-    newSpecialization === baseSpecialization &&
+    newDepartment === baseDepartment &&
     newEmploymentType === baseEmploymentType &&
     JSON.stringify(editAvailabilityList) ===
-      JSON.stringify(baseAvailabilityList);
+    JSON.stringify(baseAvailabilityList);
 
   /** --- Database Integration --- **/
   async function getTeacherCount(search?: string | null) {
@@ -698,7 +713,7 @@ export default function TeachersManagement() {
     const response = await fetchTeachers(search, sortby, sortdir, limit, page);
 
     if (response?.success && response.data) {
-      setTeachers(response.data as Teacher[]);
+      setTeachers(response.data as TeacherRecord[]);
     } else {
       setToastMessage(
         response?.error ?? "[fetchTeachers]: An unexpected error occurred",
@@ -723,7 +738,7 @@ export default function TeachersManagement() {
       surname: inputSurname.trim(),
       suffix: inputSuffix.trim() || undefined,
       teacher_code: inputTeacherCode.trim(),
-      specialization: inputSpecialization.trim() || undefined,
+      department: inputDepartment.trim() || undefined,
       employment_type: inputEmploymentType,
       availability: availabilityList,
     };
@@ -753,7 +768,7 @@ export default function TeachersManagement() {
   }
 
   async function handleTeacherUpdate() {
-    if (isEditFormInvalid) return;
+    if (isEditFormInvalid || isEditFormUnchanged) return;
 
     const payload = {
       pscs_id: newPscsId.trim(),
@@ -763,7 +778,7 @@ export default function TeachersManagement() {
       surname: newSurname.trim(),
       suffix: newSuffix.trim() || undefined,
       teacher_code: newTeacherCode.trim(),
-      specialization: newSpecialization.trim() || undefined,
+      department: newDepartment.trim() || undefined,
       employment_type: newEmploymentType,
       availability: editAvailabilityList,
     };
@@ -898,7 +913,7 @@ export default function TeachersManagement() {
         <div>
           <h2 className="mb-1 text-lg font-bold">Faculty Management</h2>
           <p className="text-gray-500">
-            Manage instructors, specializations, and employment status.
+            Manage instructors, departments, and employment status.
           </p>
         </div>
 
@@ -907,7 +922,7 @@ export default function TeachersManagement() {
             <TextInput
               id="search-teachers"
               type="text"
-              placeholder="Search code, name, specialization..."
+              placeholder="Search code, name, department..."
               value={searchTerm}
               onChange={handleSearchChange}
               icon={HiSearch}
@@ -978,11 +993,11 @@ export default function TeachersManagement() {
               </TableHeadCell>
 
               <TableHeadCell
-                onClick={() => handleTeacherSorting("specialization")}
+                onClick={() => handleTeacherSorting("department")}
               >
                 <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                  Specialization
-                  {sortTeachersBy === "specialization" &&
+                  Department
+                  {sortTeachersBy === "department" &&
                     (sortTeachersDir === "ASC" ? (
                       <FaSortUp className="ml-1" />
                     ) : (
@@ -1019,21 +1034,23 @@ export default function TeachersManagement() {
           <TableBody className="divide-y">
             {teachers.length > 0 ? (
               teachers.map((item) => {
-                const fullName = [
-                  item.surname ? `${item.surname},` : "",
-                  item.f_name ?? "",
-                  item.m_name ? `${item.m_name.charAt(0)}.` : "",
-                  item.suffix ?? "",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
+                const displayFullName =
+                  item.full_name ||
+                  [
+                    item.surname ? `${item.surname},` : "",
+                    item.f_name ?? "",
+                    item.m_name ? `${item.m_name.charAt(0)}.` : "",
+                    item.suffix ?? "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
 
-                const isSpecValid =
-                  !item.specialization ||
-                  allClusters.some(
-                    (cluster) =>
-                      cluster.toLowerCase() ===
-                      item.specialization?.trim().toLowerCase(),
+                const isDeptValid =
+                  !item.department ||
+                  allDepartments.some(
+                    (dept) =>
+                      dept.toLowerCase() ===
+                      item.department?.trim().toLowerCase(),
                   );
 
                 return (
@@ -1045,18 +1062,21 @@ export default function TeachersManagement() {
                       {item.teacher_code || "—"}
                     </TableCell>
                     <TableCell className="font-medium whitespace-nowrap">
-                      {fullName || "—"}
+                      {displayFullName || "—"}
                     </TableCell>
                     <TableCell>{item.email || "—"}</TableCell>
                     <TableCell>
-                      {!isSpecValid ? (
-                        <Tooltip placement={"right"} content="Invalid specialization code or cluster missing">
+                      {!isDeptValid ? (
+                        <Tooltip
+                          placement={"right"}
+                          content="Invalid department code or department missing"
+                        >
                           <span className="cursor-pointer font-semibold text-red-600 dark:text-red-400">
-                            {item.specialization || "—"}
+                            {item.department || "—"}
                           </span>
                         </Tooltip>
                       ) : (
-                        item.specialization || "—"
+                        item.department || "—"
                       )}
                     </TableCell>
                     <TableCell>{item.employment_type || "—"}</TableCell>
@@ -1279,32 +1299,32 @@ export default function TeachersManagement() {
             </div>
 
             <div className="relative">
-              <Label htmlFor="specialization">Specialization</Label>
+              <Label htmlFor="department">Department</Label>
               <TextInput
-                id="specialization"
-                placeholder="Search MAQ cluster..."
-                value={inputSpecialization}
-                onChange={(e) => handleAddSpecializationChange(e.target.value)}
+                id="department"
+                placeholder="Search department..."
+                value={inputDepartment}
+                onChange={(e) => handleAddDepartmentChange(e.target.value)}
                 onFocus={() => {
-                  if (inputSpecialization) {
-                    void searchClusters(inputSpecialization);
-                    setShowAddClusterDropdown(true);
+                  if (inputDepartment) {
+                    void searchDepts(inputDepartment);
+                    setShowAddDeptDropdown(true);
                   }
                 }}
-                color={specializationError ? "failure" : "gray"}
+                color={departmentError ? "failure" : "gray"}
                 maxLength={80}
               />
 
-              {/* Suggestions Dropdown explicitly aligned to input box height */}
-              {showAddClusterDropdown && clusterOptions.length > 0 && (
+              {/* Suggestions Dropdown */}
+              {showAddDeptDropdown && departmentOptions.length > 0 && (
                 <ul className="absolute top-[68px] z-20 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                  {clusterOptions.map((name) => (
+                  {departmentOptions.map((name) => (
                     <li
                       key={name}
                       onClick={() => {
-                        setInputSpecialization(name);
-                        setSpecializationError("");
-                        setShowAddClusterDropdown(false);
+                        setInputDepartment(name);
+                        setDepartmentError("");
+                        setShowAddDeptDropdown(false);
                       }}
                       className="cursor-pointer px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                     >
@@ -1315,13 +1335,13 @@ export default function TeachersManagement() {
               )}
 
               <div className="mt-1 flex items-center justify-between">
-                {specializationError ? (
-                  <HelperText color="failure">{specializationError}</HelperText>
+                {departmentError ? (
+                  <HelperText color="failure">{departmentError}</HelperText>
                 ) : (
                   <span />
                 )}
                 <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {inputSpecialization.length}/80
+                  {inputDepartment.length}/80
                 </span>
               </div>
             </div>
@@ -1608,32 +1628,32 @@ export default function TeachersManagement() {
             </div>
 
             <div className="relative">
-              <Label htmlFor="edit_specialization">Specialization</Label>
+              <Label htmlFor="edit_department">Department</Label>
               <TextInput
-                id="edit_specialization"
-                placeholder="Search MAQ cluster..."
-                value={newSpecialization}
-                onChange={(e) => handleEditSpecializationChange(e.target.value)}
+                id="edit_department"
+                placeholder="Search department..."
+                value={newDepartment}
+                onChange={(e) => handleEditDepartmentChange(e.target.value)}
                 onFocus={() => {
-                  if (newSpecialization) {
-                    void searchClusters(newSpecialization);
-                    setShowEditClusterDropdown(true);
+                  if (newDepartment) {
+                    void searchDepts(newDepartment);
+                    setShowEditDeptDropdown(true);
                   }
                 }}
-                color={editSpecializationError ? "failure" : "gray"}
+                color={editDepartmentError ? "failure" : "gray"}
                 maxLength={80}
               />
 
-              {/* Suggestions Dropdown explicitly aligned to input box height */}
-              {showEditClusterDropdown && clusterOptions.length > 0 && (
+              {/* Suggestions Dropdown */}
+              {showEditDeptDropdown && departmentOptions.length > 0 && (
                 <ul className="absolute top-[68px] z-20 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                  {clusterOptions.map((name) => (
+                  {departmentOptions.map((name) => (
                     <li
                       key={name}
                       onClick={() => {
-                        editSpecialization(name);
-                        setEditSpecializationError("");
-                        setShowEditClusterDropdown(false);
+                        editDepartment(name);
+                        setEditDepartmentError("");
+                        setShowEditDeptDropdown(false);
                       }}
                       className="cursor-pointer px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                     >
@@ -1644,15 +1664,15 @@ export default function TeachersManagement() {
               )}
 
               <div className="mt-1 flex items-center justify-between">
-                {editSpecializationError ? (
+                {editDepartmentError ? (
                   <HelperText color="failure">
-                    {editSpecializationError}
+                    {editDepartmentError}
                   </HelperText>
                 ) : (
                   <span />
                 )}
                 <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {newSpecialization.length}/80
+                  {newDepartment.length}/80
                 </span>
               </div>
             </div>

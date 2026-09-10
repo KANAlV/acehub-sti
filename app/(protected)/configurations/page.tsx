@@ -5,7 +5,12 @@ import { Spinner, TabItem, Tabs, Toast, ToastToggle } from "flowbite-react";
 import { FaCoffee, FaUsersCog, FaWeight } from "react-icons/fa";
 import BreakPeriods from "@/components/configurations/BreakPeriods";
 import { useEffect, useState } from "react";
-import { FaAddressBook, FaBarsStaggered, FaUserSlash } from "react-icons/fa6";
+import {
+  FaAddressBook,
+  FaBarsStaggered,
+  FaBuilding,
+  FaUserSlash,
+} from "react-icons/fa6";
 import { useMsal } from "@azure/msal-react";
 import { fetchUserRole } from "@/app/actions/user";
 import { HiExclamation } from "react-icons/hi";
@@ -17,6 +22,7 @@ import AuditLogs from "@/components/configurations/Logs";
 import RolesManagement from "@/components/configurations/Roles";
 import UsersManagementPage from "@/components/configurations/Users";
 import BlacklistManagement from "@/components/configurations/Blacklist";
+import DepartmentManagement from "@/components/configurations/Departments"; // Import your new component
 
 interface UserPermissions {
   booking: boolean;
@@ -98,6 +104,7 @@ export default function Configuration() {
       "faculty-load",
       "class-settings",
       "room-types",
+      "departments" // Added departments to main config tabs
     );
   }
   if (permissions?.superuser) {
@@ -108,7 +115,7 @@ export default function Configuration() {
     if (permissions !== null) {
       if (!permissions.config && !permissions.superuser) {
         console.log(
-          `[Access Denied]: User '${username}' requested access to protected route, but lacks required permissions.`,
+          `[Access Denied]: User '${username}' requested access to protected route, but lacks required permissions.`
         );
         router.push("/unauthorized_access");
       } else if (!activeTabKey && availableMainTabs.length > 0) {
@@ -186,6 +193,17 @@ export default function Configuration() {
               icon={FaBarsStaggered}
             >
               {activeTabKey === "room-types" && <RoomTypes />}
+            </TabItem>
+          )}
+
+          {/* New Departments Tab under config permissions */}
+          {permissions.config && (
+            <TabItem
+              active={activeTabKey === "departments"}
+              title="Departments"
+              icon={FaBuilding} // Adjust icon as needed
+            >
+              {activeTabKey === "departments" && <DepartmentManagement />}
             </TabItem>
           )}
 

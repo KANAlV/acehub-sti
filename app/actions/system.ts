@@ -175,7 +175,7 @@ export interface TeacherInput {
   surname?: string;
   suffix?: string;
   teacher_code?: string;
-  specialization?: string;
+  department?: string;
   employment_type?: string;
   availability?: Record<string, unknown> | Array<unknown>;
   preferences?: Record<string, unknown> | Array<unknown>;
@@ -190,7 +190,7 @@ export interface TeacherRecord {
   suffix: string | null;
   full_name: string;
   teacher_code: string | null;
-  specialization: string | null;
+  department: string | null;
   employment_type: string | null;
   availability: Record<string, unknown> | Array<unknown>;
   preferences: Record<string, unknown> | Array<unknown>;
@@ -254,7 +254,7 @@ export async function fetchTeachersCount(search: string | null = null) {
   }
 }
 
-// Create Teachers
+// Create Teacher
 export async function createTeacher(actor: string, input: TeacherInput) {
   try {
     const [result] = await sql<{ teachers_create: string }[]>`
@@ -266,7 +266,7 @@ export async function createTeacher(actor: string, input: TeacherInput) {
                ${input.surname ?? null},
                ${input.suffix ?? null},
                ${input.teacher_code ?? null},
-               ${input.specialization ?? null},
+               ${input.department ?? null},
                ${input.employment_type ?? null},
                ${input.availability ? JSON.stringify(input.availability) : "{}"}::jsonb,
                ${input.preferences ? JSON.stringify(input.preferences) : "{}"}::jsonb
@@ -292,11 +292,11 @@ export async function createTeacher(actor: string, input: TeacherInput) {
   }
 }
 
-// Update Teachers
+// Update Teacher
 export async function updateTeacher(
   actor: string,
   teacherId: string,
-  input: Partial<TeacherInput>,
+  input: Partial<TeacherInput>
 ) {
   try {
     await sql`
@@ -309,7 +309,7 @@ export async function updateTeacher(
                ${input.surname ?? null},
                ${input.suffix ?? null},
                ${input.teacher_code ?? null},
-               ${input.specialization ?? null},
+               ${input.department ?? null},
                ${input.employment_type ?? null},
                ${input.availability ? JSON.stringify(input.availability) : null}::jsonb,
                ${input.preferences ? JSON.stringify(input.preferences) : null}::jsonb
@@ -328,7 +328,7 @@ export async function updateTeacher(
   }
 }
 
-// Delete Teachers
+// Delete Teacher
 export async function deleteTeacher(actor: string, teacherId: string) {
   try {
     await sql`
@@ -652,6 +652,18 @@ export async function seedRoomTypes(): Promise<boolean> {
     return result?.seed_room_types ?? false;
   } catch (error) {
     console.error("Failed to seed room types:", error);
+    return false;
+  }
+}
+export async function seedDepartments(): Promise<boolean> {
+  try {
+    const [result] = await sql<{ seed_departments: boolean }[]>`
+      SELECT seed_departments();
+    `;
+
+    return result?.seed_departments ?? false;
+  } catch (error) {
+    console.error("Failed to seed departments:", error);
     return false;
   }
 }
@@ -1166,6 +1178,139 @@ export async function deleteRoomType(user: string, roomTypeId: string) {
     return {
       success: false,
       error: (error as Error).message,
+    };
+  }
+}
+
+/** --- Departments Management --- **/
+
+export interface DepartmentRecord {
+  dept_name: string;
+}
+
+/* FETCH DEPARTMENTS (READ) */
+export async function fetchDepartments(
+  search: string | null = null,
+  sortBy: string = "dept_name",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<DepartmentRecord[]>`
+      SELECT * FROM departments_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch departments:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch departments.",
+      data: [],
+    };
+  }
+}
+
+/* FETCH DEPARTMENTS COUNT */
+export async function fetchDepartmentsCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ departments_count: number }[]>`
+      SELECT departments_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.departments_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch departments count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count departments.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE DEPARTMENT */
+export async function createDepartment(actor: string, deptName: string) {
+  try {
+    const [result] = await sql<{ departments_create: string }[]>`
+      SELECT departments_create(${deptName});
+    `;
+
+    await createLog(actor, "create_department", `dept_name: '${deptName}'`);
+
+    return {
+      success: true,
+      deptName: result?.departments_create,
+    };
+  } catch (error) {
+    console.error("Failed to create department:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create department.",
+    };
+  }
+}
+
+/* UPDATE DEPARTMENT */
+export async function updateDepartment(
+  actor: string,
+  oldDeptName: string,
+  newDeptName: string
+) {
+  try {
+    const [result] = await sql<{ departments_update: string }[]>`
+      SELECT departments_update(${oldDeptName}, ${newDeptName});
+    `;
+
+    await createLog(
+      actor,
+      "update_department",
+      `old_dept_name: '${oldDeptName}' | new_dept_name: '${newDeptName}'`
+    );
+
+    return {
+      success: true,
+      deptName: result?.departments_update,
+    };
+  } catch (error) {
+    console.error("Failed to update department:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update department.",
+    };
+  }
+}
+
+/* DELETE DEPARTMENT */
+export async function deleteDepartment(actor: string, deptName: string) {
+  try {
+    await sql`
+      SELECT departments_delete(${deptName});
+    `;
+
+    await createLog(actor, "delete_department", `dept_name: '${deptName}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete department:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete department.",
     };
   }
 }
