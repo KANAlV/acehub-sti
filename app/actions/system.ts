@@ -1,6 +1,154 @@
 "use server";
 import sql from "@/lib/database";
 
+/*********
+ * ROOMS *
+ **********/
+
+export interface RoomInput {
+  room_name: string;
+  room_type?: string | null;
+  floor_level?: number | null;
+}
+export interface RoomRecord {
+  room_id: string;
+  room_name: string;
+  room_type: string | null;
+  room_type_name: string | null;
+  floor_level: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/* FETCH ROOMS (READ) */
+export async function fetchRooms(
+  search: string | null = null,
+  sortBy: string = "room_name",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1,
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<RoomRecord[]>`
+      SELECT * FROM rooms_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch rooms:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch rooms.",
+      data: [],
+    };
+  }
+}
+
+/* FETCH ROOMS COUNT */
+export async function fetchRoomsCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ rooms_count: number }[]>`
+      SELECT rooms_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.rooms_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch rooms count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count rooms.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE ROOM */
+export async function createRoom(actor: string, input: RoomInput) {
+  try {
+    const [result] = await sql<{ rooms_create: string }[]>`
+      SELECT rooms_create(
+        ${input.room_name},
+        ${input.room_type ? input.room_type : null}::UUID,
+        ${input.floor_level ?? null}
+      );
+    `;
+
+    await createLog(actor, "create_room", `room_name: '${input.room_name}'`);
+
+    return {
+      success: true,
+      roomId: result?.rooms_create,
+    };
+  } catch (error) {
+    console.error("Failed to create room:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create room.",
+    };
+  }
+}
+
+/* UPDATE ROOM */
+export async function updateRoom(
+  actor: string,
+  roomId: string,
+  input: Partial<RoomInput>,
+) {
+  try {
+    await sql`
+      SELECT rooms_update(
+        ${roomId}::UUID,
+        ${input.room_name ?? null},
+        ${input.room_type ? input.room_type : null}::UUID,
+        ${input.floor_level ?? null}
+      );
+    `;
+
+    await createLog(actor, "update_room", `room_id: '${roomId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update room:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update room.",
+    };
+  }
+}
+
+/* DELETE ROOM */
+export async function deleteRoom(actor: string, roomId: string) {
+  try {
+    await sql`
+      SELECT rooms_delete(${roomId}::UUID);
+    `;
+
+    await createLog(actor, "delete_room", `room_id: '${roomId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete room:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete room.",
+    };
+  }
+}
+
 /************
  * PROGRAMS *
  ************/

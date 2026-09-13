@@ -383,12 +383,14 @@ export default function RoomTypes() {
                     {item.value}
                   </TableCell>
                   <TableCell>
-                    <a
-                      onClick={() => loadEditData(item)}
-                      className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
-                    >
-                      Edit
-                    </a>
+                    {item.value !== "Lecture" && (
+                      <a
+                        onClick={() => loadEditData(item)}
+                        className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
+                      >
+                        Edit
+                      </a>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
