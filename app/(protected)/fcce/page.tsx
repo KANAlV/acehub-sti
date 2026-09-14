@@ -35,10 +35,12 @@ import {
   fetchFcceUnmatched,
   fetchFcceUnmatchedCount,
   fetchSubjects,
+  fetchTeachers,
   updateFcce,
   FcceRecord,
   FcceInput,
   SubjectRecord,
+  TeacherRecord,
   ArchivedMode,
 } from "@/app/actions/system";
 import { FaPlus, FaSortDown, FaSortUp, FaTrash } from "react-icons/fa6";
@@ -48,8 +50,8 @@ import {
   HiX,
   HiSearch,
   HiOutlineArchive,
-  HiExclamationCircle,
 } from "react-icons/hi";
+import { IoMdExit } from "react-icons/io";
 import { useEffect, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 
@@ -65,6 +67,9 @@ export default function FcceManagement() {
 
   // --- Subjects / Course Suggestions State --- //
   const [subjectList, setSubjectList] = useState<SubjectRecord[]>([]);
+
+  // --- Teachers Search / Suggestions State --- //
+  const [teacherList, setTeacherList] = useState<TeacherRecord[]>([]);
 
   // --- Table & View Filter State --- //
   const [records, setRecords] = useState<FcceRecord[]>([]);
@@ -92,10 +97,11 @@ export default function FcceManagement() {
   // Add Form State
   const [addPscsId, setAddPscsId] = useState("");
   const [addCourseName, setAddCourseName] = useState("");
-  const [addPass, setAddPass] = useState(false);
+  const [addPass, setAddPass] = useState(true);
 
   // Edit Form State
   const [editPscsId, setEditPscsId] = useState("");
+  const [editTeacherName, setEditTeacherName] = useState("");
   const [editCourseName, setEditCourseName] = useState("");
   const [editPass, setEditPass] = useState(false);
   const [editArchived, setEditArchived] = useState(false);
@@ -118,6 +124,16 @@ export default function FcceManagement() {
   const [showToastTimer, setShowToastTimer] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  /** --- Helper: Alphanumeric Filter --- **/
+  const filterAlphanumeric = (val: string) => {
+    return val.replace(/[^a-zA-Z0-9]/g, "");
+  };
+
+  /** --- Helper: Check if PSCS ID contains alphabetic characters --- **/
+  const containsAlpha = (val: string) => {
+    return /[a-zA-Z]/.test(val);
+  };
+
   /** --- Load Subjects for Auto-suggestions & Validation --- **/
   async function loadSubjects() {
     const res = await fetchSubjects(null, "course_name", "ASC", 0, 1);
@@ -130,14 +146,27 @@ export default function FcceManagement() {
     void loadSubjects();
   }, []);
 
-  /** --- Fetch Unmatched Count for Badge --- **/
-  useEffect(() => {
-    async function checkUnmatchedCount() {
-      const res = await fetchFcceUnmatchedCount(searchTerm, archiveFilter);
-      if (res?.success) {
-        setUnmatchedCount(res.count);
-      }
+  /** --- Fetch Teachers by Name or PSCS ID --- **/
+  async function searchTeachers(term: string) {
+    if (!term.trim()) {
+      setTeacherList([]);
+      return;
     }
+    const res = await fetchTeachers(term, "surname", "ASC", 10, 1);
+    if (res?.success && res.data) {
+      setTeacherList(res.data);
+    }
+  }
+
+  /** --- Fetch Unmatched Count for Badge --- **/
+  async function checkUnmatchedCount() {
+    const res = await fetchFcceUnmatchedCount(searchTerm, archiveFilter);
+    if (res?.success) {
+      setUnmatchedCount(res.count);
+    }
+  }
+
+  useEffect(() => {
     void checkUnmatchedCount();
   }, [searchTerm, archiveFilter]);
 
@@ -147,13 +176,13 @@ export default function FcceManagement() {
     return subjectList.some(
       (subj) =>
         subj.course_name?.toLowerCase().trim() ===
-        courseName.toLowerCase().trim(),
+        courseName.toLowerCase().trim()
     );
   };
 
   // Check state for legends
   const hasInvalidSubjects = records.some(
-    (item) => !isCourseValid(item.course_name),
+    (item) => !isCourseValid(item.course_name)
   );
   const hasArchivedRecords = records.some((item) => item.archived);
 
@@ -172,7 +201,7 @@ export default function FcceManagement() {
       newDir,
       maxRowFcce,
       1,
-      viewMode,
+      viewMode
     );
   }
 
@@ -188,7 +217,7 @@ export default function FcceManagement() {
       sortFcceDir,
       maxRowFcce,
       page,
-      viewMode,
+      viewMode
     );
     setPageChanging(false);
     setCurrentFccePage(page);
@@ -205,21 +234,57 @@ export default function FcceManagement() {
   };
 
   const handleArchiveFilterChange = (
-    e: React.ChangeEvent<HTMLSelectElement>,
+    e: React.ChangeEvent<HTMLSelectElement>
   ) => {
-    setArchiveFilter(e.target.value as ArchivedMode);
+    const newFilter = e.target.value as ArchivedMode;
+    setArchiveFilter(newFilter);
     setCurrentFccePage(1);
+    setRecords([]);
+    setLoading(true);
+    void getFcceRecords(
+      searchTerm,
+      newFilter,
+      sortFcceBy,
+      sortFcceDir,
+      maxRowFcce,
+      1,
+      viewMode
+    );
+  };
+
+  const handleViewModeToggle = () => {
+    const nextMode = viewMode === "UNMATCHED" ? "ALL" : "UNMATCHED";
+    setViewMode(nextMode);
+    setCurrentFccePage(1);
+    setRecords([]);
+    setLoading(true);
+    void getFcceRecords(
+      searchTerm,
+      archiveFilter,
+      sortFcceBy,
+      sortFcceDir,
+      maxRowFcce,
+      1,
+      nextMode
+    );
   };
 
   /** --- Form Validation and Handlers --- **/
+  const validatePscsId = (val: string) => {
+    if (!val.trim()) return "PSCS ID is required.";
+    if (containsAlpha(val)) return "PSCS ID cannot contain alphabetic characters.";
+    return "";
+  };
+
   const handleAddPscsIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setAddPscsId(val);
-    setPscsIdError(!val.trim() ? "PSCS ID is required." : "");
+    setPscsIdError(validatePscsId(val));
+    void searchTeachers(val);
   };
 
   const handleAddCourseNameChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
+    e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const val = e.target.value;
     setAddCourseName(val);
@@ -229,15 +294,33 @@ export default function FcceManagement() {
   const handleEditPscsIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setEditPscsId(val);
-    setEditPscsIdError(!val.trim() ? "PSCS ID is required." : "");
+    setEditPscsIdError(validatePscsId(val));
+    void searchTeachers(val);
   };
 
   const handleEditCourseNameChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
+    e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const val = e.target.value;
     setEditCourseName(val);
     setEditCourseNameError(!val.trim() ? "Course name is required." : "");
+  };
+
+  // Handle selecting a teacher recommendation for Add Form
+  const handleSelectAddPscsId = (teacher: TeacherRecord) => {
+    const selectedPscs = teacher.pscs_id ? filterAlphanumeric(teacher.pscs_id) : "";
+    setAddPscsId(selectedPscs);
+    setPscsIdError(validatePscsId(selectedPscs));
+    setTeacherList([]);
+  };
+
+  // Handle selecting a teacher recommendation for Edit Form
+  const handleSelectEditPscsId = (teacher: TeacherRecord) => {
+    const selectedPscs = teacher.pscs_id ? filterAlphanumeric(teacher.pscs_id) : "";
+    setEditPscsId(selectedPscs);
+    setEditTeacherName(teacher.full_name);
+    setEditPscsIdError(validatePscsId(selectedPscs));
+    setTeacherList([]);
   };
 
   function loadEditData(id: string) {
@@ -245,7 +328,8 @@ export default function FcceManagement() {
     const selectedRecord = records.find((item) => item.fcce_id === id);
 
     if (selectedRecord) {
-      const pscs = selectedRecord.pscs_id || "";
+      const pscs = filterAlphanumeric(selectedRecord.pscs_id || "");
+      const teacher = selectedRecord.teacher_name || "";
       const course = selectedRecord.course_name || "";
       const pass = !!selectedRecord.pass;
       const archived = !!selectedRecord.archived;
@@ -256,6 +340,7 @@ export default function FcceManagement() {
       setBaseArchived(archived);
 
       setEditPscsId(pscs);
+      setEditTeacherName(teacher);
       setEditCourseName(course);
       setEditPass(pass);
       setEditArchived(archived);
@@ -281,16 +366,18 @@ export default function FcceManagement() {
     setAddPass(false);
 
     setEditPscsId("");
+    setEditTeacherName("");
     setEditCourseName("");
     setEditPass(false);
     setEditArchived(false);
+    setTeacherList([]);
   };
 
   /** --- Server Integration Actions --- **/
   async function getFcceCount(
     search?: string | null,
     archivedMode: ArchivedMode = archiveFilter,
-    mode: "ALL" | "UNMATCHED" = viewMode,
+    mode: "ALL" | "UNMATCHED" = viewMode
   ) {
     const response =
       mode === "UNMATCHED"
@@ -302,9 +389,9 @@ export default function FcceManagement() {
     } else {
       setToastMessage(
         response?.error ??
-          `[${
-            mode === "UNMATCHED" ? "fetchFcceUnmatchedCount" : "fetchFcceCount"
-          }]: An unexpected error occurred`,
+        `[${
+          mode === "UNMATCHED" ? "fetchFcceUnmatchedCount" : "fetchFcceCount"
+        }]: An unexpected error occurred`
       );
       setToastType("error");
       setShowToast(true);
@@ -319,20 +406,20 @@ export default function FcceManagement() {
     sortdir: string = sortFcceDir,
     limit: number = maxRowFcce,
     page: number = currentFccePage,
-    mode: "ALL" | "UNMATCHED" = viewMode,
+    mode: "ALL" | "UNMATCHED" = viewMode
   ) {
     setLoading(true);
 
     const response =
       mode === "UNMATCHED"
         ? await fetchFcceUnmatched(
-            search,
-            archivedMode,
-            sortby,
-            sortdir,
-            limit,
-            page,
-          )
+          search,
+          archivedMode,
+          sortby,
+          sortdir,
+          limit,
+          page
+        )
         : await fetchFcce(search, archivedMode, sortby, sortdir, limit, page);
 
     if (response?.success && response.data) {
@@ -340,9 +427,9 @@ export default function FcceManagement() {
     } else {
       setToastMessage(
         response?.error ??
-          `[${
-            mode === "UNMATCHED" ? "fetchFcceUnmatched" : "fetchFcce"
-          }]: An unexpected error occurred`,
+        `[${
+          mode === "UNMATCHED" ? "fetchFcceUnmatched" : "fetchFcce"
+        }]: An unexpected error occurred`
       );
       setToastType("error");
       setShowToast(true);
@@ -353,9 +440,26 @@ export default function FcceManagement() {
     await getFcceCount(search, archivedMode, mode);
   }
 
+  /** --- Refresh both grid records and unmatched counters --- **/
+  async function refreshData() {
+    await Promise.all([
+      getFcceRecords(
+        searchTerm,
+        archiveFilter,
+        sortFcceBy,
+        sortFcceDir,
+        maxRowFcce,
+        currentFccePage,
+        viewMode
+      ),
+      checkUnmatchedCount(),
+    ]);
+  }
+
   async function handleFcceSubmit() {
-    if (!addPscsId.trim()) {
-      setPscsIdError("PSCS ID is required.");
+    const pscsError = validatePscsId(addPscsId);
+    if (pscsError) {
+      setPscsIdError(pscsError);
       return;
     }
     if (!addCourseName.trim()) {
@@ -378,27 +482,20 @@ export default function FcceManagement() {
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[CreateFcce]: An unexpected error occurred",
+        response?.error ?? "[CreateFcce]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
     }
 
     handleCloseModals();
-    void getFcceRecords(
-      searchTerm,
-      archiveFilter,
-      sortFcceBy,
-      sortFcceDir,
-      maxRowFcce,
-      currentFccePage,
-      viewMode,
-    );
+    void refreshData();
   }
 
   async function handleFcceUpdate() {
-    if (!editPscsId.trim()) {
-      setEditPscsIdError("PSCS ID is required.");
+    const pscsError = validatePscsId(editPscsId);
+    if (pscsError) {
+      setEditPscsIdError(pscsError);
       return;
     }
     if (!editCourseName.trim()) {
@@ -421,22 +518,14 @@ export default function FcceManagement() {
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[UpdateFcce]: An unexpected error occurred",
+        response?.error ?? "[UpdateFcce]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
     }
 
     handleCloseModals();
-    void getFcceRecords(
-      searchTerm,
-      archiveFilter,
-      sortFcceBy,
-      sortFcceDir,
-      maxRowFcce,
-      currentFccePage,
-      viewMode,
-    );
+    void refreshData();
   }
 
   async function handleFcceDelete() {
@@ -448,22 +537,14 @@ export default function FcceManagement() {
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[DeleteFcce]: An unexpected error occurred",
+        response?.error ?? "[DeleteFcce]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
     }
 
     handleCloseModals();
-    void getFcceRecords(
-      searchTerm,
-      archiveFilter,
-      sortFcceBy,
-      sortFcceDir,
-      maxRowFcce,
-      currentFccePage,
-      viewMode,
-    );
+    void refreshData();
   }
 
   async function handleArchiveAllActive() {
@@ -471,28 +552,20 @@ export default function FcceManagement() {
 
     if (response?.success) {
       setToastMessage(
-        `Successfully archived ${response.archivedCount} active record(s)`,
+        `Successfully archived ${response.archivedCount} active record(s)`
       );
       setToastType("success");
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[ArchiveAllActive]: An unexpected error occurred",
+        response?.error ?? "[ArchiveAllActive]: An unexpected error occurred"
       );
       setToastType("error");
       setShowToast(true);
     }
 
     handleCloseModals();
-    void getFcceRecords(
-      searchTerm,
-      archiveFilter,
-      sortFcceBy,
-      sortFcceDir,
-      maxRowFcce,
-      currentFccePage,
-      viewMode,
-    );
+    void refreshData();
   }
 
   /** --- Toast Timers --- **/
@@ -527,6 +600,7 @@ export default function FcceManagement() {
   }
 
   useEffect(() => {
+    setLoading(true);
     const delayDebounceFn = setTimeout(() => {
       void getFcceRecords(
         searchTerm,
@@ -535,22 +609,24 @@ export default function FcceManagement() {
         sortFcceDir,
         maxRowFcce,
         currentFccePage,
-        viewMode,
+        viewMode
       );
     }, 300);
 
-    return () => clearTimeout(delayDebounceFn);
+    return () => clearInterval(delayDebounceFn);
   }, [searchTerm, archiveFilter, viewMode]);
 
   const isAddFormInvalid =
     !addPscsId.trim() ||
     !addCourseName.trim() ||
+    containsAlpha(addPscsId) ||
     !!pscsIdError ||
     !!courseNameError;
 
   const isEditFormInvalid =
     !editPscsId.trim() ||
     !editCourseName.trim() ||
+    containsAlpha(editPscsId) ||
     !!editPscsIdError ||
     !!editCourseNameError;
 
@@ -600,45 +676,71 @@ export default function FcceManagement() {
       {/* Main Container */}
       <div className="m-8">
         {/* Header Bar */}
-        <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-          <div>
-            <h2 className="mb-1 text-lg font-bold">FCCE Management</h2>
-            <p className="text-gray-500">
-              Manage and track FCCE student course passing statuses and archive
-              records.
-            </p>
+        <div>
+          <h2 className="mb-1 text-lg font-bold">FCCE Management</h2>
+          <p className="text-gray-500">
+            Manage and track FCCE student course passing statuses and archive
+            records.
+          </p>
+        </div>
+
+        <div className="my-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+          <div className="relative w-full md:w-64">
+            <TextInput
+              id="search-fcce"
+              type="text"
+              placeholder="Search PSCS ID, Course, Teacher..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              icon={HiSearch}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+              >
+                <HiX className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             {/* Unmatched Filter Badge Toggle Button */}
-            {unmatchedCount > 0 && (
+            {viewMode === "UNMATCHED" ? (
               <Tooltip
-                placement="bottom"
-                content={
-                  <div className="text-center text-xs">
-                    <div className="font-semibold">
-                      {unmatchedCount} Unmatched Record
-                      {unmatchedCount > 1 ? "s" : ""}
-                    </div>
-                    <div className="text-gray-300 dark:text-gray-400">
-                      Click to{" "}
-                      {viewMode === "UNMATCHED"
-                        ? "show all records"
-                        : "filter unmatched"}
-                    </div>
-                  </div>
-                }
+                placement={"right"}
+                content={"Click to Go back to all records"}
               >
-                <HiExclamation
-                  className={"h-8 w-8 text-yellow-400 dark:text-yellow-300"}
-                  onClick={() => {
-                    setViewMode((prev) =>
-                      prev === "UNMATCHED" ? "ALL" : "UNMATCHED",
-                    );
-                    setCurrentFccePage(1);
-                  }}
+                <IoMdExit
+                  className={"h-8 w-8 rotate-180 cursor-pointer"}
+                  onClick={handleViewModeToggle}
                 />
               </Tooltip>
+            ) : (
+              unmatchedCount > 0 && (
+                <Tooltip
+                  placement="right"
+                  content={
+                    <div className="text-center text-xs">
+                      <div className="font-semibold">
+                        {unmatchedCount} Unmatched Record
+                        {unmatchedCount > 1 ? "s" : ""}
+                      </div>
+                      <div className="text-gray-300 dark:text-gray-400">
+                        Click to filter unmatched
+                      </div>
+                    </div>
+                  }
+                >
+                  <HiExclamation
+                    className={
+                      "h-8 w-8 cursor-pointer text-yellow-400 dark:text-yellow-300"
+                    }
+                    onClick={handleViewModeToggle}
+                  />
+                </Tooltip>
+              )
             )}
 
             {/* Archive View Selection Dropdown */}
@@ -652,26 +754,6 @@ export default function FcceManagement() {
                 <option value="ARCHIVED">Archived Only</option>
                 <option value="BOTH">All Records (Both)</option>
               </Select>
-            </div>
-
-            <div className="relative w-full md:w-64">
-              <TextInput
-                id="search-fcce"
-                type="text"
-                placeholder="Search PSCS ID or Course..."
-                value={searchTerm}
-                onChange={handleSearchChange}
-                icon={HiSearch}
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={handleClearSearch}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
-                >
-                  <HiX className="h-4 w-4" />
-                </button>
-              )}
             </div>
 
             <Button
@@ -698,6 +780,7 @@ export default function FcceManagement() {
           <div className="m-2 flex flex-wrap gap-2">
             {hasInvalidSubjects && (
               <Tooltip
+                placement={"right"}
                 content={
                   "Row highlighted due to an invalid or missing subject."
                 }
@@ -713,13 +796,14 @@ export default function FcceManagement() {
             )}
             {hasArchivedRecords && (
               <Tooltip
+                placement={"right"}
                 content={
                   "Row highlighted in gray and text lined-through indicates an archived record."
                 }
               >
                 <Badge
                   className={
-                    "bg-gray-200 text-gray-700 line-through hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 hover:dark:bg-gray-700"
+                    "bg-gray-200 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 hover:dark:bg-gray-700 line-through"
                   }
                 >
                   Archived Record
@@ -738,6 +822,18 @@ export default function FcceManagement() {
                   <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
                     PSCS ID
                     {sortFcceBy === "pscs_id" &&
+                      (sortFcceDir === "ASC" ? (
+                        <FaSortUp className="ml-1" />
+                      ) : (
+                        <FaSortDown className="ml-1" />
+                      ))}
+                  </div>
+                </TableHeadCell>
+
+                <TableHeadCell onClick={() => handleFcceSorting("teacher_name")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                    Teacher Name
+                    {sortFcceBy === "teacher_name" &&
                       (sortFcceDir === "ASC" ? (
                         <FaSortUp className="ml-1" />
                       ) : (
@@ -789,11 +885,22 @@ export default function FcceManagement() {
             </TableHead>
 
             <TableBody className="divide-y">
-              {records.length > 0 ? (
+              {isLoading ? (
+                <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                  <TableCell
+                    colSpan={6}
+                    className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                  >
+                    <div className="flex items-center justify-center">
+                      <Spinner />
+                      <span className="ml-4">Fetching records...</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : records.length > 0 ? (
                 records.map((item) => {
                   const exists = isCourseValid(item.course_name);
 
-                  // Row background logic: archived gets gray background, invalid course gets yellow, standard gets white
                   const rowBgClass = item.archived
                     ? "bg-gray-100 dark:bg-gray-700/60"
                     : !exists
@@ -812,6 +919,7 @@ export default function FcceManagement() {
                       <TableCell className="font-medium whitespace-nowrap text-gray-900 dark:text-white">
                         {item.pscs_id}
                       </TableCell>
+                      <TableCell>{item.teacher_name || "—"}</TableCell>
                       <TableCell>{item.course_name}</TableCell>
                       <TableCell>
                         <span
@@ -838,39 +946,27 @@ export default function FcceManagement() {
                     </TableRow>
                   );
                 })
-              ) : isLoading ? (
-                <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                  <TableCell
-                    colSpan={5}
-                    className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
-                  >
-                    <div className="flex items-center justify-center">
-                      <Spinner />
-                      <span className="ml-4">Fetching records...</span>
-                    </div>
-                  </TableCell>
-                </TableRow>
               ) : (
                 <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
                   >
                     {searchTerm
                       ? `No ${
-                          viewMode === "UNMATCHED" ? "unmatched " : ""
-                        }records matching "${searchTerm}" found.`
+                        viewMode === "UNMATCHED" ? "unmatched " : ""
+                      }records matching "${searchTerm}" found.`
                       : archiveFilter === "ARCHIVED"
                         ? `No archived ${
-                            viewMode === "UNMATCHED" ? "unmatched " : ""
-                          }FCCE entries found.`
+                          viewMode === "UNMATCHED" ? "unmatched " : ""
+                        }FCCE entries found.`
                         : archiveFilter === "BOTH"
                           ? `No ${
-                              viewMode === "UNMATCHED" ? "unmatched " : ""
-                            }FCCE entries found.`
+                            viewMode === "UNMATCHED" ? "unmatched " : ""
+                          }FCCE entries found.`
                           : `No active ${
-                              viewMode === "UNMATCHED" ? "unmatched " : ""
-                            }FCCE entries found.`}
+                            viewMode === "UNMATCHED" ? "unmatched " : ""
+                          }FCCE entries found.`}
                   </TableCell>
                 </TableRow>
               )}
@@ -901,15 +997,29 @@ export default function FcceManagement() {
         <ModalHeader>Add New FCCE Record</ModalHeader>
         <ModalBody>
           <div className="flex flex-col gap-4">
-            <div>
+            {/* PSCS ID Search Input with Dropdown Recommendations */}
+            <div className="relative">
               <Label htmlFor="pscs_id">PSCS ID *</Label>
               <TextInput
                 id="pscs_id"
-                placeholder="e.g. PSCS-2024-001"
+                placeholder="Search by teacher name or enter PSCS ID..."
                 value={addPscsId}
                 onChange={handleAddPscsIdChange}
                 color={pscsIdError ? "failure" : "gray"}
               />
+              {teacherList.length > 0 && (
+                <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-700">
+                  {teacherList.map((teacher) => (
+                    <li
+                      key={teacher.teacher_id}
+                      onClick={() => handleSelectAddPscsId(teacher)}
+                      className="cursor-pointer px-3 py-2 text-sm hover:bg-gray-100 dark:text-white dark:hover:bg-gray-600"
+                    >
+                      {teacher.full_name} | {teacher.pscs_id ?? "No PSCS ID"}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {pscsIdError && (
                 <HelperText color="failure" className="mt-1">
                   {pscsIdError}
@@ -960,7 +1070,20 @@ export default function FcceManagement() {
         <ModalHeader>Edit FCCE Record</ModalHeader>
         <ModalBody>
           <div className="flex flex-col gap-4">
-            <div>
+            {/* Display Teacher Name if available */}
+            {editTeacherName && (
+              <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-700/50">
+                <Label className="text-xs uppercase text-gray-500 dark:text-gray-400">
+                  Teacher Name
+                </Label>
+                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {editTeacherName}
+                </div>
+              </div>
+            )}
+
+            {/* Edit PSCS ID Input with Dropdown Recommendations */}
+            <div className="relative">
               <Label htmlFor="edit_pscs_id">PSCS ID *</Label>
               <TextInput
                 id="edit_pscs_id"
@@ -968,6 +1091,19 @@ export default function FcceManagement() {
                 onChange={handleEditPscsIdChange}
                 color={editPscsIdError ? "failure" : "gray"}
               />
+              {teacherList.length > 0 && (
+                <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-700">
+                  {teacherList.map((teacher) => (
+                    <li
+                      key={teacher.teacher_id}
+                      onClick={() => handleSelectEditPscsId(teacher)}
+                      className="cursor-pointer px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600"
+                    >
+                      {teacher.full_name} | {teacher.pscs_id ?? "No PSCS ID"}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {editPscsIdError && (
                 <HelperText color="failure" className="mt-1">
                   {editPscsIdError}

@@ -960,6 +960,7 @@ export interface FcceInput {
 export interface FcceRecord {
   fcce_id: string;
   pscs_id: string;
+  teacher_name: string;
   course_name: string;
   pass: boolean;
   created_at: string;
@@ -967,7 +968,7 @@ export interface FcceRecord {
 }
 export type ArchivedMode = "ACTIVE" | "ARCHIVED" | "BOTH";
 
-/** FETCH FCCE RECORDS (READ) */
+/* FETCH FCCE RECORDS (READ) */
 export async function fetchFcce(
   search: string | null = null,
   archivedMode: ArchivedMode = "ACTIVE",
@@ -1155,13 +1156,13 @@ export async function fetchFcceUnmatched(
 
     const data = await sql<FcceRecord[]>`
       SELECT * FROM fcce_read_unmatched(
-        ${search || null},
-        ${archivedMode},
-        ${sortBy},
-        ${sortDir},
-        ${limit},
-        ${offset}
-      );
+          ${search || null},
+          ${archivedMode},
+          ${sortBy},
+          ${sortDir},
+          ${limit},
+          ${offset}
+                    );
     `;
 
     return {
