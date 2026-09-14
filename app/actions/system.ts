@@ -1006,12 +1006,15 @@ export async function fetchFcce(
 
 /* FETCH FCCE COUNT */
 export async function fetchFcceCount(
-  search?: string | null | undefined,
-  archived?: ArchivedMode,
+    search: string | null = null,
+    archived: ArchivedMode = "ACTIVE"
 ) {
   try {
     const [result] = await sql<{ fcce_count: number }[]>`
-      SELECT fcce_count(${search || null}, ${archived});
+      SELECT fcce_count(
+        ${search || null},
+        ${archived}
+      );
     `;
 
     return {
@@ -1134,6 +1137,70 @@ export async function archiveAllActiveFcce(actor: string) {
         (error as Error).message ||
         "Failed to archive active FCCE records.",
       archivedCount: 0,
+    };
+  }
+}
+
+/* FETCH UNMATCHED FCCE RECORDS (READ) */
+export async function fetchFcceUnmatched(
+    search: string | null = null,
+    archivedMode: ArchivedMode = "ACTIVE",
+    sortBy: string = "created_at",
+    sortDir: string = "DESC",
+    limit: number = 10,
+    page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<FcceRecord[]>`
+      SELECT * FROM fcce_read_unmatched(
+        ${search || null},
+        ${archivedMode},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch unmatched FCCE records:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch unmatched FCCE records.",
+      data: [],
+    };
+  }
+}
+
+/* COUNT UNMATCHED FCCE RECORDS */
+export async function fetchFcceUnmatchedCount(
+    search: string | null = null,
+    archivedMode: ArchivedMode = "ACTIVE"
+) {
+  try {
+    const [result] = await sql<{ fcce_count_unmatched: number }[]>`
+      SELECT fcce_count_unmatched(
+        ${search || null},
+        ${archivedMode}
+      );
+    `;
+
+    return {
+      success: true,
+      count: result?.fcce_count_unmatched ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to count unmatched FCCE records:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count unmatched FCCE records.",
+      count: 0,
     };
   }
 }

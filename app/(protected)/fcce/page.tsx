@@ -32,6 +32,8 @@ import {
   deleteFcce,
   fetchFcce,
   fetchFcceCount,
+  fetchFcceUnmatched,
+  fetchFcceUnmatchedCount,
   fetchSubjects,
   updateFcce,
   FcceRecord,
@@ -46,6 +48,7 @@ import {
   HiX,
   HiSearch,
   HiOutlineArchive,
+  HiExclamationCircle,
 } from "react-icons/hi";
 import { useEffect, useState } from "react";
 import { useMsal } from "@azure/msal-react";
@@ -55,6 +58,10 @@ export default function FcceManagement() {
   const activeAccount = instance.getActiveAccount() || accounts[0];
   const username = activeAccount?.username;
   const [isLoading, setLoading] = useState(true);
+
+  // --- View Mode Toggle State (All vs Unmatched) --- //
+  const [viewMode, setViewMode] = useState<"ALL" | "UNMATCHED">("ALL");
+  const [unmatchedCount, setUnmatchedCount] = useState(0);
 
   // --- Subjects / Course Suggestions State --- //
   const [subjectList, setSubjectList] = useState<SubjectRecord[]>([]);
@@ -123,19 +130,30 @@ export default function FcceManagement() {
     void loadSubjects();
   }, []);
 
+  /** --- Fetch Unmatched Count for Badge --- **/
+  useEffect(() => {
+    async function checkUnmatchedCount() {
+      const res = await fetchFcceUnmatchedCount(searchTerm, archiveFilter);
+      if (res?.success) {
+        setUnmatchedCount(res.count);
+      }
+    }
+    void checkUnmatchedCount();
+  }, [searchTerm, archiveFilter]);
+
   /** --- Helper to check if a course exists --- **/
   const isCourseValid = (courseName: string) => {
     if (!courseName) return false;
     return subjectList.some(
       (subj) =>
         subj.course_name?.toLowerCase().trim() ===
-        courseName.toLowerCase().trim()
+        courseName.toLowerCase().trim(),
     );
   };
 
   // Check state for legends
   const hasInvalidSubjects = records.some(
-    (item) => !isCourseValid(item.course_name)
+    (item) => !isCourseValid(item.course_name),
   );
   const hasArchivedRecords = records.some((item) => item.archived);
 
@@ -147,7 +165,15 @@ export default function FcceManagement() {
     setSortFcceDir(newDir);
     setRecords([]);
     setCurrentFccePage(1);
-    void getFcceRecords(searchTerm, archiveFilter, sortBy, newDir, maxRowFcce, 1);
+    void getFcceRecords(
+      searchTerm,
+      archiveFilter,
+      sortBy,
+      newDir,
+      maxRowFcce,
+      1,
+      viewMode,
+    );
   }
 
   function onPageChangeFcce(page: number) {
@@ -161,7 +187,8 @@ export default function FcceManagement() {
       sortFcceBy,
       sortFcceDir,
       maxRowFcce,
-      page
+      page,
+      viewMode,
     );
     setPageChanging(false);
     setCurrentFccePage(page);
@@ -177,7 +204,9 @@ export default function FcceManagement() {
     setCurrentFccePage(1);
   };
 
-  const handleArchiveFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleArchiveFilterChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
     setArchiveFilter(e.target.value as ArchivedMode);
     setCurrentFccePage(1);
   };
@@ -189,7 +218,9 @@ export default function FcceManagement() {
     setPscsIdError(!val.trim() ? "PSCS ID is required." : "");
   };
 
-  const handleAddCourseNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAddCourseNameChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const val = e.target.value;
     setAddCourseName(val);
     setCourseNameError(!val.trim() ? "Course name is required." : "");
@@ -201,7 +232,9 @@ export default function FcceManagement() {
     setEditPscsIdError(!val.trim() ? "PSCS ID is required." : "");
   };
 
-  const handleEditCourseNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEditCourseNameChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const val = e.target.value;
     setEditCourseName(val);
     setEditCourseNameError(!val.trim() ? "Course name is required." : "");
@@ -256,14 +289,22 @@ export default function FcceManagement() {
   /** --- Server Integration Actions --- **/
   async function getFcceCount(
     search?: string | null,
-    archivedMode: ArchivedMode = archiveFilter
+    archivedMode: ArchivedMode = archiveFilter,
+    mode: "ALL" | "UNMATCHED" = viewMode,
   ) {
-    const response = await fetchFcceCount(search, archivedMode);
+    const response =
+      mode === "UNMATCHED"
+        ? await fetchFcceUnmatchedCount(search, archivedMode)
+        : await fetchFcceCount(search, archivedMode);
+
     if (response?.success) {
       setRecordsCount(response.count);
     } else {
       setToastMessage(
-        response?.error ?? "[fetchFcceCount]: An unexpected error occurred"
+        response?.error ??
+          `[${
+            mode === "UNMATCHED" ? "fetchFcceUnmatchedCount" : "fetchFcceCount"
+          }]: An unexpected error occurred`,
       );
       setToastType("error");
       setShowToast(true);
@@ -277,24 +318,31 @@ export default function FcceManagement() {
     sortby: string = sortFcceBy,
     sortdir: string = sortFcceDir,
     limit: number = maxRowFcce,
-    page: number = currentFccePage
+    page: number = currentFccePage,
+    mode: "ALL" | "UNMATCHED" = viewMode,
   ) {
     setLoading(true);
 
-    const response = await fetchFcce(
-      search,
-      archivedMode,
-      sortby,
-      sortdir,
-      limit,
-      page
-    );
+    const response =
+      mode === "UNMATCHED"
+        ? await fetchFcceUnmatched(
+            search,
+            archivedMode,
+            sortby,
+            sortdir,
+            limit,
+            page,
+          )
+        : await fetchFcce(search, archivedMode, sortby, sortdir, limit, page);
 
     if (response?.success && response.data) {
       setRecords(response.data);
     } else {
       setToastMessage(
-        response?.error ?? "[fetchFcce]: An unexpected error occurred"
+        response?.error ??
+          `[${
+            mode === "UNMATCHED" ? "fetchFcceUnmatched" : "fetchFcce"
+          }]: An unexpected error occurred`,
       );
       setToastType("error");
       setShowToast(true);
@@ -302,7 +350,7 @@ export default function FcceManagement() {
     }
 
     setLoading(false);
-    await getFcceCount(search, archivedMode);
+    await getFcceCount(search, archivedMode, mode);
   }
 
   async function handleFcceSubmit() {
@@ -330,7 +378,7 @@ export default function FcceManagement() {
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[CreateFcce]: An unexpected error occurred"
+        response?.error ?? "[CreateFcce]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -343,7 +391,8 @@ export default function FcceManagement() {
       sortFcceBy,
       sortFcceDir,
       maxRowFcce,
-      currentFccePage
+      currentFccePage,
+      viewMode,
     );
   }
 
@@ -372,7 +421,7 @@ export default function FcceManagement() {
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[UpdateFcce]: An unexpected error occurred"
+        response?.error ?? "[UpdateFcce]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -385,7 +434,8 @@ export default function FcceManagement() {
       sortFcceBy,
       sortFcceDir,
       maxRowFcce,
-      currentFccePage
+      currentFccePage,
+      viewMode,
     );
   }
 
@@ -398,7 +448,7 @@ export default function FcceManagement() {
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[DeleteFcce]: An unexpected error occurred"
+        response?.error ?? "[DeleteFcce]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -411,7 +461,8 @@ export default function FcceManagement() {
       sortFcceBy,
       sortFcceDir,
       maxRowFcce,
-      currentFccePage
+      currentFccePage,
+      viewMode,
     );
   }
 
@@ -420,13 +471,13 @@ export default function FcceManagement() {
 
     if (response?.success) {
       setToastMessage(
-        `Successfully archived ${response.archivedCount} active record(s)`
+        `Successfully archived ${response.archivedCount} active record(s)`,
       );
       setToastType("success");
       toastTimer();
     } else {
       setToastMessage(
-        response?.error ?? "[ArchiveAllActive]: An unexpected error occurred"
+        response?.error ?? "[ArchiveAllActive]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -439,7 +490,8 @@ export default function FcceManagement() {
       sortFcceBy,
       sortFcceDir,
       maxRowFcce,
-      currentFccePage
+      currentFccePage,
+      viewMode,
     );
   }
 
@@ -482,12 +534,13 @@ export default function FcceManagement() {
         sortFcceBy,
         sortFcceDir,
         maxRowFcce,
-        currentFccePage
+        currentFccePage,
+        viewMode,
       );
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, archiveFilter]);
+  }, [searchTerm, archiveFilter, viewMode]);
 
   const isAddFormInvalid =
     !addPscsId.trim() ||
@@ -557,6 +610,37 @@ export default function FcceManagement() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Unmatched Filter Badge Toggle Button */}
+            {unmatchedCount > 0 && (
+              <Tooltip
+                placement="bottom"
+                content={
+                  <div className="text-center text-xs">
+                    <div className="font-semibold">
+                      {unmatchedCount} Unmatched Record
+                      {unmatchedCount > 1 ? "s" : ""}
+                    </div>
+                    <div className="text-gray-300 dark:text-gray-400">
+                      Click to{" "}
+                      {viewMode === "UNMATCHED"
+                        ? "show all records"
+                        : "filter unmatched"}
+                    </div>
+                  </div>
+                }
+              >
+                <HiExclamation
+                  className={"h-8 w-8 text-yellow-400 dark:text-yellow-300"}
+                  onClick={() => {
+                    setViewMode((prev) =>
+                      prev === "UNMATCHED" ? "ALL" : "UNMATCHED",
+                    );
+                    setCurrentFccePage(1);
+                  }}
+                />
+              </Tooltip>
+            )}
+
             {/* Archive View Selection Dropdown */}
             <div className="w-40">
               <Select
@@ -613,7 +697,11 @@ export default function FcceManagement() {
         {(hasInvalidSubjects || hasArchivedRecords) && (
           <div className="m-2 flex flex-wrap gap-2">
             {hasInvalidSubjects && (
-              <Tooltip content={"Row highlighted due to an invalid or missing subject."}>
+              <Tooltip
+                content={
+                  "Row highlighted due to an invalid or missing subject."
+                }
+              >
                 <Badge
                   className={
                     "bg-yellow-100 hover:bg-yellow-100 dark:bg-yellow-900/60 dark:text-gray-400 hover:dark:bg-yellow-900/60"
@@ -624,10 +712,14 @@ export default function FcceManagement() {
               </Tooltip>
             )}
             {hasArchivedRecords && (
-              <Tooltip content={"Row highlighted in gray and text lined-through indicates an archived record."}>
+              <Tooltip
+                content={
+                  "Row highlighted in gray and text lined-through indicates an archived record."
+                }
+              >
                 <Badge
                   className={
-                    "bg-gray-200 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 hover:dark:bg-gray-700 line-through"
+                    "bg-gray-200 text-gray-700 line-through hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 hover:dark:bg-gray-700"
                   }
                 >
                   Archived Record
@@ -765,12 +857,20 @@ export default function FcceManagement() {
                     className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
                   >
                     {searchTerm
-                      ? `No records matching "${searchTerm}" found.`
+                      ? `No ${
+                          viewMode === "UNMATCHED" ? "unmatched " : ""
+                        }records matching "${searchTerm}" found.`
                       : archiveFilter === "ARCHIVED"
-                        ? "No archived FCCE entries found."
+                        ? `No archived ${
+                            viewMode === "UNMATCHED" ? "unmatched " : ""
+                          }FCCE entries found.`
                         : archiveFilter === "BOTH"
-                          ? "No FCCE entries found."
-                          : "No active FCCE entries found."}
+                          ? `No ${
+                              viewMode === "UNMATCHED" ? "unmatched " : ""
+                            }FCCE entries found.`
+                          : `No active ${
+                              viewMode === "UNMATCHED" ? "unmatched " : ""
+                            }FCCE entries found.`}
                   </TableCell>
                 </TableRow>
               )}
