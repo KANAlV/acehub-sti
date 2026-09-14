@@ -67,6 +67,7 @@ export default function FcceManagement() {
 
   // --- Subjects / Course Suggestions State --- //
   const [subjectList, setSubjectList] = useState<SubjectRecord[]>([]);
+  const [filteredSubjects, setFilteredSubjects] = useState<SubjectRecord[]>([]);
 
   // --- Teachers Search / Suggestions State --- //
   const [teacherList, setTeacherList] = useState<TeacherRecord[]>([]);
@@ -94,7 +95,7 @@ export default function FcceManagement() {
   const [editPscsIdError, setEditPscsIdError] = useState("");
   const [editCourseNameError, setEditCourseNameError] = useState("");
 
-  // Add Form State
+  // Add Form State (Defaulting pass state to true)
   const [addPscsId, setAddPscsId] = useState("");
   const [addCourseName, setAddCourseName] = useState("");
   const [addPass, setAddPass] = useState(true);
@@ -145,6 +146,21 @@ export default function FcceManagement() {
   useEffect(() => {
     void loadSubjects();
   }, []);
+
+  /** --- Filter Courses locally by code or course name --- **/
+  const filterCourses = (term: string) => {
+    if (!term.trim()) {
+      setFilteredSubjects([]);
+      return;
+    }
+    const lower = term.toLowerCase();
+    const matches = subjectList.filter((subj) => {
+      const codeMatch = subj.course_code?.toLowerCase().includes(lower);
+      const nameMatch = subj.course_name?.toLowerCase().includes(lower);
+      return codeMatch || nameMatch;
+    });
+    setFilteredSubjects(matches.slice(0, 10)); // Top 10 matches
+  };
 
   /** --- Fetch Teachers by Name or PSCS ID --- **/
   async function searchTeachers(term: string) {
@@ -289,6 +305,7 @@ export default function FcceManagement() {
     const val = e.target.value;
     setAddCourseName(val);
     setCourseNameError(!val.trim() ? "Course name is required." : "");
+    filterCourses(val);
   };
 
   const handleEditPscsIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -304,6 +321,7 @@ export default function FcceManagement() {
     const val = e.target.value;
     setEditCourseName(val);
     setEditCourseNameError(!val.trim() ? "Course name is required." : "");
+    filterCourses(val);
   };
 
   // Handle selecting a teacher recommendation for Add Form
@@ -314,6 +332,13 @@ export default function FcceManagement() {
     setTeacherList([]);
   };
 
+  // Handle selecting a course recommendation for Add Form
+  const handleSelectAddCourse = (subject: SubjectRecord) => {
+    setAddCourseName(subject.course_name);
+    setCourseNameError("");
+    setFilteredSubjects([]);
+  };
+
   // Handle selecting a teacher recommendation for Edit Form
   const handleSelectEditPscsId = (teacher: TeacherRecord) => {
     const selectedPscs = teacher.pscs_id ? filterAlphanumeric(teacher.pscs_id) : "";
@@ -321,6 +346,13 @@ export default function FcceManagement() {
     setEditTeacherName(teacher.full_name);
     setEditPscsIdError(validatePscsId(selectedPscs));
     setTeacherList([]);
+  };
+
+  // Handle selecting a course recommendation for Edit Form
+  const handleSelectEditCourse = (subject: SubjectRecord) => {
+    setEditCourseName(subject.course_name);
+    setEditCourseNameError("");
+    setFilteredSubjects([]);
   };
 
   function loadEditData(id: string) {
@@ -363,7 +395,7 @@ export default function FcceManagement() {
 
     setAddPscsId("");
     setAddCourseName("");
-    setAddPass(false);
+    setAddPass(true); // Reset addPass state back to default true
 
     setEditPscsId("");
     setEditTeacherName("");
@@ -371,6 +403,7 @@ export default function FcceManagement() {
     setEditPass(false);
     setEditArchived(false);
     setTeacherList([]);
+    setFilteredSubjects([]);
   };
 
   /** --- Server Integration Actions --- **/
@@ -638,13 +671,6 @@ export default function FcceManagement() {
 
   return (
     <>
-      {/* Shared DataList for Subject Auto-suggestions */}
-      <datalist id="course-suggestions">
-        {subjectList.map((subject, idx) => (
-          <option key={idx} value={subject.course_name} />
-        ))}
-      </datalist>
-
       {/* Toast Notification */}
       {showToast && (
         <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
@@ -1013,7 +1039,7 @@ export default function FcceManagement() {
                     <li
                       key={teacher.teacher_id}
                       onClick={() => handleSelectAddPscsId(teacher)}
-                      className="cursor-pointer px-3 py-2 text-sm hover:bg-gray-100 dark:text-white dark:hover:bg-gray-600"
+                      className="cursor-pointer px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600"
                     >
                       {teacher.full_name} | {teacher.pscs_id ?? "No PSCS ID"}
                     </li>
@@ -1027,16 +1053,31 @@ export default function FcceManagement() {
               )}
             </div>
 
-            <div>
+            {/* Course Name Input with Dropdown Recommendations */}
+            <div className="relative">
               <Label htmlFor="course_name">Course Name *</Label>
               <TextInput
                 id="course_name"
-                list="course-suggestions"
-                placeholder="e.g. Computer Science 101"
+                placeholder="Search by course code or course name..."
                 value={addCourseName}
                 onChange={handleAddCourseNameChange}
                 color={courseNameError ? "failure" : "gray"}
               />
+              {filteredSubjects.length > 0 && (
+                <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-700">
+                  {filteredSubjects.map((subj) => (
+                    <li
+                      key={subj.subject_id}
+                      onClick={() => handleSelectAddCourse(subj)}
+                      className="cursor-pointer px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600"
+                    >
+                      {subj.course_code
+                        ? `${subj.course_code} - ${subj.course_name}`
+                        : subj.course_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {courseNameError && (
                 <HelperText color="failure" className="mt-1">
                   {courseNameError}
@@ -1097,7 +1138,7 @@ export default function FcceManagement() {
                     <li
                       key={teacher.teacher_id}
                       onClick={() => handleSelectEditPscsId(teacher)}
-                      className="cursor-pointer px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600"
+                      className="cursor-pointer px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600"
                     >
                       {teacher.full_name} | {teacher.pscs_id ?? "No PSCS ID"}
                     </li>
@@ -1111,15 +1152,30 @@ export default function FcceManagement() {
               )}
             </div>
 
-            <div>
+            {/* Edit Course Name Input with Dropdown Recommendations */}
+            <div className="relative">
               <Label htmlFor="edit_course_name">Course Name *</Label>
               <TextInput
                 id="edit_course_name"
-                list="course-suggestions"
                 value={editCourseName}
                 onChange={handleEditCourseNameChange}
                 color={editCourseNameError ? "failure" : "gray"}
               />
+              {filteredSubjects.length > 0 && (
+                <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-700">
+                  {filteredSubjects.map((subj) => (
+                    <li
+                      key={subj.subject_id}
+                      onClick={() => handleSelectEditCourse(subj)}
+                      className="cursor-pointer px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600"
+                    >
+                      {subj.course_code
+                        ? `${subj.course_code} - ${subj.course_name}`
+                        : subj.course_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {editCourseNameError && (
                 <HelperText color="failure" className="mt-1">
                   {editCourseNameError}
