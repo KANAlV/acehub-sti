@@ -312,6 +312,180 @@ export async function deleteProgram(actor: string, programCode: string) {
 }
 
 /************
+ * SUBJECTS *
+ ************/
+
+export interface SubjectInput {
+  curriculum_id?: string | null;
+  program_code?: string | null;
+  course_code: string;
+  course_name: string;
+  specialization?: string | null;
+  lecture_units?: number;
+  lab_units?: number;
+  lab_type?: string | null;
+  year_term?: string | null;
+}
+export interface SubjectRecord {
+  subject_id: string;
+  curriculum_id: string | null;
+  program_code: string | null;
+  course_code: string;
+  course_name: string;
+  specialization: string | null;
+  lecture_units: number;
+  lab_units: number;
+  lab_type: string | null;
+  lab_type_name: string | null;
+  year_term: string | null;
+}
+
+/* FETCH SUBJECTS (READ) */
+export async function fetchSubjects(
+    search: string | null = null,
+    sortBy: string = "course_code",
+    sortDir: string = "ASC",
+    limit: number = 10,
+    page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<SubjectRecord[]>`
+      SELECT * FROM subjects_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch subjects:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch subjects.",
+      data: [],
+    };
+  }
+}
+
+/* FETCH SUBJECTS COUNT */
+export async function fetchSubjectsCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ subjects_count: number }[]>`
+      SELECT subjects_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.subjects_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch subjects count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count subjects.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE SUBJECT */
+export async function createSubject(actor: string, input: SubjectInput) {
+  try {
+    const [result] = await sql<{ subjects_create: string }[]>`
+      SELECT subjects_create(
+        ${input.curriculum_id ? input.curriculum_id : null}::UUID,
+        ${input.program_code ?? null},
+        ${input.course_code},
+        ${input.course_name},
+        ${input.specialization ?? null},
+        ${input.lecture_units ?? 0.0},
+        ${input.lab_units ?? 0.0},
+        ${input.lab_type ? input.lab_type : null}::UUID,
+        ${input.year_term ?? null}
+      );
+    `;
+
+    await createLog(
+        actor,
+        "create_subject",
+        `course_code: '${input.course_code}', course_name: '${input.course_name}'`
+    );
+
+    return {
+      success: true,
+      subjectId: result?.subjects_create,
+    };
+  } catch (error) {
+    console.error("Failed to create subject:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create subject.",
+    };
+  }
+}
+
+/* UPDATE SUBJECT */
+export async function updateSubject(
+    actor: string,
+    subjectId: string,
+    input: Partial<SubjectInput>
+) {
+  try {
+    await sql`
+      SELECT subjects_update(
+        ${subjectId}::UUID,
+        ${input.curriculum_id ? input.curriculum_id : null}::UUID,
+        ${input.program_code ?? null},
+        ${input.course_code ?? null},
+        ${input.course_name ?? null},
+        ${input.specialization ?? null},
+        ${input.lecture_units ?? null},
+        ${input.lab_units ?? null},
+        ${input.lab_type ? input.lab_type : null}::UUID,
+        ${input.year_term ?? null}
+      );
+    `;
+
+    await createLog(actor, "update_subject", `subject_id: '${subjectId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update subject:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update subject.",
+    };
+  }
+}
+
+/* DELETE SUBJECT */
+export async function deleteSubject(actor: string, subjectId: string) {
+  try {
+    await sql`
+      SELECT subjects_delete(${subjectId}::UUID);
+    `;
+
+    await createLog(actor, "delete_subject", `subject_id: '${subjectId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete subject:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete subject.",
+    };
+  }
+}
+
+/************
  * TEACHERS *
  ************/
 
@@ -769,6 +943,197 @@ export async function syncMaqClusterEntries(
     return {
       success: false,
       error: (error as Error).message || "Failed to sync cluster entries.",
+    };
+  }
+}
+
+/********
+ * FCCE *
+ ********/
+
+export interface FcceInput {
+  pscs_id: string;
+  course_name: string;
+  pass?: boolean;
+  archived?: boolean;
+}
+export interface FcceRecord {
+  fcce_id: string;
+  pscs_id: string;
+  course_name: string;
+  pass: boolean;
+  created_at: string;
+  archived: boolean;
+}
+export type ArchivedMode = "ACTIVE" | "ARCHIVED" | "BOTH";
+
+/** FETCH FCCE RECORDS (READ) */
+export async function fetchFcce(
+  search: string | null = null,
+  archivedMode: ArchivedMode = "ACTIVE",
+  sortBy: string = "created_at",
+  sortDir: string = "DESC",
+  limit: number = 10,
+  page: number = 1,
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<FcceRecord[]>`
+      SELECT * FROM fcce_read(
+        ${search || null},
+        ${archivedMode},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+                    );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch FCCE records:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch FCCE records.",
+      data: [],
+    };
+  }
+}
+
+/* FETCH FCCE COUNT */
+export async function fetchFcceCount(
+  search?: string | null | undefined,
+  archived?: ArchivedMode,
+) {
+  try {
+    const [result] = await sql<{ fcce_count: number }[]>`
+      SELECT fcce_count(${search || null}, ${archived});
+    `;
+
+    return {
+      success: true,
+      count: result?.fcce_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch FCCE count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count FCCE records.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE FCCE RECORD */
+export async function createFcce(actor: string, input: FcceInput) {
+  try {
+    const [result] = await sql<{ fcce_create: string }[]>`
+      SELECT fcce_create(
+               ${input.pscs_id},
+               ${input.course_name},
+               ${input.pass ?? false},
+               ${input.archived ?? false}
+             );
+    `;
+
+    await createLog(
+      actor,
+      "create_fcce",
+      `pscs_id: '${input.pscs_id}', course_name: '${input.course_name}'`
+    );
+
+    return {
+      success: true,
+      fcceId: result?.fcce_create,
+    };
+  } catch (error) {
+    console.error("Failed to create FCCE record:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create FCCE record.",
+    };
+  }
+}
+
+/* UPDATE FCCE RECORD */
+export async function updateFcce(
+  actor: string,
+  fcceId: string,
+  input: Partial<FcceInput>
+) {
+  try {
+    await sql`
+      SELECT fcce_update(
+               ${fcceId}::UUID,
+               ${input.pscs_id ?? null},
+               ${input.course_name ?? null},
+               ${input.pass ?? null},
+               ${input.archived ?? null}
+             );
+    `;
+
+    await createLog(actor, "update_fcce", `fcce_id: '${fcceId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update FCCE record:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update FCCE record.",
+    };
+  }
+}
+
+/* DELETE FCCE RECORD */
+export async function deleteFcce(actor: string, fcceId: string) {
+  try {
+    await sql`
+      SELECT fcce_delete(${fcceId}::UUID);
+    `;
+
+    await createLog(actor, "delete_fcce", `fcce_id: '${fcceId}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete FCCE record:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete FCCE record.",
+    };
+  }
+}
+
+/* ARCHIVE ALL ACTIVE FCCE RECORDS */
+export async function archiveAllActiveFcce(actor: string) {
+  try {
+    const [result] = await sql<{ fcce_archive_all_active: number }[]>`
+      SELECT fcce_archive_all_active();
+    `;
+
+    const count = result?.fcce_archive_all_active ?? 0;
+
+    await createLog(
+      actor,
+      "archive_all_active_fcce",
+      `archived ${count} record(s)`
+    );
+
+    return {
+      success: true,
+      archivedCount: count,
+    };
+  } catch (error) {
+    console.error("Failed to archive active FCCE records:", error);
+    return {
+      success: false,
+      error:
+        (error as Error).message ||
+        "Failed to archive active FCCE records.",
+      archivedCount: 0,
     };
   }
 }
