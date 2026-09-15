@@ -199,7 +199,14 @@ export default function FcceManagement() {
       setTeacherList([]);
       return;
     }
-    const res = await fetchTeachers(term, "surname", "ASC", 10, 1);
+    const res = await fetchTeachers(
+      term,
+      "All Active & On Leave",
+      "surname",
+      "ASC",
+      10,
+      1,
+    );
     if (res?.success && res.data) {
       setTeacherList(res.data);
     }
