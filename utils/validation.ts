@@ -22,6 +22,11 @@ export const filterAlpha = (str: string): string =>
 export const filterAlphaNoSpace = (str: string): string =>
   str.replace(/[^a-zA-Z]/g, "");
 
+/**
+ * Strips all non-alphanumeric characters (a-zA-Z0-9).
+ */
+export const filterAlphanumericNoSpace = (str: string): string =>
+  str.replace(/[^a-zA-Z0-9]/g, "").replace(/\s+/g, "");
 
 /**
  * Strips all non-alphanumeric characters (a-zA-Z0-9) and collapse consecutive spaces into one.

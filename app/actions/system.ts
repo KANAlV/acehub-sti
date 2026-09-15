@@ -1,6 +1,141 @@
 "use server";
 import sql from "@/lib/database";
 
+/*****************
+ * ACADEMIC YEAR *
+ *****************/
+
+export interface AcademicYearRecord {
+  ay_sem: string;
+}
+
+/* FETCH ACADEMIC YEARS (READ) */
+export async function fetchAcademicYears(
+    search: string | null = null,
+    sortBy: string = "ay_sem",
+    sortDir: string = "DESC",
+    limit: number = 10,
+    page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<AcademicYearRecord[]>`
+      SELECT * FROM academic_year_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch academic years:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch academic years.",
+      data: [],
+    };
+  }
+}
+
+/* COUNT ACADEMIC YEARS */
+export async function fetchAcademicYearsCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ academic_year_count: number }[]>`
+      SELECT academic_year_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.academic_year_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch academic years count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count academic years.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE ACADEMIC YEAR */
+export async function createAcademicYear(actor: string, aySem: string) {
+  try {
+    const [result] = await sql<{ academic_year_create: string }[]>`
+      SELECT academic_year_create(${aySem});
+    `;
+
+    await createLog(actor, "create_academic_year", `ay_sem: '${aySem}'`);
+
+    return {
+      success: true,
+      aySem: result?.academic_year_create,
+    };
+  } catch (error) {
+    console.error("Failed to create academic year:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create academic year.",
+    };
+  }
+}
+
+/* UPDATE ACADEMIC YEAR */
+export async function updateAcademicYear(
+    actor: string,
+    oldAySem: string,
+    newAySem: string
+) {
+  try {
+    const [result] = await sql<{ academic_year_update: string }[]>`
+      SELECT academic_year_update(${oldAySem}, ${newAySem});
+    `;
+
+    await createLog(
+        actor,
+        "update_academic_year",
+        `old: '${oldAySem}', new: '${newAySem}'`
+    );
+
+    return {
+      success: true,
+      aySem: result?.academic_year_update,
+    };
+  } catch (error) {
+    console.error("Failed to update academic year:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update academic year.",
+    };
+  }
+}
+
+/* DELETE ACADEMIC YEAR */
+export async function deleteAcademicYear(actor: string, aySem: string) {
+  try {
+    await sql`
+      SELECT academic_year_delete(${aySem});
+    `;
+
+    await createLog(actor, "delete_academic_year", `ay_sem: '${aySem}'`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete academic year:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete academic year.",
+    };
+  }
+}
+
 /*********
  * ROOMS *
  **********/
@@ -951,44 +1086,51 @@ export async function syncMaqClusterEntries(
  * FCCE *
  ********/
 
+export type ArchivedMode = "ACTIVE" | "ARCHIVED" | "BOTH";
+
 export interface FcceInput {
   pscs_id: string;
   course_name: string;
+  ay_sem?: string | null;
   pass?: boolean;
   archived?: boolean;
 }
+
 export interface FcceRecord {
   fcce_id: string;
   pscs_id: string;
   teacher_name: string;
   course_name: string;
   pass: boolean;
+  ay_sem: string | null;
   created_at: string;
   archived: boolean;
 }
-export type ArchivedMode = "ACTIVE" | "ARCHIVED" | "BOTH";
 
 /* FETCH FCCE RECORDS (READ) */
 export async function fetchFcce(
-  search: string | null = null,
-  archivedMode: ArchivedMode = "ACTIVE",
-  sortBy: string = "created_at",
-  sortDir: string = "DESC",
-  limit: number = 10,
-  page: number = 1,
+    search: string | null = null,
+    aySem: string = "ALL",
+    archivedMode: ArchivedMode = "ACTIVE",
+    sortBy: string = "created_at",
+    sortDir: string = "DESC",
+    limit: number = 10,
+    page: number | string = 1
 ) {
   try {
-    const offset = limit > 0 ? (page - 1) * limit : 0;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const offset = limit > 0 ? (pageNum - 1) * limit : 0;
 
     const data = await sql<FcceRecord[]>`
       SELECT * FROM fcce_read(
         ${search || null},
+        ${aySem},
         ${archivedMode},
         ${sortBy},
         ${sortDir},
         ${limit},
         ${offset}
-                    );
+      );
     `;
 
     return {
@@ -1005,17 +1147,19 @@ export async function fetchFcce(
   }
 }
 
-/* FETCH FCCE COUNT */
+/* COUNT FCCE RECORDS */
 export async function fetchFcceCount(
     search: string | null = null,
-    archived: ArchivedMode = "ACTIVE"
+    aySem: string = "ALL",
+    archivedMode: ArchivedMode = "ACTIVE"
 ) {
   try {
     const [result] = await sql<{ fcce_count: number }[]>`
       SELECT fcce_count(
-        ${search || null},
-        ${archived}
-      );
+                 ${search || null},
+                 ${aySem},
+                 ${archivedMode}
+             );
     `;
 
     return {
@@ -1037,17 +1181,18 @@ export async function createFcce(actor: string, input: FcceInput) {
   try {
     const [result] = await sql<{ fcce_create: string }[]>`
       SELECT fcce_create(
-               ${input.pscs_id},
-               ${input.course_name},
-               ${input.pass ?? false},
-               ${input.archived ?? false}
+                 ${input.pscs_id},
+                 ${input.course_name},
+                 ${input.ay_sem ?? null},
+                 ${input.pass ?? false},
+                 ${input.archived ?? false}
              );
     `;
 
     await createLog(
-      actor,
-      "create_fcce",
-      `pscs_id: '${input.pscs_id}', course_name: '${input.course_name}'`
+        actor,
+        "create_fcce",
+        `pscs_id: '${input.pscs_id}', course_name: '${input.course_name}', ay_sem: '${input.ay_sem ?? "N/A"}'`
     );
 
     return {
@@ -1065,18 +1210,19 @@ export async function createFcce(actor: string, input: FcceInput) {
 
 /* UPDATE FCCE RECORD */
 export async function updateFcce(
-  actor: string,
-  fcceId: string,
-  input: Partial<FcceInput>
+    actor: string,
+    fcceId: string,
+    input: Partial<FcceInput>
 ) {
   try {
     await sql`
       SELECT fcce_update(
-               ${fcceId}::UUID,
-               ${input.pscs_id ?? null},
-               ${input.course_name ?? null},
-               ${input.pass ?? null},
-               ${input.archived ?? null}
+                 ${fcceId}::UUID,
+                 ${input.pscs_id ?? null},
+                 ${input.course_name ?? null},
+                 ${input.ay_sem ?? null},
+                 ${input.pass ?? null},
+                 ${input.archived ?? null}
              );
     `;
 
@@ -1121,9 +1267,9 @@ export async function archiveAllActiveFcce(actor: string) {
     const count = result?.fcce_archive_all_active ?? 0;
 
     await createLog(
-      actor,
-      "archive_all_active_fcce",
-      `archived ${count} record(s)`
+        actor,
+        "archive_all_active_fcce",
+        `archived ${count} record(s)`
     );
 
     return {
@@ -1135,8 +1281,8 @@ export async function archiveAllActiveFcce(actor: string) {
     return {
       success: false,
       error:
-        (error as Error).message ||
-        "Failed to archive active FCCE records.",
+          (error as Error).message ||
+          "Failed to archive active FCCE records.",
       archivedCount: 0,
     };
   }
@@ -1145,24 +1291,27 @@ export async function archiveAllActiveFcce(actor: string) {
 /* FETCH UNMATCHED FCCE RECORDS (READ) */
 export async function fetchFcceUnmatched(
     search: string | null = null,
+    aySem: string = "ALL",
     archivedMode: ArchivedMode = "ACTIVE",
     sortBy: string = "created_at",
     sortDir: string = "DESC",
     limit: number = 10,
-    page: number = 1
+    page: number | string = 1
 ) {
   try {
-    const offset = limit > 0 ? (page - 1) * limit : 0;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const offset = limit > 0 ? (pageNum - 1) * limit : 0;
 
     const data = await sql<FcceRecord[]>`
       SELECT * FROM fcce_read_unmatched(
-          ${search || null},
-          ${archivedMode},
-          ${sortBy},
-          ${sortDir},
-          ${limit},
-          ${offset}
-                    );
+        ${search || null},
+        ${aySem},
+        ${archivedMode},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
     `;
 
     return {
@@ -1173,7 +1322,8 @@ export async function fetchFcceUnmatched(
     console.error("Failed to fetch unmatched FCCE records:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch unmatched FCCE records.",
+      error:
+          (error as Error).message || "Failed to fetch unmatched FCCE records.",
       data: [],
     };
   }
@@ -1182,14 +1332,16 @@ export async function fetchFcceUnmatched(
 /* COUNT UNMATCHED FCCE RECORDS */
 export async function fetchFcceUnmatchedCount(
     search: string | null = null,
+    aySem: string = "ALL",
     archivedMode: ArchivedMode = "ACTIVE"
 ) {
   try {
     const [result] = await sql<{ fcce_count_unmatched: number }[]>`
       SELECT fcce_count_unmatched(
-        ${search || null},
-        ${archivedMode}
-      );
+                 ${search || null},
+                 ${aySem},
+                 ${archivedMode}
+             );
     `;
 
     return {
@@ -1200,7 +1352,8 @@ export async function fetchFcceUnmatchedCount(
     console.error("Failed to count unmatched FCCE records:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to count unmatched FCCE records.",
+      error:
+          (error as Error).message || "Failed to count unmatched FCCE records.",
       count: 0,
     };
   }
