@@ -2,12 +2,14 @@
 
 export function filterEmail(value: string): string {
   return value
-    // 1. Remove all spaces instantly
+    // Remove all spaces instantly
     .replace(/\s+/g, "")
-    // 2. Collapse any consecutive mix of hyphens, underscores, or dots (e.g., "--__--" -> "-")
+    // Collapse any consecutive mix of hyphens, underscores, or dots (e.g., "--__--" -> "-")
     .replace(/[-_.]{2,}/g, (match) => match[0])
-    // 3. Remove any disallowed characters for email fields
-    .replace(/[^a-zA-Z0-9@._+-]/g, "");
+    // Remove any disallowed characters for email fields
+    .replace(/[^a-zA-Z0-9@._+-]/g, "")
+    // Remove consecutive spaces into one
+    .replace(/\s+/g, " ");
 }
 
 /**

@@ -624,18 +624,28 @@ export async function deleteSubject(actor: string, subjectId: string) {
  * TEACHERS *
  ************/
 
+export type TeacherStatusFilter =
+  | "All Active & On Leave"
+  | "Active"
+  | "On Leave"
+  | "Inactive"
+  | "Archived (Soft-Deleted)"
+  | "Archived";
+
 export interface TeacherInput {
-  pscs_id?: string;
-  email?: string;
-  f_name?: string;
-  m_name?: string;
-  surname?: string;
-  suffix?: string;
-  teacher_code?: string;
-  department?: string;
-  employment_type?: string;
-  availability?: Record<string, unknown> | Array<unknown>;
-  preferences?: Record<string, unknown> | Array<unknown>;
+  pscs_id?: string | null;
+  email?: string | null;
+  f_name?: string | null;
+  m_name?: string | null;
+  surname?: string | null;
+  suffix?: string | null;
+  teacher_code?: string | null;
+  department?: string | null;
+  requirement_type?: string | null;
+  employment_type?: string | null;
+  status?: string | null;
+  availability?: Record<string, unknown> | Array<unknown> | null;
+  preferences?: Record<string, unknown> | Array<unknown> | null;
 }
 export interface TeacherRecord {
   teacher_id: string;
@@ -648,7 +658,9 @@ export interface TeacherRecord {
   full_name: string;
   teacher_code: string | null;
   department: string | null;
+  requirement_type: string | null;
   employment_type: string | null;
+  status: string;
   availability: Record<string, unknown> | Array<unknown>;
   preferences: Record<string, unknown> | Array<unknown>;
   created_at: string;
@@ -658,22 +670,25 @@ export interface TeacherRecord {
 // Read Teachers
 export async function fetchTeachers(
   search: string | null = null,
+  status: TeacherStatusFilter = "All Active & On Leave",
   sortBy: string = "surname",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number | string = 1
 ) {
   try {
-    const offset = limit > 0 ? (page - 1) * limit : 0;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const offset = limit > 0 ? (pageNum - 1) * limit : 0;
 
     const data = await sql<TeacherRecord[]>`
       SELECT * FROM teachers_read(
         ${search || null},
+        ${status},
         ${sortBy},
         ${sortDir},
         ${limit},
         ${offset}
-                    );
+      );
     `;
 
     return {
@@ -691,10 +706,16 @@ export async function fetchTeachers(
 }
 
 // Count Teachers
-export async function fetchTeachersCount(search: string | null = null) {
+export async function fetchTeachersCount(
+  search: string | null = null,
+  status: TeacherStatusFilter = "All Active & On Leave"
+) {
   try {
     const [result] = await sql<{ teachers_count: number }[]>`
-      SELECT teachers_count(${search || null});
+      SELECT teachers_count(
+               ${search || null},
+               ${status}
+             );
     `;
 
     return {
@@ -724,7 +745,9 @@ export async function createTeacher(actor: string, input: TeacherInput) {
                ${input.suffix ?? null},
                ${input.teacher_code ?? null},
                ${input.department ?? null},
+               ${input.requirement_type ?? null},
                ${input.employment_type ?? null},
+               ${input.status ?? "Active"},
                ${input.availability ? JSON.stringify(input.availability) : "{}"}::jsonb,
                ${input.preferences ? JSON.stringify(input.preferences) : "{}"}::jsonb
              );
@@ -733,7 +756,7 @@ export async function createTeacher(actor: string, input: TeacherInput) {
     await createLog(
       actor,
       "create_teacher",
-      `email: '${input.email}', teacher_code: '${input.teacher_code}'`
+      `email: '${input.email ?? "N/A"}', surname: '${input.surname ?? "N/A"}'`
     );
 
     return {
@@ -767,7 +790,9 @@ export async function updateTeacher(
                ${input.suffix ?? null},
                ${input.teacher_code ?? null},
                ${input.department ?? null},
+               ${input.requirement_type ?? null},
                ${input.employment_type ?? null},
+               ${input.status ?? null},
                ${input.availability ? JSON.stringify(input.availability) : null}::jsonb,
                ${input.preferences ? JSON.stringify(input.preferences) : null}::jsonb
              );
@@ -785,21 +810,21 @@ export async function updateTeacher(
   }
 }
 
-// Delete Teacher
-export async function deleteTeacher(actor: string, teacherId: string) {
+// Archive Teacher
+export async function archiveTeacher(actor: string, teacherId: string) {
   try {
     await sql`
-      SELECT teachers_delete(${teacherId}::UUID);
+      SELECT teachers_archive(${teacherId}::UUID);
     `;
 
-    await createLog(actor, "delete_teacher", `teacher_id: '${teacherId}'`);
+    await createLog(actor, "archive_teacher", `teacher_id: '${teacherId}'`);
 
     return { success: true };
   } catch (error) {
-    console.error("Failed to delete teacher:", error);
+    console.error("Failed to archive teacher:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to delete teacher record.",
+      error: (error as Error).message || "Failed to archive teacher record.",
     };
   }
 }
