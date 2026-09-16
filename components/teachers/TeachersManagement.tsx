@@ -27,7 +27,7 @@ import {
 import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
 import { HiCheck } from "react-icons/hi2";
 import { useEffect, useState } from "react";
-import { HiExclamation, HiX, HiSearch, HiArchive } from "react-icons/hi";
+import { HiExclamation, HiX, HiSearch, HiArchive, HiRefresh } from "react-icons/hi";
 import {
   filterAlpha,
   filterAlphaDashSpace,
@@ -44,27 +44,8 @@ import {
   archiveTeacher,
   fetchDepartments,
   TeacherStatusFilter,
+  TeacherRecord,
 } from "@/app/actions/system";
-
-export interface TeacherRecord {
-  teacher_id: string;
-  pscs_id: string | null;
-  email: string | null;
-  f_name: string | null;
-  m_name: string | null;
-  surname: string | null;
-  suffix: string | null;
-  full_name: string;
-  teacher_code: string | null;
-  department: string | null;
-  requirement_type: string | null;
-  employment_type: string | null;
-  status: string;
-  availability: Record<string, unknown> | Array<unknown>;
-  preferences: Record<string, unknown> | Array<unknown>;
-  created_at: string;
-  updated_at: string;
-}
 
 export interface DepartmentRecord {
   dept_id: string;
@@ -110,12 +91,15 @@ export default function TeachersManagement() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] =
       useState<TeacherStatusFilter>("All Active & On Leave");
-  const [departmentFilter, setDepartmentFilter] = useState<string>("All Departments");
+  const [departmentFilter, setDepartmentFilter] =
+      useState<string>("All Departments");
 
   // --- Modal Constants --- //
   const [openAddTeacherModal, setOpenAddTeacherModal] = useState(false);
   const [openEditTeacherModal, setOpenEditTeacherModal] = useState(false);
   const [openArchiveModal, setOpenArchiveModal] = useState(false);
+  const [openUnarchiveModal, setOpenUnarchiveModal] = useState(false);
+  const [selectedUnarchiveTeacher, setSelectedUnarchiveTeacher] = useState<TeacherRecord | null>(null);
 
   // --- Form Error States --- //
   const [rowID, setRowID] = useState("");
@@ -261,7 +245,7 @@ export default function TeachersManagement() {
     return email.toLowerCase().endsWith("@alabang.sti.edu.ph");
   };
 
-  /** --- Initial Load: Fetch All Departments (limit = 0) --- **/
+  /** --- Initial Load: Fetch All Departments --- **/
   useEffect(() => {
     async function loadAllDepartments() {
       const response = await fetchDepartments("", "dept_name", "ASC", 0, 1);
@@ -425,7 +409,7 @@ export default function TeachersManagement() {
     setSortTeachersDir(newDir);
     setTeachers([]);
     setCurrentTeacherPage(1);
-    void getTeachers(searchTerm, statusFilter, sortBy, newDir, maxRowTeacher, 1);
+    void getTeachers(searchTerm, statusFilter, departmentFilter, sortBy, newDir, maxRowTeacher, 1);
   }
 
   function onPageChangeTeachers(page: number) {
@@ -437,6 +421,7 @@ export default function TeachersManagement() {
     void getTeachers(
         searchTerm,
         statusFilter,
+        departmentFilter,
         sortTeachersBy,
         sortTeachersDir,
         maxRowTeacher,
@@ -464,6 +449,7 @@ export default function TeachersManagement() {
     void getTeachers(
         searchTerm,
         selectedStatus,
+        departmentFilter,
         sortTeachersBy,
         sortTeachersDir,
         maxRowTeacher,
@@ -475,6 +461,15 @@ export default function TeachersManagement() {
     const selectedDept = e.target.value;
     setDepartmentFilter(selectedDept);
     setCurrentTeacherPage(1);
+    void getTeachers(
+        searchTerm,
+        statusFilter,
+        selectedDept,
+        sortTeachersBy,
+        sortTeachersDir,
+        maxRowTeacher,
+        1,
+    );
   };
 
   /** --- Input Handlers (Add Form) --- **/
@@ -578,6 +573,8 @@ export default function TeachersManagement() {
     setOpenAddTeacherModal(false);
     setOpenEditTeacherModal(false);
     setOpenArchiveModal(false);
+    setOpenUnarchiveModal(false);
+    setSelectedUnarchiveTeacher(null);
 
     setInputPscsId("");
     setInputEmail("");
@@ -603,6 +600,11 @@ export default function TeachersManagement() {
     editStatus("Active");
     setEditAvailabilityList([]);
   };
+
+  function openUnarchiveConfirmation(item: TeacherRecord) {
+    setSelectedUnarchiveTeacher(item);
+    setOpenUnarchiveModal(true);
+  }
 
   function loadEditData(row_id: string) {
     setRowID(row_id);
@@ -723,8 +725,9 @@ export default function TeachersManagement() {
   async function getTeacherCount(
       search: string | null = searchTerm,
       status: TeacherStatusFilter = statusFilter,
+      department: string = departmentFilter,
   ) {
-    const response = await fetchTeachersCount(search, status);
+    const response = await fetchTeachersCount(search, status, department);
 
     if (response?.success) {
       setTeachersCount(response.count);
@@ -741,6 +744,7 @@ export default function TeachersManagement() {
   async function getTeachers(
       search: string | null = searchTerm,
       status: TeacherStatusFilter = statusFilter,
+      department: string = departmentFilter,
       sortby: string = sortTeachersBy,
       sortdir: string = sortTeachersDir,
       limit: number = maxRowTeacher,
@@ -751,6 +755,7 @@ export default function TeachersManagement() {
     const response = await fetchTeachers(
         search,
         status,
+        department,
         sortby,
         sortdir,
         limit,
@@ -758,7 +763,7 @@ export default function TeachersManagement() {
     );
 
     if (response?.success && response.data) {
-      setTeachers(response.data as TeacherRecord[]);
+      setTeachers(response.data);
     } else {
       setToastMessage(
           response?.error ?? "[fetchTeachers]: An unexpected error occurred",
@@ -769,7 +774,7 @@ export default function TeachersManagement() {
     }
 
     setLoading(false);
-    await getTeacherCount(search, status);
+    await getTeacherCount(search, status, department);
   }
 
   async function handleTeacherSubmit() {
@@ -807,6 +812,7 @@ export default function TeachersManagement() {
     void getTeachers(
         searchTerm,
         statusFilter,
+        departmentFilter,
         sortTeachersBy,
         sortTeachersDir,
         maxRowTeacher,
@@ -849,6 +855,50 @@ export default function TeachersManagement() {
     void getTeachers(
         searchTerm,
         statusFilter,
+        departmentFilter,
+        sortTeachersBy,
+        sortTeachersDir,
+        maxRowTeacher,
+        currentTeacherPage,
+    );
+  }
+
+  async function handleTeacherUnarchive() {
+    if (!selectedUnarchiveTeacher) return;
+
+    const payload = {
+      pscs_id: selectedUnarchiveTeacher.pscs_id,
+      email: selectedUnarchiveTeacher.email,
+      f_name: selectedUnarchiveTeacher.f_name,
+      m_name: selectedUnarchiveTeacher.m_name || undefined,
+      surname: selectedUnarchiveTeacher.surname,
+      suffix: selectedUnarchiveTeacher.suffix || undefined,
+      teacher_code: selectedUnarchiveTeacher.teacher_code,
+      department: selectedUnarchiveTeacher.department || undefined,
+      employment_type: selectedUnarchiveTeacher.employment_type,
+      status: "Active",
+      availability: selectedUnarchiveTeacher.availability,
+    };
+
+    const response = await updateTeacher(username ?? "system", selectedUnarchiveTeacher.teacher_id, payload);
+
+    if (response?.success) {
+      setToastMessage("Instructor record restored successfully");
+      setToastType("success");
+      toastTimer();
+    } else {
+      setToastMessage(
+          response?.error ?? "[UnarchiveTeacher]: An unexpected error occurred",
+      );
+      setToastType("error");
+      setShowToast(true);
+    }
+
+    handleCloseTeacherModals();
+    void getTeachers(
+        searchTerm,
+        statusFilter,
+        departmentFilter,
         sortTeachersBy,
         sortTeachersDir,
         maxRowTeacher,
@@ -875,6 +925,7 @@ export default function TeachersManagement() {
     void getTeachers(
         searchTerm,
         statusFilter,
+        departmentFilter,
         sortTeachersBy,
         sortTeachersDir,
         maxRowTeacher,
@@ -918,6 +969,7 @@ export default function TeachersManagement() {
       void getTeachers(
           searchTerm,
           statusFilter,
+          departmentFilter,
           sortTeachersBy,
           sortTeachersDir,
           maxRowTeacher,
@@ -926,13 +978,7 @@ export default function TeachersManagement() {
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, statusFilter]);
-
-  // Client-side department filtering overlay
-  const filteredTeachers = teachers.filter((teacher) => {
-    if (departmentFilter === "All Departments") return true;
-    return teacher.department?.toLowerCase() === departmentFilter.toLowerCase();
-  });
+  }, [searchTerm, statusFilter, departmentFilter]);
 
   return (
       <>
@@ -1012,7 +1058,7 @@ export default function TeachersManagement() {
                   </option>
                 </optgroup>
                 <optgroup label="Everything">
-                  <option value="Archived">All Statuses</option>
+                  <option value="All Statuses">All Statuses</option>
                 </optgroup>
               </Select>
             </div>
@@ -1142,8 +1188,8 @@ export default function TeachersManagement() {
             </TableHead>
 
             <TableBody className="divide-y">
-              {filteredTeachers.length > 0 ? (
-                  filteredTeachers.map((item) => {
+              {teachers.length > 0 ? (
+                  teachers.map((item) => {
                     const displayFullName =
                         item.full_name ||
                         [
@@ -1162,6 +1208,8 @@ export default function TeachersManagement() {
                                 dept.toLowerCase() ===
                                 item.department?.trim().toLowerCase(),
                         );
+
+                    const isArchived = item.status?.toLowerCase().includes("archive");
 
                     return (
                         <TableRow
@@ -1215,12 +1263,22 @@ export default function TeachersManagement() {
                           </TableCell>
 
                           <TableCell className="flex items-center gap-3">
-                            <a
-                                onClick={() => loadEditData(item.teacher_id)}
-                                className="cursor-pointer font-medium text-primary-600 hover:underline dark:text-primary-500"
-                            >
-                              Edit
-                            </a>
+                            {isArchived ? (
+                                <a
+                                    onClick={() => openUnarchiveConfirmation(item)}
+                                    className="flex cursor-pointer items-center gap-1 font-medium text-emerald-600 hover:underline dark:text-emerald-500"
+                                >
+                                  <HiRefresh className="h-4 w-4" />
+                                  Unarchive
+                                </a>
+                            ) : (
+                                <a
+                                    onClick={() => loadEditData(item.teacher_id)}
+                                    className="cursor-pointer font-medium text-primary-600 hover:underline dark:text-primary-500"
+                                >
+                                  Edit
+                                </a>
+                            )}
                           </TableCell>
                         </TableRow>
                     );
@@ -1438,7 +1496,6 @@ export default function TeachersManagement() {
                     maxLength={80}
                 />
 
-                {/* Suggestions Dropdown */}
                 {showAddDeptDropdown && departmentOptions.length > 0 && (
                     <ul className="absolute top-[68px] z-20 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
                       {departmentOptions.map((name) => (
@@ -1495,7 +1552,6 @@ export default function TeachersManagement() {
                 </Select>
               </div>
 
-              {/* Part-Time Availability Configurator */}
               {inputEmploymentType === "Part-Time" && (
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2 dark:border-gray-700 dark:bg-gray-800">
                     <Label className="mb-2 block font-semibold">
@@ -1940,7 +1996,7 @@ export default function TeachersManagement() {
           </ModalBody>
           <ModalFooter className="flex justify-between">
             <Button
-                color={"light"}
+                color="yellow"
                 onClick={() => {
                   setOpenEditTeacherModal(false);
                   setOpenArchiveModal(true);
@@ -1982,6 +2038,31 @@ export default function TeachersManagement() {
           <ModalFooter className="justify-center">
             <Button color="yellow" onClick={handleTeacherArchive}>
               Yes, Archive
+            </Button>
+            <Button color="alternative" onClick={handleCloseTeacherModals}>
+              No, Cancel
+            </Button>
+          </ModalFooter>
+        </Modal>
+
+        {/* Modal: Unarchive Confirmation */}
+        <Modal
+            show={openUnarchiveModal}
+            onClose={handleCloseTeacherModals}
+            size="md"
+        >
+          <ModalHeader>Confirm Unarchive</ModalHeader>
+          <ModalBody>
+            <div className="text-center">
+              <HiRefresh className="mx-auto mb-4 h-14 w-14 text-emerald-500 dark:text-emerald-400" />
+              <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                Are you sure you want to unarchive <b className="font-bold dark:text-white">{selectedUnarchiveTeacher?.full_name}&#39;s</b> record? This will restore their status to Active.
+              </h3>
+            </div>
+          </ModalBody>
+          <ModalFooter className="justify-center">
+            <Button color="green" onClick={() => void handleTeacherUnarchive()}>
+              Yes, Unarchive
             </Button>
             <Button color="alternative" onClick={handleCloseTeacherModals}>
               No, Cancel

@@ -11,11 +11,11 @@ export interface AcademicYearRecord {
 
 /* FETCH ACADEMIC YEARS (READ) */
 export async function fetchAcademicYears(
-    search: string | null = null,
-    sortBy: string = "ay_sem",
-    sortDir: string = "DESC",
-    limit: number = 10,
-    page: number = 1
+  search: string | null = null,
+  sortBy: string = "ay_sem",
+  sortDir: string = "DESC",
+  limit: number = 10,
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -89,9 +89,9 @@ export async function createAcademicYear(actor: string, aySem: string) {
 
 /* UPDATE ACADEMIC YEAR */
 export async function updateAcademicYear(
-    actor: string,
-    oldAySem: string,
-    newAySem: string
+  actor: string,
+  oldAySem: string,
+  newAySem: string,
 ) {
   try {
     const [result] = await sql<{ academic_year_update: string }[]>`
@@ -99,9 +99,9 @@ export async function updateAcademicYear(
     `;
 
     await createLog(
-        actor,
-        "update_academic_year",
-        `old: '${oldAySem}', new: '${newAySem}'`
+      actor,
+      "update_academic_year",
+      `old: '${oldAySem}', new: '${newAySem}'`,
     );
 
     return {
@@ -383,7 +383,7 @@ export async function createProgram(actor: string, input: ProgramInput) {
     await createLog(
       actor,
       "create_program",
-      `program_code: '${input.program_code}'`
+      `program_code: '${input.program_code}'`,
     );
 
     return {
@@ -403,7 +403,7 @@ export async function createProgram(actor: string, input: ProgramInput) {
 export async function updateProgram(
   actor: string,
   programCode: string,
-  input: Partial<Omit<ProgramInput, "program_code">>
+  input: Partial<Omit<ProgramInput, "program_code">>,
 ) {
   try {
     await sql`
@@ -477,11 +477,11 @@ export interface SubjectRecord {
 
 /* FETCH SUBJECTS (READ) */
 export async function fetchSubjects(
-    search: string | null = null,
-    sortBy: string = "course_code",
-    sortDir: string = "ASC",
-    limit: number = 10,
-    page: number = 1
+  search: string | null = null,
+  sortBy: string = "course_code",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -549,9 +549,9 @@ export async function createSubject(actor: string, input: SubjectInput) {
     `;
 
     await createLog(
-        actor,
-        "create_subject",
-        `course_code: '${input.course_code}', course_name: '${input.course_name}'`
+      actor,
+      "create_subject",
+      `course_code: '${input.course_code}', course_name: '${input.course_name}'`,
     );
 
     return {
@@ -569,9 +569,9 @@ export async function createSubject(actor: string, input: SubjectInput) {
 
 /* UPDATE SUBJECT */
 export async function updateSubject(
-    actor: string,
-    subjectId: string,
-    input: Partial<SubjectInput>
+  actor: string,
+  subjectId: string,
+  input: Partial<SubjectInput>,
 ) {
   try {
     await sql`
@@ -671,10 +671,11 @@ export interface TeacherRecord {
 export async function fetchTeachers(
   search: string | null = null,
   status: TeacherStatusFilter = "All Active & On Leave",
+  department: string = "All Departments",
   sortBy: string = "surname",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number | string = 1
+  page: number | string = 1,
 ) {
   try {
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
@@ -682,13 +683,14 @@ export async function fetchTeachers(
 
     const data = await sql<TeacherRecord[]>`
       SELECT * FROM teachers_read(
-        ${search || null},
-        ${status},
-        ${sortBy},
-        ${sortDir},
-        ${limit},
-        ${offset}
-      );
+          ${search || null},
+          ${status},
+          ${department},
+          ${sortBy},
+          ${sortDir},
+          ${limit},
+          ${offset}
+                    );
     `;
 
     return {
@@ -708,13 +710,15 @@ export async function fetchTeachers(
 // Count Teachers
 export async function fetchTeachersCount(
   search: string | null = null,
-  status: TeacherStatusFilter = "All Active & On Leave"
+  status: TeacherStatusFilter = "All Active & On Leave",
+  department: string = "All Departments",
 ) {
   try {
     const [result] = await sql<{ teachers_count: number }[]>`
       SELECT teachers_count(
-               ${search || null},
-               ${status}
+                 ${search || null},
+                 ${status},
+                 ${department}
              );
     `;
 
@@ -737,26 +741,26 @@ export async function createTeacher(actor: string, input: TeacherInput) {
   try {
     const [result] = await sql<{ teachers_create: string }[]>`
       SELECT teachers_create(
-               ${input.pscs_id ?? null},
-               ${input.email ?? null},
-               ${input.f_name ?? null},
-               ${input.m_name ?? null},
-               ${input.surname ?? null},
-               ${input.suffix ?? null},
-               ${input.teacher_code ?? null},
-               ${input.department ?? null},
-               ${input.requirement_type ?? null},
-               ${input.employment_type ?? null},
-               ${input.status ?? "Active"},
-               ${input.availability ? JSON.stringify(input.availability) : "{}"}::jsonb,
-               ${input.preferences ? JSON.stringify(input.preferences) : "{}"}::jsonb
+                 ${input.pscs_id ?? null},
+                 ${input.email ?? null},
+                 ${input.f_name ?? null},
+                 ${input.m_name ?? null},
+                 ${input.surname ?? null},
+                 ${input.suffix ?? null},
+                 ${input.teacher_code ?? null},
+                 ${input.department ?? null},
+                 ${input.requirement_type ?? null},
+                 ${input.employment_type ?? null},
+                 ${input.status ?? "Active"},
+                 ${input.availability ? JSON.stringify(input.availability) : "{}"}::jsonb,
+                 ${input.preferences ? JSON.stringify(input.preferences) : "{}"}::jsonb
              );
     `;
 
     await createLog(
       actor,
       "create_teacher",
-      `email: '${input.email ?? "N/A"}', surname: '${input.surname ?? "N/A"}'`
+      `email: '${input.email ?? "N/A"}', surname: '${input.surname ?? "N/A"}'`,
     );
 
     return {
@@ -776,25 +780,25 @@ export async function createTeacher(actor: string, input: TeacherInput) {
 export async function updateTeacher(
   actor: string,
   teacherId: string,
-  input: Partial<TeacherInput>
+  input: Partial<TeacherInput>,
 ) {
   try {
     await sql`
       SELECT teachers_update(
-               ${teacherId}::UUID,
-               ${input.pscs_id ?? null},
-               ${input.email ?? null},
-               ${input.f_name ?? null},
-               ${input.m_name ?? null},
-               ${input.surname ?? null},
-               ${input.suffix ?? null},
-               ${input.teacher_code ?? null},
-               ${input.department ?? null},
-               ${input.requirement_type ?? null},
-               ${input.employment_type ?? null},
-               ${input.status ?? null},
-               ${input.availability ? JSON.stringify(input.availability) : null}::jsonb,
-               ${input.preferences ? JSON.stringify(input.preferences) : null}::jsonb
+                 ${teacherId}::UUID,
+                 ${input.pscs_id ?? null},
+                 ${input.email ?? null},
+                 ${input.f_name ?? null},
+                 ${input.m_name ?? null},
+                 ${input.surname ?? null},
+                 ${input.suffix ?? null},
+                 ${input.teacher_code ?? null},
+                 ${input.department ?? null},
+                 ${input.requirement_type ?? null},
+                 ${input.employment_type ?? null},
+                 ${input.status ?? null},
+                 ${input.availability ? JSON.stringify(input.availability) : null}::jsonb,
+                 ${input.preferences ? JSON.stringify(input.preferences) : null}::jsonb
              );
     `;
 
@@ -856,7 +860,7 @@ export async function fetchMaq(
   sortBy: string = "aq",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -956,7 +960,11 @@ export async function createMaqCluster(actor: string, clusterName: string) {
       SELECT maq_cluster_create(${clusterName});
     `;
 
-    await createLog(actor, "create_maq_cluster", `cluster_name: '${clusterName}'`);
+    await createLog(
+      actor,
+      "create_maq_cluster",
+      `cluster_name: '${clusterName}'`,
+    );
 
     return {
       success: true,
@@ -1029,7 +1037,7 @@ export async function fetchMaqClustersWithEntries(
   sortBy: string = "cluster_name",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -1052,7 +1060,9 @@ export async function fetchMaqClustersWithEntries(
     console.error("Failed to fetch MAQ clusters with entries:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch MAQ clusters with entries.",
+      error:
+        (error as Error).message ||
+        "Failed to fetch MAQ clusters with entries.",
       data: [],
     };
   }
@@ -1064,7 +1074,11 @@ export async function deleteMaqCluster(actor: string, clusterName: string) {
       SELECT maq_cluster_delete(${clusterName});
     `;
 
-    await createLog(actor, "delete_maq_cluster", `cluster_name: '${clusterName}'`);
+    await createLog(
+      actor,
+      "delete_maq_cluster",
+      `cluster_name: '${clusterName}'`,
+    );
 
     return { success: true };
   } catch (error) {
@@ -1134,13 +1148,13 @@ export interface FcceRecord {
 
 /* FETCH FCCE RECORDS (READ) */
 export async function fetchFcce(
-    search: string | null = null,
-    aySem: string = "ALL",
-    archivedMode: ArchivedMode = "ACTIVE",
-    sortBy: string = "created_at",
-    sortDir: string = "DESC",
-    limit: number = 10,
-    page: number | string = 1
+  search: string | null = null,
+  aySem: string = "ALL",
+  archivedMode: ArchivedMode = "ACTIVE",
+  sortBy: string = "created_at",
+  sortDir: string = "DESC",
+  limit: number = 10,
+  page: number | string = 1,
 ) {
   try {
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
@@ -1174,9 +1188,9 @@ export async function fetchFcce(
 
 /* COUNT FCCE RECORDS */
 export async function fetchFcceCount(
-    search: string | null = null,
-    aySem: string = "ALL",
-    archivedMode: ArchivedMode = "ACTIVE"
+  search: string | null = null,
+  aySem: string = "ALL",
+  archivedMode: ArchivedMode = "ACTIVE",
 ) {
   try {
     const [result] = await sql<{ fcce_count: number }[]>`
@@ -1215,9 +1229,9 @@ export async function createFcce(actor: string, input: FcceInput) {
     `;
 
     await createLog(
-        actor,
-        "create_fcce",
-        `pscs_id: '${input.pscs_id}', course_name: '${input.course_name}', ay_sem: '${input.ay_sem ?? "N/A"}'`
+      actor,
+      "create_fcce",
+      `pscs_id: '${input.pscs_id}', course_name: '${input.course_name}', ay_sem: '${input.ay_sem ?? "N/A"}'`,
     );
 
     return {
@@ -1235,9 +1249,9 @@ export async function createFcce(actor: string, input: FcceInput) {
 
 /* UPDATE FCCE RECORD */
 export async function updateFcce(
-    actor: string,
-    fcceId: string,
-    input: Partial<FcceInput>
+  actor: string,
+  fcceId: string,
+  input: Partial<FcceInput>,
 ) {
   try {
     await sql`
@@ -1292,9 +1306,9 @@ export async function archiveAllActiveFcce(actor: string) {
     const count = result?.fcce_archive_all_active ?? 0;
 
     await createLog(
-        actor,
-        "archive_all_active_fcce",
-        `archived ${count} record(s)`
+      actor,
+      "archive_all_active_fcce",
+      `archived ${count} record(s)`,
     );
 
     return {
@@ -1306,8 +1320,7 @@ export async function archiveAllActiveFcce(actor: string) {
     return {
       success: false,
       error:
-          (error as Error).message ||
-          "Failed to archive active FCCE records.",
+        (error as Error).message || "Failed to archive active FCCE records.",
       archivedCount: 0,
     };
   }
@@ -1315,13 +1328,13 @@ export async function archiveAllActiveFcce(actor: string) {
 
 /* FETCH UNMATCHED FCCE RECORDS (READ) */
 export async function fetchFcceUnmatched(
-    search: string | null = null,
-    aySem: string = "ALL",
-    archivedMode: ArchivedMode = "ACTIVE",
-    sortBy: string = "created_at",
-    sortDir: string = "DESC",
-    limit: number = 10,
-    page: number | string = 1
+  search: string | null = null,
+  aySem: string = "ALL",
+  archivedMode: ArchivedMode = "ACTIVE",
+  sortBy: string = "created_at",
+  sortDir: string = "DESC",
+  limit: number = 10,
+  page: number | string = 1,
 ) {
   try {
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
@@ -1348,7 +1361,7 @@ export async function fetchFcceUnmatched(
     return {
       success: false,
       error:
-          (error as Error).message || "Failed to fetch unmatched FCCE records.",
+        (error as Error).message || "Failed to fetch unmatched FCCE records.",
       data: [],
     };
   }
@@ -1356,9 +1369,9 @@ export async function fetchFcceUnmatched(
 
 /* COUNT UNMATCHED FCCE RECORDS */
 export async function fetchFcceUnmatchedCount(
-    search: string | null = null,
-    aySem: string = "ALL",
-    archivedMode: ArchivedMode = "ACTIVE"
+  search: string | null = null,
+  aySem: string = "ALL",
+  archivedMode: ArchivedMode = "ACTIVE",
 ) {
   try {
     const [result] = await sql<{ fcce_count_unmatched: number }[]>`
@@ -1378,7 +1391,7 @@ export async function fetchFcceUnmatchedCount(
     return {
       success: false,
       error:
-          (error as Error).message || "Failed to count unmatched FCCE records.",
+        (error as Error).message || "Failed to count unmatched FCCE records.",
       count: 0,
     };
   }
@@ -1481,7 +1494,7 @@ export async function createBreakPeriod(
     await createLog(
       user,
       "create_break_period",
-      `description: '${description}' | day: '${dayOfWeek}' | start: '${startTime}' | end: '${endTime}'`
+      `description: '${description}' | day: '${dayOfWeek}' | start: '${startTime}' | end: '${endTime}'`,
     );
     return { success: true, data: result };
   } catch (error) {
@@ -1672,12 +1685,12 @@ export async function fetchFacultyLoadConfig({
 
 // --- Updates --- //
 export async function updateFacultyLoad({
-                                          userEmail,
-                                          fullTime,
-                                          partTimeFullLoad,
-                                          partTime,
-                                          configurationId,
-                                        }: UpdateFacultyLoadParams): Promise<{ success: boolean; error?: string }> {
+  userEmail,
+  fullTime,
+  partTimeFullLoad,
+  partTime,
+  configurationId,
+}: UpdateFacultyLoadParams): Promise<{ success: boolean; error?: string }> {
   // Client/Server Action Validation Check
   if (fullTime > 30 || partTimeFullLoad > 30 || partTime > 30) {
     return {
@@ -1704,7 +1717,7 @@ export async function updateFacultyLoad({
     console.error("Failed to update faculty load configurations:", error);
     return {
       success: false,
-      error: (error as Error).message
+      error: (error as Error).message,
     };
   }
 }
@@ -1864,7 +1877,7 @@ export async function fetchRoomTypeList(
   search?: string | null,
   sortdir?: string,
   limit?: number,
-  page?: number
+  page?: number,
 ) {
   try {
     const pSearch = search ? `%${search}%` : null;
@@ -1953,7 +1966,7 @@ export async function fetchDepartments(
   sortBy: string = "dept_name",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -2029,7 +2042,7 @@ export async function createDepartment(actor: string, deptName: string) {
 export async function updateDepartment(
   actor: string,
   oldDeptName: string,
-  newDeptName: string
+  newDeptName: string,
 ) {
   try {
     const [result] = await sql<{ departments_update: string }[]>`
@@ -2039,7 +2052,7 @@ export async function updateDepartment(
     await createLog(
       actor,
       "update_department",
-      `old_dept_name: '${oldDeptName}' | new_dept_name: '${newDeptName}'`
+      `old_dept_name: '${oldDeptName}' | new_dept_name: '${newDeptName}'`,
     );
 
     return {
@@ -2098,7 +2111,7 @@ export async function fetchUsers(
   sortBy: string = "email",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ): Promise<FetchUsersListResponse> {
   try {
     const offset = Math.max(0, (page - 1) * limit);
@@ -2130,7 +2143,9 @@ export async function fetchUsers(
     console.error("Error executing fetchUsers:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch users. Please try again later.",
+      error:
+        (error as Error).message ||
+        "Failed to fetch users. Please try again later.",
     };
   }
 }
@@ -2140,7 +2155,7 @@ export async function createUser(
   actor: string,
   email: string,
   username?: string,
-  roleName: string = "viewer"
+  roleName: string = "viewer",
 ) {
   try {
     const [result] = await sql<{ manage_users_create: string }[]>`
@@ -2150,12 +2165,12 @@ export async function createUser(
     await createLog(
       actor,
       "create_user",
-      `email: '${email}' | role: '${roleName}'`
+      `email: '${email}' | role: '${roleName}'`,
     );
 
     return {
       success: true,
-      userId: result?.manage_users_create
+      userId: result?.manage_users_create,
     };
   } catch (error) {
     console.error("Failed to create user:", error);
@@ -2171,7 +2186,7 @@ export async function updateUser(
   actor: string,
   userId: string,
   username: string,
-  roleName: string
+  roleName: string,
 ) {
   try {
     await sql`
@@ -2289,11 +2304,11 @@ export interface FetchRolesResponse {
  * Note: Setting limit to 0 (or a negative number) will fetch ALL records without limit.
  */
 export async function fetchRoles(
-    search?: string | null,
-    sortBy: string = "role_name",
-    sortDir: string = "ASC",
-    limit: number = 10,
-    page: number = 1
+  search?: string | null,
+  sortBy: string = "role_name",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1,
 ): Promise<FetchRolesResponse> {
   try {
     const offset = limit > 0 ? Math.max(0, (page - 1) * limit) : 0;
@@ -2477,11 +2492,11 @@ export async function checkIsUserBlacklistedByEmail(email: string) {
 
 // Read Blacklist
 export async function fetchBlacklist(
-    search?: string | null,
-    sortBy: string = "created_at",
-    sortDir: string = "DESC",
-    limit: number = 10,
-    page: number = 1
+  search?: string | null,
+  sortBy: string = "created_at",
+  sortDir: string = "DESC",
+  limit: number = 10,
+  page: number = 1,
 ): Promise<FetchBlacklistResponse> {
   try {
     const offset = Math.max(0, (page - 1) * limit);
@@ -2550,7 +2565,7 @@ export async function addToBlacklist(actor: string, userId: string) {
 
     return {
       success: true,
-      blacklistId: result?.manage_blacklist_create
+      blacklistId: result?.manage_blacklist_create,
     };
   } catch (error) {
     console.error("Failed to blacklist user:", error);
@@ -2671,7 +2686,7 @@ export async function fetchLogList(
 export async function createLog(
   activeAccount: string,
   action: string,
-  details?: string | null
+  details?: string | null,
 ): Promise<void> {
   try {
     await sql`

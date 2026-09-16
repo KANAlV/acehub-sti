@@ -202,6 +202,7 @@ export default function FcceManagement() {
     const res = await fetchTeachers(
       term,
       "All Active & On Leave",
+      "All Departments",
       "surname",
       "ASC",
       10,
