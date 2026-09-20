@@ -115,7 +115,6 @@ export default function FcceManagement() {
   const [pscsIdError, setPscsIdError] = useState("");
   const [courseNameError, setCourseNameError] = useState("");
   const [aySemError, setAySemError] = useState("");
-  const [editPscsIdError, setEditPscsIdError] = useState("");
   const [editCourseNameError, setEditCourseNameError] = useState("");
   const [editAySemError, setEditAySemError] = useState("");
 
@@ -139,9 +138,9 @@ export default function FcceManagement() {
   const [editAyStartYear, setEditAyStartYear] = useState<string>("");
   const [editAyTerm, setEditAyTerm] = useState<string>("T1");
   const [editPass, setEditPass] = useState(false);
+  const [isEditCourseMatched, setIsEditCourseMatched] = useState(true);
 
   // Base State for Change Tracking
-  const [basePscsId, setBasePscsId] = useState("");
   const [baseCourseName, setBaseCourseName] = useState("");
   const [baseAySem, setBaseAySem] = useState("");
   const [basePass, setBasePass] = useState(false);
@@ -450,13 +449,6 @@ export default function FcceManagement() {
     setAySemError(!val.trim() ? "Academic Year / Semester is required." : "");
   };
 
-  const handleEditPscsIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.slice(0, 15);
-    setEditPscsId(val);
-    setEditPscsIdError(validatePscsId(val));
-    void searchTeachers(val);
-  };
-
   const handleEditCourseNameChange = (
       e: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -497,16 +489,6 @@ export default function FcceManagement() {
     setFilteredSubjects([]);
   };
 
-  const handleSelectEditPscsId = (teacher: TeacherRecord) => {
-    const selectedPscs = teacher.pscs_id
-        ? filterAlphanumeric(teacher.pscs_id).slice(0, 15)
-        : "";
-    setEditPscsId(selectedPscs);
-    setEditTeacherName(teacher.full_name);
-    setEditPscsIdError(validatePscsId(selectedPscs));
-    setTeacherList([]);
-  };
-
   const handleSelectEditCourse = (subject: SubjectRecord) => {
     const course = filterAlphanumericDashUnderscoreComma(
         subject.course_name,
@@ -531,8 +513,8 @@ export default function FcceManagement() {
       ).slice(0, 150);
       const aySemVal = selectedRecord.ay_sem || "";
       const pass = !!selectedRecord.pass;
+      const matched = isCourseValid(course);
 
-      setBasePscsId(pscs);
       setBaseCourseName(course);
       setBaseAySem(aySemVal);
       setBasePass(pass);
@@ -543,6 +525,7 @@ export default function FcceManagement() {
       setEditAySem(aySemVal);
       setIsEditNewAySem(false);
       setEditPass(pass);
+      setIsEditCourseMatched(matched);
 
       setOpenEditModal(true);
     }
@@ -563,7 +546,6 @@ export default function FcceManagement() {
     setPscsIdError("");
     setCourseNameError("");
     setAySemError("");
-    setEditPscsIdError("");
     setEditCourseNameError("");
     setEditAySemError("");
 
@@ -590,6 +572,7 @@ export default function FcceManagement() {
     setEditAyStartYear("");
     setEditAyTerm("T1");
     setEditPass(false);
+    setIsEditCourseMatched(true);
 
     setTeacherList([]);
     setFilteredSubjects([]);
@@ -732,11 +715,6 @@ export default function FcceManagement() {
   }
 
   async function handleFcceUpdate() {
-    const pscsError = validatePscsId(editPscsId);
-    if (pscsError) {
-      setEditPscsIdError(pscsError);
-      return;
-    }
     if (!editCourseName.trim()) {
       setEditCourseNameError("Course name is required.");
       return;
@@ -918,16 +896,12 @@ export default function FcceManagement() {
       !!aySemError;
 
   const isEditFormInvalid =
-      !editPscsId.trim() ||
       !editCourseName.trim() ||
       !editAySem.trim() ||
-      containsAlpha(editPscsId) ||
-      !!editPscsIdError ||
       !!editCourseNameError ||
       !!editAySemError;
 
   const isEditUnchanged =
-      editPscsId === basePscsId &&
       editCourseName === baseCourseName &&
       editAySem === baseAySem &&
       editPass === basePass;
@@ -1441,18 +1415,14 @@ export default function FcceManagement() {
                         </Select>
                         <span className="text-gray-500 dark:text-gray-400">-</span>
 
-                        {/* Auto-Calculated Next Year Readonly Input */}
-                        <TextInput
-                            type="text"
-                            readOnly
-                            value={
-                              addAyStartYear
-                                  ? (parseInt(addAyStartYear, 10) + 1).toString()
-                                  : ""
-                            }
-                            placeholder="End Year"
-                            className="w-full bg-gray-100 dark:bg-gray-700"
-                        />
+                        {/* Auto-Calculated Next Year Plain Text Display */}
+                        <div className="flex h-10 w-full items-center justify-center text-sm text-gray-700 dark:text-gray-300">
+                      <span>
+                        {addAyStartYear
+                            ? (parseInt(addAyStartYear, 10) + 1).toString()
+                            : "End Year"}
+                      </span>
+                        </div>
 
                         <span className="text-gray-500 dark:text-gray-400">/</span>
 
@@ -1530,81 +1500,67 @@ export default function FcceManagement() {
           <ModalHeader>Edit FCCE Record</ModalHeader>
           <ModalBody>
             <div className="space-y-4">
-              {/* PSCS ID Input + Teacher Auto-Suggestion */}
-              <div className="relative">
-                <Label htmlFor="edit-pscs-id">PSCS ID</Label>
-                <TextInput
-                    id="edit-pscs-id"
-                    value={editPscsId}
-                    onChange={handleEditPscsIdChange}
-                    className={editPscsIdError ? "[&_input]:border-red-500" : ""}
-                />
-                {editPscsIdError && (
-                    <HelperText className="mt-1 text-red-600 dark:text-red-500">
-                      {editPscsIdError}
-                    </HelperText>
-                )}
+              {/* PSCS ID Plain Text Display (Not Editable) */}
+              <div>
+                <Label>PSCS ID</Label>
+                <div className="mt-1">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {editPscsId}
+                </span>
+                </div>
                 {editTeacherName && (
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                       Matched Teacher:{" "}
                       <b className="font-semibold">{editTeacherName}</b>
                     </p>
                 )}
-                {teacherList.length > 0 && (
-                    <ul className="absolute z-10 max-h-40 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                      {teacherList.map((teacher) => (
-                          <li
-                              key={teacher.teacher_id}
-                              onClick={() => handleSelectEditPscsId(teacher)}
-                              className="cursor-pointer px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        {teacher.full_name}
-                      </span>
-                            <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                        ({teacher.pscs_id})
-                      </span>
-                          </li>
-                      ))}
-                    </ul>
-                )}
               </div>
 
-              {/* Course Name Input + Filter Suggestions */}
+              {/* Course Name (Editable ONLY if missing match/unmatched) */}
               <div className="relative">
                 <Label htmlFor="edit-course-name">Course Name</Label>
-                <TextInput
-                    id="edit-course-name"
-                    value={editCourseName}
-                    onChange={handleEditCourseNameChange}
-                    className={
-                      editCourseNameError ? "[&_input]:border-red-500" : ""
-                    }
-                />
-                {editCourseNameError && (
-                    <HelperText className="mt-1 text-red-600 dark:text-red-500">
-                      {editCourseNameError}
-                    </HelperText>
-                )}
-                {filteredSubjects.length > 0 && (
-                    <ul className="absolute z-10 max-h-40 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                      {filteredSubjects.map((subj) => (
-                          <li
-                              key={subj.subject_id}
-                              onClick={() => handleSelectEditCourse(subj)}
-                              className="cursor-pointer px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        {subj.course_name}
-                      </span>
-                            {subj.course_code && (
-                                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                          ({subj.course_code})
-                        </span>
-                            )}
-                          </li>
-                      ))}
-                    </ul>
+                {isEditCourseMatched ? (
+                    <div className="mt-1">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    {editCourseName}
+                  </span>
+                    </div>
+                ) : (
+                    <>
+                      <TextInput
+                          id="edit-course-name"
+                          value={editCourseName}
+                          onChange={handleEditCourseNameChange}
+                          className={
+                            editCourseNameError ? "[&_input]:border-red-500" : ""
+                          }
+                      />
+                      {editCourseNameError && (
+                          <HelperText className="mt-1 text-red-600 dark:text-red-500">
+                            {editCourseNameError}
+                          </HelperText>
+                      )}
+                      {filteredSubjects.length > 0 && (
+                          <ul className="absolute z-10 max-h-40 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                            {filteredSubjects.map((subj) => (
+                                <li
+                                    key={subj.subject_id}
+                                    onClick={() => handleSelectEditCourse(subj)}
+                                    className="cursor-pointer px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                >
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {subj.course_name}
+                          </span>
+                                  {subj.course_code && (
+                                      <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                              ({subj.course_code})
+                            </span>
+                                  )}
+                                </li>
+                            ))}
+                          </ul>
+                      )}
+                    </>
                 )}
               </div>
 
@@ -1652,18 +1608,14 @@ export default function FcceManagement() {
                         </Select>
                         <span className="text-gray-500 dark:text-gray-400">-</span>
 
-                        {/* Auto-Calculated Next Year Readonly Input */}
-                        <TextInput
-                            type="text"
-                            readOnly
-                            value={
-                              editAyStartYear
-                                  ? (parseInt(editAyStartYear, 10) + 1).toString()
-                                  : ""
-                            }
-                            placeholder="End Year"
-                            className="w-full bg-gray-100 dark:bg-gray-700"
-                        />
+                        {/* Auto-Calculated Next Year Plain Text Display */}
+                        <div className="flex h-10 w-full items-center justify-center text-sm text-gray-700 dark:text-gray-300">
+                      <span>
+                        {editAyStartYear
+                            ? (parseInt(editAyStartYear, 10) + 1).toString()
+                            : "End Year"}
+                      </span>
+                        </div>
 
                         <span className="text-gray-500 dark:text-gray-400">/</span>
 
