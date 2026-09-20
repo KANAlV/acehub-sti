@@ -155,9 +155,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
           account.name,
         );
 
-        if (result.authorized) {
-          router.push("/dashboard");
-        } else {
+        if (!result.authorized) {
           router.push("/restricted_access");
         }
       } catch (error) {
