@@ -3,7 +3,10 @@
 import {
   Badge,
   Button,
+  ButtonGroup,
   Card,
+  Dropdown,
+  DropdownItem,
   HelperText,
   Label,
   Modal,
@@ -1678,10 +1681,12 @@ export default function FcceManagement() {
               </div>
             </div>
           </ModalBody>
-          <ModalFooter className="flex justify-between">
-            <div className="flex gap-2">
+          <ModalFooter className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {/* Action Buttons (Archive & Delete Grouped) */}
+            <ButtonGroup className="w-full sm:w-auto">
               <Button
                   color="yellow"
+                  className="w-full sm:w-auto"
                   onClick={() => {
                     setOpenEditModal(false);
                     setOpenArchiveSingleModal(true);
@@ -1690,26 +1695,39 @@ export default function FcceManagement() {
                 <HiOutlineArchive className="mr-2 h-4 w-4" />
                 Archive
               </Button>
-              <Button
-                  color="red"
-                  onClick={() => {
-                    setOpenEditModal(false);
-                    setOpenDeleteModal(true);
-                  }}
+              <Dropdown
+                  arrowIcon={true}
+                  color="yellow"
+                  label=""
+                  dismissOnClick={true}
               >
-                <HiOutlineTrash className="mr-2 h-4 w-4" />
-                Delete
-              </Button>
-            </div>
+                <DropdownItem
+                    className="text-red-600 dark:text-red-500"
+                    onClick={() => {
+                      setOpenEditModal(false);
+                      setOpenDeleteModal(true);
+                    }}
+                >
+                  <HiOutlineTrash className="mr-2 h-4 w-4" />
+                  Delete Record
+                </DropdownItem>
+              </Dropdown>
+            </ButtonGroup>
 
-            <div className="flex gap-2">
+            {/* Form Actions (Save Changes & Cancel) */}
+            <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
               <Button
                   disabled={isEditFormInvalid || isEditUnchanged}
                   onClick={() => void handleFcceUpdate()}
+                  className="w-full sm:w-auto"
               >
                 Save Changes
               </Button>
-              <Button color="alternative" onClick={handleCloseModals}>
+              <Button
+                  color="alternative"
+                  onClick={handleCloseModals}
+                  className="w-full sm:w-auto"
+              >
                 Cancel
               </Button>
             </div>
