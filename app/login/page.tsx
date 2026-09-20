@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { DarkThemeToggle, Spinner } from "flowbite-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { syncUserToDatabase } from "@/app/actions/user";
+import { authorizeAndSyncUser, syncUserToDatabase } from "@/app/actions/user";
 import Image from "next/image";
 
 export default function LoginPage() {
@@ -17,23 +17,28 @@ export default function LoginPage() {
       if (inProgress !== "none" || accounts.length === 0) return;
 
       const activeAccount = instance.getActiveAccount() || accounts[0];
+      const userEmail = activeAccount?.username;
+      const userName = activeAccount?.name ?? "";
 
-      if (activeAccount?.username?.endsWith("@alabang.sti.edu.ph")) {
-        try {
-          setIsSyncing(true);
-          // 1. Wait for database insertion/update to complete
-          await syncUserToDatabase(
-            activeAccount.username,
-            activeAccount.name ?? "",
-          );
-          // 2. Only navigate AFTER sync completes successfully
-          router.push("/dashboard");
-        } catch (error) {
-          console.error("Failed to sync user before navigation:", error);
-          setIsSyncing(false);
-        }
-      } else {
+      if (!userEmail) {
         router.push("/restricted_access");
+        return;
+      }
+
+      try {
+        setIsSyncing(true);
+
+        // Delegate domain/student checks, role check, and sync to Server Action
+        const result = await authorizeAndSyncUser(userEmail, userName);
+
+        if (result.authorized) {
+          router.push("/dashboard");
+        } else {
+          router.push("/restricted_access");
+        }
+      } catch (error) {
+        console.error("Failed to sync user before navigation:", error);
+        setIsSyncing(false);
       }
     }
 

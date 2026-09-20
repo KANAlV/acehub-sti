@@ -195,10 +195,12 @@ export default function UsersManagement() {
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterEmail(e.target.value);
     setInputEmail(val);
-    if (val) {
-      setEmailError("");
-    } else {
+    if (!val.trim()) {
       setEmailError("Email is required.");
+    } else if (!val.toLowerCase().endsWith("@alabang.sti.edu.ph")) {
+      setEmailError("Email must end with @alabang.sti.edu.ph");
+    } else {
+      setEmailError("");
     }
   };
 
@@ -249,6 +251,11 @@ export default function UsersManagement() {
   async function handleUserSubmit() {
     if (!inputEmail.trim()) {
       setEmailError("Email is required.");
+      return;
+    }
+
+    if (!inputEmail.toLowerCase().endsWith("@alabang.sti.edu.ph")) {
+      setEmailError("Email must end with @alabang.sti.edu.ph");
       return;
     }
 
@@ -676,10 +683,10 @@ export default function UsersManagement() {
                 {roles.length > 0 ? (
                   roles.filter((users) => users.role_name !== "superuser")
                     .map((option) => (
-                    <option key={option.role_id} value={option.role_name}>
-                      {option.role_name}
-                    </option>
-                  ))
+                      <option key={option.role_id} value={option.role_name}>
+                        {option.role_name}
+                      </option>
+                    ))
                 ) : (
                   <option value="" disabled>
                     No Roles
@@ -690,7 +697,13 @@ export default function UsersManagement() {
           </form>
         </ModalBody>
         <ModalFooter>
-          <Button onClick={handleUserSubmit} disabled={!inputEmail.trim()}>
+          <Button
+            onClick={handleUserSubmit}
+            disabled={
+              !inputEmail.trim() ||
+              !inputEmail.toLowerCase().endsWith("@alabang.sti.edu.ph")
+            }
+          >
             Save
           </Button>
           <Button color="alternative" onClick={handleCloseUserModals}>
@@ -741,10 +754,10 @@ export default function UsersManagement() {
                 {roles.length > 0 ? (
                   roles.filter((users) => users.role_name !== "superuser")
                     .map((option) => (
-                    <option key={option.role_id} value={option.role_name}>
-                      {option.role_name}
-                    </option>
-                  ))
+                      <option key={option.role_id} value={option.role_name}>
+                        {option.role_name}
+                      </option>
+                    ))
                 ) : (
                   <option value="" disabled>
                     No Roles

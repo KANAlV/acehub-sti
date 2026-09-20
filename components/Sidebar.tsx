@@ -36,7 +36,11 @@ import {
 import Image from "next/image";
 import { FaCubes } from "react-icons/fa6";
 import { AccountInfo } from "@azure/msal-common";
-import { fetchUserLogoffStatus, fetchUserRole } from "@/app/actions/user";
+import {
+  authorizeAndSyncUser,
+  fetchUserLogoffStatus,
+  fetchUserRole,
+} from "@/app/actions/user";
 import {
   seedConfiguration,
   seedDepartments,
@@ -79,11 +83,13 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
   const [toastMessage, setToastMessage] = useState("");
 
   useEffect(() => {
-    async function logoff(){
+    async function logoff() {
       if (!account?.username) return;
       const logoffUser = await fetchUserLogoffStatus(account.username);
 
-      if (logoffUser.logoff) {router.push("/logout");}
+      if (logoffUser.logoff) {
+        router.push("/logout");
+      }
     }
 
     async function fetchPermissions() {
@@ -108,9 +114,6 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
           config: Boolean(result.data.config),
           superuser: Boolean(result.data.superuser),
         });
-
-
-
       } else {
         console.error("Failed to fetch permissions:", result.error);
         setToastMessage(result?.error ?? "An unexpected error occurred");
@@ -142,8 +145,31 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       }
     }
 
+    async function studentCheck() {
+      try {
+        if (!account?.username || !account?.name) return;
+
+        // Delegate domain/student checks, role check, and sync to Server Action
+        const result = await authorizeAndSyncUser(
+          account.username,
+          account.name,
+        );
+
+        if (result.authorized) {
+          router.push("/dashboard");
+        } else {
+          router.push("/restricted_access");
+        }
+      } catch (error) {
+        console.error("Failed to sync user before navigation:", error);
+      }
+    }
+
     /** Logoff User on Role Change **/
-    logoff()
+    logoff();
+
+    /** Check if user is Student **/
+    studentCheck();
 
     /** --- Default Values Generation --- **/
     initializeConfiguration();
