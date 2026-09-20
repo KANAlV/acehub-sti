@@ -1685,28 +1685,31 @@ export default function FcceManagement() {
             {/* Action Buttons (Archive & Delete Grouped) */}
             <ButtonGroup className="w-full sm:w-auto">
               <Button
-                  color="yellow"
-                  className="w-full sm:w-auto"
-                  onClick={() => {
-                    setOpenEditModal(false);
-                    setOpenArchiveSingleModal(true);
-                  }}
+                color="yellow"
+                className="w-full sm:w-auto"
+                onClick={() => {
+                  setOpenEditModal(false);
+                  setOpenArchiveSingleModal(true);
+                }}
               >
                 <HiOutlineArchive className="mr-2 h-4 w-4" />
                 Archive
               </Button>
+
               <Dropdown
-                  arrowIcon={true}
-                  color="yellow"
-                  label=""
-                  dismissOnClick={true}
+                arrowIcon={true}
+                color="yellow"
+                label=""
+                dismissOnClick={true}
+                // Add border utilities via className or theme override
+                className="border-l-3 border-white/30 dark:border-gray-800/30"
               >
                 <DropdownItem
-                    className="text-red-600 dark:text-red-500"
-                    onClick={() => {
-                      setOpenEditModal(false);
-                      setOpenDeleteModal(true);
-                    }}
+                  className="text-red-600 dark:text-red-500"
+                  onClick={() => {
+                    setOpenEditModal(false);
+                    setOpenDeleteModal(true);
+                  }}
                 >
                   <HiOutlineTrash className="mr-2 h-4 w-4" />
                   Delete Record
