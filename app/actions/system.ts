@@ -1,6 +1,102 @@
 "use server";
 import sql from "@/lib/database";
 
+/**************
+ * CURRICULUM *
+ **************/
+
+export interface CurriculumInput {
+  curriculum_version: string;
+}
+
+export interface CurriculumRecord {
+  curriculum_id: string;
+  curriculum_version: string;
+  created_at: string;
+}
+
+/* FETCH CURRICULA (READ) */
+export async function fetchCurricula(
+  search: string | null = null,
+  sortBy: string = "curriculum_version",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1,
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<CurriculumRecord[]>`
+      SELECT * FROM curriculum_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch curricula:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch curricula.",
+      data: [],
+    };
+  }
+}
+
+/* FETCH CURRICULA COUNT */
+export async function fetchCurriculaCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ curriculum_count: number }[]>`
+      SELECT curriculum_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.curriculum_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch curriculum count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count curricula.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE CURRICULUM */
+export async function createCurriculum(actor: string, input: CurriculumInput) {
+  try {
+    const [result] = await sql<{ curriculum_create: string }[]>`
+      SELECT curriculum_create(${input.curriculum_version});
+    `;
+
+    await createLog(
+      actor,
+      "create_curriculum",
+      `curriculum_version: '${input.curriculum_version}'`,
+    );
+
+    return {
+      success: true,
+      curriculumId: result?.curriculum_create,
+    };
+  } catch (error) {
+    console.error("Failed to create curriculum:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create curriculum.",
+    };
+  }
+}
+
 /*****************
  * ACADEMIC YEAR *
  *****************/
@@ -451,23 +547,22 @@ export async function deleteProgram(actor: string, programCode: string) {
  ************/
 
 export interface SubjectInput {
-  curriculum_id?: string | null;
+  curriculum?: string | null;
   program_code?: string | null;
   course_code: string;
   course_name: string;
-  specialization?: string | null;
   lecture_units?: number;
   lab_units?: number;
   lab_type?: string | null;
   year_term?: string | null;
 }
+
 export interface SubjectRecord {
   subject_id: string;
-  curriculum_id: string | null;
+  curriculum: string | null;
   program_code: string | null;
   course_code: string;
   course_name: string;
-  specialization: string | null;
   lecture_units: number;
   lab_units: number;
   lab_type: string | null;
@@ -475,25 +570,25 @@ export interface SubjectRecord {
   year_term: string | null;
 }
 
-/* FETCH SUBJECTS (READ) */
+/* READ - FETCH SUBJECTS */
 export async function fetchSubjects(
-  search: string | null = null,
-  sortBy: string = "course_code",
-  sortDir: string = "ASC",
-  limit: number = 10,
-  page: number = 1,
+    search: string | null = null,
+    sortBy: string = "course_code",
+    sortDir: string = "ASC",
+    limit: number = 10,
+    page: number = 1
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
 
     const data = await sql<SubjectRecord[]>`
       SELECT * FROM subjects_read(
-        ${search || null},
-        ${sortBy},
-        ${sortDir},
-        ${limit},
-        ${offset}
-      );
+          ${search || null},
+          ${sortBy},
+          ${sortDir},
+          ${limit},
+          ${offset}
+                    );
     `;
 
     return {
@@ -510,7 +605,40 @@ export async function fetchSubjects(
   }
 }
 
-/* FETCH SUBJECTS COUNT */
+/* READ DISTINCT - FETCH SUBJECTS */
+export async function fetchDistinctCourseNames(
+  search: string | null = null,
+  sortDir: string = "ASC",
+  limit: number = 0, // Default to 0 to fetch all distinct course names
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<{ course_name: string }[]>`
+      SELECT * FROM subjects_read_distinct_names(
+        ${search || null},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data: data.map((d) => d.course_name),
+    };
+  } catch (error) {
+    console.error("Failed to fetch distinct course names:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch course names.",
+      data: [],
+    };
+  }
+}
+
+/* READ - FETCH SUBJECTS COUNT */
 export async function fetchSubjectsCount(search: string | null = null) {
   try {
     const [result] = await sql<{ subjects_count: number }[]>`
@@ -531,27 +659,29 @@ export async function fetchSubjectsCount(search: string | null = null) {
   }
 }
 
-/* CREATE SUBJECT */
-export async function createSubject(actor: string, input: SubjectInput) {
+/* CREATE - CREATE SUBJECT */
+export async function createSubject(
+    actor: string,
+    input: SubjectInput
+) {
   try {
     const [result] = await sql<{ subjects_create: string }[]>`
       SELECT subjects_create(
-        ${input.curriculum_id ? input.curriculum_id : null}::UUID,
-        ${input.program_code ?? null},
-        ${input.course_code},
-        ${input.course_name},
-        ${input.specialization ?? null},
-        ${input.lecture_units ?? 0.0},
-        ${input.lab_units ?? 0.0},
-        ${input.lab_type ? input.lab_type : null}::UUID,
-        ${input.year_term ?? null}
-      );
+                 ${input.curriculum || null},
+                 ${input.program_code || null},
+                 ${input.course_code},
+                 ${input.course_name},
+                 ${input.lecture_units ?? 0.0},
+                 ${input.lab_units ?? 0.0},
+                 ${input.lab_type || null},
+                 ${input.year_term || null}
+             );
     `;
 
     await createLog(
-      actor,
-      "create_subject",
-      `course_code: '${input.course_code}', course_name: '${input.course_name}'`,
+        actor,
+        "create_subject",
+        `course_code: '${input.course_code}', course_name: '${input.course_name}'`
     );
 
     return {
@@ -567,31 +697,36 @@ export async function createSubject(actor: string, input: SubjectInput) {
   }
 }
 
-/* UPDATE SUBJECT */
+/* UPDATE - UPDATE SUBJECT */
 export async function updateSubject(
-  actor: string,
-  subjectId: string,
-  input: Partial<SubjectInput>,
+    actor: string,
+    subjectId: string,
+    input: Partial<SubjectInput>
 ) {
   try {
     await sql`
       SELECT subjects_update(
-        ${subjectId}::UUID,
-        ${input.curriculum_id ? input.curriculum_id : null}::UUID,
-        ${input.program_code ?? null},
-        ${input.course_code ?? null},
-        ${input.course_name ?? null},
-        ${input.specialization ?? null},
-        ${input.lecture_units ?? null},
-        ${input.lab_units ?? null},
-        ${input.lab_type ? input.lab_type : null}::UUID,
-        ${input.year_term ?? null}
-      );
+                 ${subjectId},
+                 ${input.curriculum ?? null},
+                 ${input.program_code ?? null},
+                 ${input.course_code ?? null},
+                 ${input.course_name ?? null},
+                 ${input.lecture_units ?? null},
+                 ${input.lab_units ?? null},
+                 ${input.lab_type ?? null},
+                 ${input.year_term ?? null}
+             );
     `;
 
-    await createLog(actor, "update_subject", `subject_id: '${subjectId}'`);
+    await createLog(
+        actor,
+        "update_subject",
+        `subject_id: '${subjectId}'`
+    );
 
-    return { success: true };
+    return {
+      success: true,
+    };
   } catch (error) {
     console.error("Failed to update subject:", error);
     return {
@@ -601,16 +736,25 @@ export async function updateSubject(
   }
 }
 
-/* DELETE SUBJECT */
-export async function deleteSubject(actor: string, subjectId: string) {
+/* DELETE - DELETE SUBJECT */
+export async function deleteSubject(
+    actor: string,
+    subjectId: string
+) {
   try {
     await sql`
-      SELECT subjects_delete(${subjectId}::UUID);
+      SELECT subjects_delete(${subjectId});
     `;
 
-    await createLog(actor, "delete_subject", `subject_id: '${subjectId}'`);
+    await createLog(
+        actor,
+        "delete_subject",
+        `subject_id: '${subjectId}'`
+    );
 
-    return { success: true };
+    return {
+      success: true,
+    };
   } catch (error) {
     console.error("Failed to delete subject:", error);
     return {
