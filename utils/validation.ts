@@ -80,37 +80,18 @@ export const filterAlphanumericDashUnderscoreComma = (str: string): string =>
     .replace(/\s+/g, " ");
 
 /**
+ * Allows alphanumeric characters, and hyphens.
+ * Collapses consecutive hyphens (e.g., "--") into a single character.
+ */
+export const filterCurricula = (str: string): string =>
+  str
+    .replace(/[^a-zA-Z0-9\- ]/g, "")
+    .replace(/[-]{2,}/g, (match) => match[0])
+    .replace(/\s+/g, "");
+
+/**
  * Strips all non-digit characters (0-9).
  * Useful for numeric inputs, system codes, or integer-only fields.
  */
 export const filterNumeric = (str: string): string =>
   str.replace(/[^0-9]/g, "");
-
-/**
- * Strips characters except digits, plus signs, hyphens, and spaces.
- * Collapses consecutive hyphens into one.
- */
-export const filterPhone = (str: string): string =>
-  str
-    .replace(/[^0-9+\- ]/g, "")
-    .replace(/-{2,}/g, "-")
-    .replace(/\s+/g, " ");
-
-/**
- * Strips characters except digits and a single decimal point.
- * Useful for unit loads, GPA, or cost entries.
- */
-export const filterDecimal = (str: string): string => {
-  const sanitized = str.replace(/[^0-9.]/g, "");
-  const parts = sanitized.split(".");
-  return parts.length > 2
-    ? `${parts[0]}.${parts.slice(1).join("")}`
-    : sanitized;
-};
-
-/**
- * Trims leading spaces while preserving trailing/middle spaces during typing,
- * and collapses multiple consecutive interior spaces into one.
- */
-export const cleanSpaces = (str: string): string =>
-  str.replace(/^\s+/, "").replace(/\s+/g, " ");
