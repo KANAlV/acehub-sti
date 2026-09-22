@@ -189,7 +189,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
     <>
       {/* --- Loading Spinner --- */}
       <div
-        className={`${loading ? "" : "hidden"} absolute z-50 flex h-dvh w-dvw columns-1 flex-col items-center justify-center bg-white dark:bg-gray-900`}
+        className={`${loading ? "" : "hidden"} absolute z-50 flex h-[calc(100vh-64px)] w-full columns-1 flex-col items-center justify-center bg-white dark:bg-gray-900`}
       >
         <Spinner className={"mb-2"} /> <span>Loading sidebar items...</span>
       </div>

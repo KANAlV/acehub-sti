@@ -42,8 +42,14 @@ import {
   filterAlphanumericDashUnderscoreComma,
   filterAlphaUnderscore,
 } from "@/utils/validation";
+import { useMsal } from "@azure/msal-react";
 
 export default function MatrixOfAcademicQualificationPage() {
+  // --- MSAL Auth State for Actor ---
+  const { instance, accounts } = useMsal();
+  const activeAccount = instance.getActiveAccount() || accounts[0];
+  const actor = activeAccount?.username || "system";
+
   const [maqs, setMaqs] = useState<MaqRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -73,7 +79,7 @@ export default function MatrixOfAcademicQualificationPage() {
   const [showToast, setShowToast] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string>("");
   const [toastType, setToastType] = useState<"success" | "warning" | "error">(
-    "success"
+    "success",
   );
   const [progress, setProgress] = useState<number>(100);
   const [showToastTimer, setShowToastTimer] = useState<boolean>(true);
@@ -92,7 +98,7 @@ export default function MatrixOfAcademicQualificationPage() {
     (
       msg: string,
       type: "success" | "warning" | "error" = "success",
-      durationMs: number = 4000
+      durationMs: number = 4000,
     ) => {
       closeToast();
       setToastMessage(msg);
@@ -121,7 +127,7 @@ export default function MatrixOfAcademicQualificationPage() {
         });
       }, intervalMs);
     },
-    [closeToast]
+    [closeToast],
   );
 
   useEffect(() => {
@@ -200,7 +206,6 @@ export default function MatrixOfAcademicQualificationPage() {
     }
 
     setIsSubmitting(true);
-    const actor = "System";
 
     const res = await createMaq(actor, aqInput.trim());
 
@@ -219,7 +224,6 @@ export default function MatrixOfAcademicQualificationPage() {
   // Submit Delete MAQ
   const handleDelete = async () => {
     setIsSubmitting(true);
-    const actor = "System";
 
     const res = await deleteMaq(actor, selectedAq);
     setIsSubmitting(false);
@@ -260,7 +264,9 @@ export default function MatrixOfAcademicQualificationPage() {
               placeholder="Search qualification..."
               value={searchQuery}
               onChange={(e) =>
-                setSearchQuery(filterAlphanumericDashUnderscoreComma(e.target.value))
+                setSearchQuery(
+                  filterAlphanumericDashUnderscoreComma(e.target.value),
+                )
               }
             />
           </div>
@@ -300,7 +306,9 @@ export default function MatrixOfAcademicQualificationPage() {
                     ))}
                 </div>
               </TableHeadCell>
-              <TableHeadCell className="text-center w-32">Actions</TableHeadCell>
+              <TableHeadCell className="w-32 text-center">
+                Actions
+              </TableHeadCell>
             </TableRow>
           </TableHead>
           <TableBody className="divide-y">
@@ -383,10 +391,7 @@ export default function MatrixOfAcademicQualificationPage() {
 
       {/* ADD MODAL */}
       {openAddModal && (
-        <Modal
-          show={openAddModal}
-          onClose={() => setOpenAddModal(false)}
-        >
+        <Modal show={openAddModal} onClose={() => setOpenAddModal(false)}>
           <ModalHeader>Add New Academic Qualification</ModalHeader>
           <ModalBody className="space-y-4">
             <div>
@@ -402,7 +407,10 @@ export default function MatrixOfAcademicQualificationPage() {
                 value={aqInput}
                 maxLength={8}
                 onChange={(e) => {
-                  const filtered = filterAlphaUnderscore(e.target.value).slice(0, 8);
+                  const filtered = filterAlphaUnderscore(e.target.value).slice(
+                    0,
+                    8,
+                  );
                   setAqInput(filtered);
                   setAqError("");
                 }}
@@ -416,11 +424,7 @@ export default function MatrixOfAcademicQualificationPage() {
             </div>
           </ModalBody>
           <ModalFooter>
-            <Button
-              color="blue"
-              disabled={isSubmitting}
-              onClick={handleCreate}
-            >
+            <Button color="blue" disabled={isSubmitting} onClick={handleCreate}>
               {isSubmitting ? (
                 <Spinner size="sm" className="mr-2" />
               ) : (
@@ -461,7 +465,10 @@ export default function MatrixOfAcademicQualificationPage() {
                 >
                   {isSubmitting ? <Spinner size="sm" /> : "Yes, I'm sure"}
                 </Button>
-                <Button color="alternative" onClick={() => setOpenDeleteModal(false)}>
+                <Button
+                  color="alternative"
+                  onClick={() => setOpenDeleteModal(false)}
+                >
                   No, cancel
                 </Button>
               </div>

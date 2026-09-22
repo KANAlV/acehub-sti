@@ -572,22 +572,24 @@ export interface SubjectRecord {
 
 /* READ - FETCH SUBJECTS */
 export async function fetchSubjects(
-    search: string | null = null,
-    sortBy: string = "course_code",
-    sortDir: string = "ASC",
-    limit: number = 10,
-    page: number = 1
+  search: string | null = null,
+  programCode: string | null = null,
+  sortBy: string = "course_code",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
 
     const data = await sql<SubjectRecord[]>`
       SELECT * FROM subjects_read(
-          ${search || null},
-          ${sortBy},
-          ${sortDir},
-          ${limit},
-          ${offset}
+        ${search || null},
+        ${programCode || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
                     );
     `;
 
@@ -621,7 +623,7 @@ export async function fetchDistinctCourseNames(
         ${sortDir},
         ${limit},
         ${offset}
-      );
+                    );
     `;
 
     return {
@@ -639,10 +641,16 @@ export async function fetchDistinctCourseNames(
 }
 
 /* READ - FETCH SUBJECTS COUNT */
-export async function fetchSubjectsCount(search: string | null = null) {
+export async function fetchSubjectsCount(
+  search: string | null = null,
+  programCode: string | null = null
+) {
   try {
     const [result] = await sql<{ subjects_count: number }[]>`
-      SELECT subjects_count(${search || null});
+      SELECT subjects_count(
+               ${search || null},
+               ${programCode || null}
+             );
     `;
 
     return {
@@ -760,6 +768,81 @@ export async function deleteSubject(
     return {
       success: false,
       error: (error as Error).message || "Failed to delete subject.",
+    };
+  }
+}
+
+/** --- SUBJECT AQ --- **/
+
+export interface SubjectAQRecord {
+  course_name: string;
+  aq: string | null;
+}
+export interface SyncSubjectAQInput {
+  courseName: string;
+  aqs: string[];
+}
+
+/* READ - READ SUBJECT AQ */
+export async function fetchSubjectAQ(
+  search: string | null = null,
+  sortDir: string = "ASC",
+  limit: number = 0, // Default to 0 to fetch all records
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<SubjectAQRecord[]>`
+      SELECT * FROM subjects_read_aq(
+        ${search || null},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch subjects with AQ:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch subjects with AQ.",
+      data: [],
+    };
+  }
+}
+
+/* SYNC SUBJECT AQ ENTRIES */
+export async function syncSubjectAQ(
+  actor: string,
+  input: SyncSubjectAQInput
+) {
+  try {
+    await sql`
+      SELECT subject_aq_sync(
+        ${input.courseName},
+        ${input.aqs}
+      );
+    `;
+
+    await createLog(
+      actor,
+      "sync_subject_aq",
+      `course_name: '${input.courseName}', aq_count: ${input.aqs.length}`
+    );
+
+    return {
+      success: true,
+    };
+  } catch (error) {
+    console.error("Failed to sync subject AQ entries:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to sync subject AQ entries.",
     };
   }
 }

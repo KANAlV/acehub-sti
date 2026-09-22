@@ -15,9 +15,6 @@ import {
   TableRow,
   TableCell,
   Button,
-  ButtonGroup,
-  Dropdown,
-  DropdownItem,
   TextInput,
   Select,
   Label,
@@ -41,6 +38,7 @@ import {
   HiOutlineTrash,
 } from "react-icons/hi";
 import { FaPlus, FaSortUp, FaSortDown } from "react-icons/fa";
+import { useMsal } from "@azure/msal-react";
 
 // Import SSFs and types from system
 import {
@@ -72,6 +70,11 @@ export interface RoomType {
 }
 
 export default function SubjectsManagement() {
+  // --- MSAL Auth State for Actor ---
+  const { instance, accounts } = useMsal();
+  const activeAccount = instance.getActiveAccount() || accounts[0];
+  const actor = activeAccount?.username || "system";
+
   // --- Data State ---
   const [subjects, setSubjects] = useState<SubjectRecord[]>([]);
   const [subjectsCount, setSubjectsCount] = useState<number>(0);
@@ -86,9 +89,17 @@ export default function SubjectsManagement() {
   const [roomTypeList, setRoomTypeList] = useState<RoomType[]>([]);
   const [isLoadingRoomTypes, setIsLoadingRoomTypes] = useState<boolean>(false);
 
-  // --- Search & Pagination State ---
+  // --- Search, Filter & Pagination State ---
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+
+  // Separate state for the program filter dropdown beside Add Subject (unfiltered by SHS/tertiary level)
+  const [selectedProgramFilter, setSelectedProgramFilter] =
+    useState<string>("ALL");
+  const [allProgramsFilterList, setAllProgramsFilterList] = useState<
+    ProgramRecord[]
+  >([]);
+
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [maxRow, setMaxRow] = useState<number>(10);
   const [sortBy, setSortBy] = useState<string>("curriculum");
@@ -188,17 +199,20 @@ export default function SubjectsManagement() {
     };
   }, []);
 
-  // Load Curricula & Lab Types simultaneously on Mount
+  // Load Curricula, Room Types, and All Programs for filtering simultaneously on Mount
   useEffect(() => {
     const loadInitialData = async () => {
       setIsLoadingCurricula(true);
       setIsLoadingRoomTypes(true);
 
       try {
-        const [curriculaRes, roomTypesRes] = await Promise.all([
-          fetchCurricula(null, "curriculum_version", "DESC", 100, 1),
-          fetchRoomTypeList(null, "ASC", 100, 1),
-        ]);
+        const [curriculaRes, roomTypesRes, shsProgRes, tertiaryProgRes] =
+          await Promise.all([
+            fetchCurricula(null, "curriculum_version", "DESC", 100, 1),
+            fetchRoomTypeList(null, "ASC", 100, 1),
+            fetchPrograms(null, "shs", "program_code", "ASC", 0, 1),
+            fetchPrograms(null, "tertiary", "program_code", "ASC", 0, 1),
+          ]);
 
         if (curriculaRes?.success && Array.isArray(curriculaRes.data)) {
           setCurriculaList(curriculaRes.data);
@@ -215,6 +229,17 @@ export default function SubjectsManagement() {
         } else {
           setRoomTypeList([]);
         }
+
+        // Combine both SHS and Tertiary programs without level restrictions for the header filter dropdown
+        const combinedPrograms: ProgramRecord[] = [
+          ...(shsProgRes?.success && Array.isArray(shsProgRes.data)
+            ? shsProgRes.data
+            : []),
+          ...(tertiaryProgRes?.success && Array.isArray(tertiaryProgRes.data)
+            ? tertiaryProgRes.data
+            : []),
+        ];
+        setAllProgramsFilterList(combinedPrograms);
       } catch (err) {
         console.error("Failed to load initial dropdown data:", err);
         setCurriculaList([]);
@@ -238,7 +263,7 @@ export default function SubjectsManagement() {
 
   const currentEduLevel = getEducationLevel(selectedYear);
 
-  // Fetch Programs on Education Level Change
+  // Fetch Programs inside Modals based on selected Year Level
   useEffect(() => {
     if (currentEduLevel === "none") {
       setProgramsList([]);
@@ -295,13 +320,25 @@ export default function SubjectsManagement() {
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
-  // Load Table Data
+  // Load Table Data with immediate row flushing and loading state
   const loadData = useCallback(() => {
     setIsLoading(true);
+    setSubjects([]); // Flush rows immediately so table shows spinner state instantly
+
     startTransition(async () => {
+      const programCodeParam =
+        selectedProgramFilter === "ALL" ? null : selectedProgramFilter;
+
       const [resData, resCount] = await Promise.all([
-        fetchSubjects(debouncedSearch, sortBy, sortDir, maxRow, currentPage),
-        fetchSubjectsCount(debouncedSearch),
+        fetchSubjects(
+          debouncedSearch,
+          programCodeParam,
+          sortBy,
+          sortDir,
+          maxRow,
+          currentPage,
+        ),
+        fetchSubjectsCount(debouncedSearch, programCodeParam),
       ]);
 
       if (resData.success && resData.data) {
@@ -312,7 +349,14 @@ export default function SubjectsManagement() {
       }
       setIsLoading(false);
     });
-  }, [debouncedSearch, sortBy, sortDir, maxRow, currentPage]);
+  }, [
+    debouncedSearch,
+    selectedProgramFilter,
+    sortBy,
+    sortDir,
+    maxRow,
+    currentPage,
+  ]);
 
   useEffect(() => {
     loadData();
@@ -328,7 +372,7 @@ export default function SubjectsManagement() {
     }
   };
 
-  // Custom Curriculum Text Input handler with filterCurricula and 12 char limit
+  // Custom Curriculum Text Input handler with filterCurricula and 12 char limit & indicator
   const handleCustomCurriculumChange = (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -465,7 +509,7 @@ export default function SubjectsManagement() {
     setOpenEditModal(true);
   };
 
-  // Actions
+  // Actions utilizing authenticated actor
   const handleCreateSubject = async () => {
     if (
       !formData.curriculum?.trim() ||
@@ -476,7 +520,6 @@ export default function SubjectsManagement() {
       return;
     }
 
-    const actor = "system";
     const res = await createSubject(actor, formData);
     if (res.success) {
       triggerToast("Subject created successfully!", "success");
@@ -499,7 +542,6 @@ export default function SubjectsManagement() {
       return;
     }
 
-    const actor = "system";
     const res = await updateSubject(
       actor,
       selectedSubject.subject_id,
@@ -516,7 +558,6 @@ export default function SubjectsManagement() {
 
   const handleDeleteSubject = async () => {
     if (!selectedSubject) return;
-    const actor = "system";
     const res = await deleteSubject(actor, selectedSubject.subject_id);
     if (res.success) {
       triggerToast("Subject deleted successfully!", "success");
@@ -572,36 +613,58 @@ export default function SubjectsManagement() {
       )}
 
       {/* Main Container */}
-      <div className="m-8">
+      <div>
+        <div className={"mb-4"}>
+          <h2 className="mb-1 text-lg font-bold">Subjects Management</h2>
+          <p className="text-gray-500">
+            Manage course codes, names, credit units, lab types, and lab
+            specifications.
+          </p>
+        </div>
+
         {/* Header Bar */}
         <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-          <div>
-            <h2 className="mb-1 text-lg font-bold">Subjects Management</h2>
-            <p className="text-gray-500">
-              Manage course codes, names, credit units, lab types, and lab
-              specifications.
-            </p>
+          <div className="relative mr-4 mb-2 w-full md:w-64">
+            <TextInput
+              id="search-subjects"
+              type="text"
+              placeholder="Search subjects..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              icon={HiSearch}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+              >
+                <HiX className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="relative mr-4 w-full md:w-64">
-              <TextInput
-                id="search-subjects"
-                type="text"
-                placeholder="Search subjects..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                icon={HiSearch}
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm("")}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
-                >
-                  <HiX className="h-4 w-4" />
-                </button>
-              )}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Program Filter Dropdown (Fetches both SHS and Tertiary without level filters) */}
+            <div className="w-full sm:w-48">
+              <Select
+                id="program-filter-select"
+                value={selectedProgramFilter}
+                onChange={(e) => {
+                  setSelectedProgramFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="ALL">All Programs</option>
+                {allProgramsFilterList.map((prog) => (
+                  <option
+                    key={`filter-${prog.program_code}`}
+                    value={prog.program_code}
+                  >
+                    {prog.program_code} - {prog.program_name}
+                  </option>
+                ))}
+              </Select>
             </div>
 
             <Button
@@ -729,8 +792,8 @@ export default function SubjectsManagement() {
                     colSpan={9}
                     className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
                   >
-                    {searchTerm
-                      ? `No subjects matching "${searchTerm}" found.`
+                    {searchTerm || selectedProgramFilter !== "ALL"
+                      ? `No matching subjects found.`
                       : "No subject entries found."}
                   </TableCell>
                 </TableRow>
@@ -1274,7 +1337,7 @@ export default function SubjectsManagement() {
             </div>
           </div>
         </ModalBody>
-        <ModalFooter className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <ModalFooter className="flex flex-row items-center justify-between gap-3">
           <Button
             color="red"
             onClick={() => {
@@ -1282,8 +1345,8 @@ export default function SubjectsManagement() {
               setOpenDeleteModal(true);
             }}
           >
-            <HiOutlineTrash className="mr-2 h-4 w-4" />
-            Delete
+            <HiOutlineTrash className="h-4 w-4 sm:mr-2" />
+            <span className={"hidden sm:block"}>Delete</span>
           </Button>
 
           <div className="flex gap-2">

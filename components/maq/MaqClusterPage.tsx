@@ -48,8 +48,14 @@ import {
   filterAlphanumericDashUnderscoreComma,
   filterAlphaUnderscore,
 } from "@/utils/validation";
+import { useMsal } from "@azure/msal-react";
 
 export default function MaqClusterPage() {
+  // --- MSAL Auth State for Actor ---
+  const { instance, accounts } = useMsal();
+  const activeAccount = instance.getActiveAccount() || accounts[0];
+  const actor = activeAccount?.username || "system";
+
   const [clusters, setClusters] = useState<MaqClusterWithEntriesRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -293,7 +299,6 @@ export default function MaqClusterPage() {
     }
 
     setIsSubmitting(true);
-    const actor = "System";
 
     const res = await createMaqCluster(actor, clusterNameInput.trim());
 
@@ -322,7 +327,6 @@ export default function MaqClusterPage() {
     }
 
     setIsSubmitting(true);
-    const actor = "System";
 
     const res = await syncMaqClusterEntries(
       actor,
@@ -343,7 +347,6 @@ export default function MaqClusterPage() {
   // Submit Delete Cluster
   const handleDelete = async () => {
     setIsSubmitting(true);
-    const actor = "System";
 
     const res = await deleteMaqCluster(actor, selectedClusterName);
     setIsSubmitting(false);
@@ -633,7 +636,8 @@ export default function MaqClusterPage() {
                           className="w-full justify-center"
                           onClick={handleAddCustomAq}
                         >
-                          <HiPlus className="mr-1.5 h-4 w-4" /> Add &#34;{trimmedAqInput}&#34;
+                          <HiPlus className="mr-1.5 h-4 w-4" /> Add &#34;
+                          {trimmedAqInput}&#34;
                         </Button>
                       </div>
                     )}
