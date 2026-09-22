@@ -898,7 +898,7 @@ export default function SubjectsManagement() {
                     {curriculaList.map((curr) => (
                       <option
                         key={curr.curriculum_id}
-                        value={curr.curriculum_id}
+                        value={curr.curriculum_version}
                       >
                         {curr.curriculum_version}
                       </option>
@@ -1163,7 +1163,7 @@ export default function SubjectsManagement() {
                     {curriculaList.map((curr) => (
                       <option
                         key={curr.curriculum_id}
-                        value={curr.curriculum_id}
+                        value={curr.curriculum_version}
                       >
                         {curr.curriculum_version}
                       </option>
