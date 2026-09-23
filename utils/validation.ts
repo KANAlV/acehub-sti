@@ -80,6 +80,17 @@ export const filterAlphanumericDashUnderscoreComma = (str: string): string =>
     .replace(/\s+/g, " ");
 
 /**
+ * Allows alphanumeric characters, spaces, hyphens, commas, and underscores.
+ * Collapses consecutive or mixed special characters (e.g., "--", "__", "-_") into a single character.
+ */
+export const filterMAQCluster = (str: string): string =>
+  str
+    .replace(/[^a-zA-Z0-9_,\-()\[\]# ]/g, "")
+    .replace(/[()\[\],#_-]{2,}/g, (match) => match[0])
+    .replace(/\s+/g, " ");
+
+
+/**
  * Allows alphanumeric characters, and hyphens.
  * Collapses consecutive hyphens (e.g., "--") into a single character.
  */

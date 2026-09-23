@@ -405,11 +405,11 @@ export default function MatrixOfAcademicQualificationPage() {
                 id="aq_name"
                 placeholder="e.g. BSCS"
                 value={aqInput}
-                maxLength={8}
+                maxLength={50}
                 onChange={(e) => {
                   const filtered = filterAlphaUnderscore(e.target.value).slice(
                     0,
-                    8,
+                    50,
                   );
                   setAqInput(filtered);
                   setAqError("");

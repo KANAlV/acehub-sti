@@ -6,6 +6,7 @@ import {
   HiDocumentCheck,
   HiUsers,
 } from "react-icons/hi2";
+import SubjectAqManagement from "@/components/subjects/SubjectAqManagement";
 
 export default function SubjectsPage() {
   const [activeTabKey, setActiveTabKey] = useState("subject management");
@@ -41,10 +42,7 @@ export default function SubjectsPage() {
               active={activeTabKey === "subject aq"}
               icon={HiDocumentCheck}
           >
-            {/* Replace with your Subject AQ component or content */}
-            <div className="py-4">
-              <p className="text-gray-500">Subject AQ content goes here.</p>
-            </div>
+            {activeTabKey === "subject aq" && <SubjectAqManagement />}
           </TabItem>
         </Tabs>
       </div>

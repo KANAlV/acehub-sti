@@ -7,16 +7,27 @@ This project uses **React**, **TailwindCSS**, and **ExcelJS** to create an inter
 
 # Technologies Used
 
-This project was built using the following tools and libraries:
+This project was built using the following stack, libraries, and infrastructure:
 
-* **Flowbite** – UI component library for TailwindCSS
-* **Flowbite React** – React components built on Flowbite
+### **Framework & UI Libraries**
 * **Tailwind CSS** – Utility-first CSS framework
-* **ExcelJS** – Library used to generate and export Excel schedule files
-* **FileSaver.js** – Library used to trigger the browser download of generated files
-* **React Icons** – Icon library for React
-* **Azure** – Microsoft Login
-* **Node Package Manager (npm)** – version **10.8.2**
+* **Flowbite** – UI component library built on top of Tailwind CSS
+* **Flowbite React** – Interactive React components powered by Flowbite
+* **React Icons** – Icon library for React applications
+
+### **Database & Infrastructure**
+* **PostgreSQL** – Relational database management system
+* **Neon** – Serverless PostgreSQL database cloud platform
+* **Azure** – Microsoft authentication and single sign-on (SSO) integration
+
+### **Storage & File Management**
+* **MinIO / Amazon S3** – S3-compatible object storage for documents and file uploads
+* **`@aws-sdk/client-s3`** (v3.1138.0) – Official AWS SDK v3 client for object storage integration
+* **ExcelJS** – Library used to generate and export schedule spreadsheets (.xlsx)
+* **FileSaver.js** – Client-side library used to trigger browser file downloads
+
+### **Package Manager**
+* **npm** – Node Package Manager (v12.0.2)
 
 ---
 
@@ -25,7 +36,7 @@ This project was built using the following tools and libraries:
 Before running the project, make sure you have:
 
 * **Node.js installed**
-* **npm version 10.8.2 or newer**
+* **npm version 12.0.2 or newer**
 
 Check your npm version:
 
@@ -34,6 +45,15 @@ npm -v
 ```
 
 ---
+
+## Getting Started
+
+Follow these steps to set up and run the project locally.
+
+### Prerequisites
+Make sure you have the following installed on your machine:
+* [Node.js](https://nodejs.org/) (v18 or higher recommended)
+* [Git](https://git-scm.com/)
 
 # Installation
 
@@ -46,7 +66,7 @@ git clone https://github.com/kanaiv/acehub-sti.git
 Go into the project directory:
 
 ```bash
-cd acehub
+cd acehub-sti
 ```
 
 Install project dependencies:
@@ -95,6 +115,14 @@ npm install react-icons
 
 ```bash
 npm install postgres
+```
+
+---
+
+### AWS-SDK client-s3
+
+```bash
+npm install @aws-sdk/client-s3
 ```
 
 ---

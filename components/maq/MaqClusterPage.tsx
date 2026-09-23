@@ -21,6 +21,8 @@ import {
   ModalBody,
   ModalFooter,
   Label,
+  ToggleSwitch,
+  Tooltip,
 } from "flowbite-react";
 import {
   HiSearch,
@@ -47,6 +49,7 @@ import {
 import {
   filterAlphanumericDashUnderscoreComma,
   filterAlphaUnderscore,
+  filterMAQCluster,
 } from "@/utils/validation";
 import { useMsal } from "@azure/msal-react";
 
@@ -68,6 +71,9 @@ export default function MaqClusterPage() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalCount, setTotalCount] = useState<number>(0);
   const pageSize = 10;
+
+  // State for toggling custom AQ creation
+  const [enableAddAq, setEnableAddAq] = useState<boolean>(false);
 
   // AQ Master Suggestions Options
   const [aqOptions, setAqOptions] = useState<string[]>([]);
@@ -220,7 +226,7 @@ export default function MaqClusterPage() {
 
   // Validate AQ Search Input state whenever typing occurs
   const handleAqInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const filtered = filterAlphaUnderscore(e.target.value).slice(0, 8);
+    const filtered = filterAlphaUnderscore(e.target.value).slice(0, 50);
     setAqSearchInput(filtered);
 
     const trimmed = filtered.trim();
@@ -298,18 +304,20 @@ export default function MaqClusterPage() {
       return;
     }
 
+    if (selectedEntries.length === 0) {
+      return;
+    }
+
     setIsSubmitting(true);
 
     const res = await createMaqCluster(actor, clusterNameInput.trim());
 
     if (res.success) {
-      if (selectedEntries.length > 0) {
-        await syncMaqClusterEntries(
-          actor,
-          clusterNameInput.trim(),
-          selectedEntries,
-        );
-      }
+      await syncMaqClusterEntries(
+        actor,
+        clusterNameInput.trim(),
+        selectedEntries,
+      );
       setOpenAddModal(false);
       triggerToast("MAQ Cluster created successfully!", "success");
       void loadData();
@@ -323,6 +331,10 @@ export default function MaqClusterPage() {
   const handleUpdate = async () => {
     if (!clusterNameInput.trim()) {
       setNameError("Cluster name is required.");
+      return;
+    }
+
+    if (selectedEntries.length === 0) {
       return;
     }
 
@@ -359,6 +371,10 @@ export default function MaqClusterPage() {
       triggerToast(res.error || "Failed to delete cluster.", "error");
     }
   };
+
+  // Form Validation Check: Disables button if name is empty or entries list is empty
+  const isFormInvalid =
+    !clusterNameInput.trim() || selectedEntries.length === 0;
 
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
@@ -469,23 +485,31 @@ export default function MaqClusterPage() {
                     <TableCell className="font-medium text-gray-900 dark:text-white">
                       {cluster.cluster_name}
                     </TableCell>
-                    <TableCell className="max-w-[320px]">
+                    <TableCell>
                       {entriesList.length > 0 ? (
-                        <div className="relative">
-                          <div className="max-h-20 overflow-y-auto pr-1">
-                            <div className="flex flex-wrap gap-1.5">
-                              {entriesList.map((entry, i) => {
-                                const aqLabel =
-                                  typeof entry === "string" ? entry : entry.aq;
-                                return (
-                                  <Badge key={i} color="alternative" size="sm">
-                                    {aqLabel}
-                                  </Badge>
-                                );
-                              })}
-                            </div>
+                        <Tooltip
+                          className={"dark:bg-gray-800 dark:text-white"}
+                          content={entriesList.map((entry, i) => {
+                            const aqLabel =
+                              typeof entry === "string" ? entry : entry.aq;
+                            return (
+                              <div key={cluster.cluster_name + " " + aqLabel}>
+                                {aqLabel}
+                              </div>
+                            );
+                          })}
+                          style="light"
+                        >
+                          <div className="max-w-[320px] items-center gap-1.5 truncate">
+                            {entriesList.map((entry, i) => {
+                              const aqLabel =
+                                typeof entry === "string" ? entry : entry.aq;
+                              return (
+                                  <>  {aqLabel}  </>
+                              );
+                            })}
                           </div>
-                        </div>
+                        </Tooltip>
                       ) : (
                         <span className="text-xs text-gray-400 dark:text-gray-500">
                           No entries
@@ -560,7 +584,7 @@ export default function MaqClusterPage() {
           <ModalHeader>
             {openAddModal ? "Add New MAQ Cluster" : "Edit MAQ Cluster"}
           </ModalHeader>
-          <ModalBody className="space-y-4">
+          <ModalBody className="scrollbar-thumb-gray-400 scrollbar-track-transparent space-y-4">
             {/* Cluster Name Field */}
             <div>
               <div className="mb-1 flex items-center justify-between">
@@ -576,9 +600,10 @@ export default function MaqClusterPage() {
                 disabled={openEditModal}
                 maxLength={50}
                 onChange={(e) => {
-                  const filtered = filterAlphanumericDashUnderscoreComma(
-                    e.target.value,
-                  ).slice(0, 50);
+                  const filtered = filterMAQCluster(e.target.value).slice(
+                    0,
+                    50,
+                  );
                   setClusterNameInput(filtered);
                   setNameError("");
                 }}
@@ -593,32 +618,56 @@ export default function MaqClusterPage() {
 
             {/* Academic Qualifications Selection */}
             <div>
-              <div className="mb-1 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between">
                 <Label>Academic Qualifications</Label>
-                <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {aqSearchInput.length}/8
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                    {aqSearchInput.length}/50
+                  </span>
+                </div>
               </div>
 
               {/* AQ Suggestion Input (Placed on top) */}
               <div className="relative mb-2">
-                <TextInput
-                  placeholder="Type to search qualifications..."
-                  value={aqSearchInput}
-                  maxLength={8}
-                  onChange={handleAqInputChange}
-                  onFocus={() => {
-                    if (aqSearchInput.trim().length > 0) {
-                      setShowAqDropdown(true);
+                <div
+                  className={"flex flex-col gap-3 sm:flex-row sm:items-center"}
+                >
+                  <div className={"flex-1"}>
+                    <TextInput
+                      placeholder="Type to search qualifications..."
+                      value={aqSearchInput}
+                      maxLength={50}
+                      onChange={handleAqInputChange}
+                      onFocus={() => {
+                        if (aqSearchInput.trim().length > 0) {
+                          setShowAqDropdown(true);
+                        }
+                      }}
+                      color="gray"
+                    />
+                  </div>
+
+                  <Tooltip
+                    placement={"bottom"}
+                    content={
+                      "Allows you to create qualifications not in the list"
                     }
-                  }}
-                  color="gray"
-                />
+                  >
+                    <div className={"shrink-0 sm:self-center"}>
+                      <ToggleSwitch
+                        checked={enableAddAq}
+                        label="Add AQ"
+                        onChange={setEnableAddAq}
+                      />
+                    </div>
+                  </Tooltip>
+                </div>
 
                 {/* Dropdown Options */}
                 {showAqDropdown && trimmedAqInput.length > 0 && (
                   <div className="absolute z-20 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                    {filteredAqOptions.length > 0 ? (
+                    {/* 1. Render filtered matches */}
+                    {filteredAqOptions.length > 0 &&
                       filteredAqOptions.map((opt) => (
                         <div
                           key={opt}
@@ -627,20 +676,35 @@ export default function MaqClusterPage() {
                         >
                           {opt}
                         </div>
-                      ))
-                    ) : (
-                      <div className="p-2">
-                        <Button
-                          size="xs"
-                          color="blue"
-                          className="w-full justify-center"
-                          onClick={handleAddCustomAq}
-                        >
-                          <HiPlus className="mr-1.5 h-4 w-4" /> Add &#34;
-                          {trimmedAqInput}&#34;
-                        </Button>
-                      </div>
-                    )}
+                      ))}
+
+                    {/* 2. Render Custom Add Button if toggle is enabled and input isn't an exact duplicate */}
+                    {enableAddAq &&
+                      !selectedEntries.includes(trimmedAqInput) && (
+                        <div className="border-t border-gray-100 p-2 dark:border-gray-700">
+                          <Button
+                            size="xs"
+                            color="blue"
+                            className="w-full justify-center"
+                            onClick={handleAddCustomAq}
+                          >
+                            <HiPlus className="mr-1.5 h-4 w-4" /> Add
+                            <span className="mx-1 font-bold">
+                              &#34;{trimmedAqInput}&#34;{" "}
+                            </span>
+                            to AQ Matrix
+                          </Button>
+                        </div>
+                      )}
+
+                    {/* 3. Fallback message if no matches and toggle is OFF */}
+                    {filteredAqOptions.length === 0 &&
+                      (!enableAddAq ||
+                        selectedEntries.includes(trimmedAqInput)) && (
+                        <div className="p-2.5 text-center text-xs text-gray-500 dark:text-gray-400">
+                          No matching qualification found.
+                        </div>
+                      )}
                   </div>
                 )}
               </div>
@@ -648,8 +712,8 @@ export default function MaqClusterPage() {
               {/* Selected AQ Badges List (Placed below TextInput) */}
               <div className="flex min-h-[42px] flex-wrap gap-1.5 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
                 {selectedEntries.length === 0 ? (
-                  <span className="self-center text-xs text-gray-400 dark:text-gray-500">
-                    Type above to search and add qualifications...
+                  <span className="self-center text-xs text-red-500 dark:text-red-400">
+                    At least one Academic Qualification is required.
                   </span>
                 ) : (
                   selectedEntries.map((aq) => (
@@ -670,7 +734,7 @@ export default function MaqClusterPage() {
           <ModalFooter>
             <Button
               color="blue"
-              disabled={isSubmitting}
+              disabled={isFormInvalid || isSubmitting}
               onClick={openAddModal ? handleCreate : handleUpdate}
             >
               {isSubmitting ? (

@@ -773,33 +773,37 @@ export async function deleteSubject(
 }
 
 /** --- SUBJECT AQ --- **/
-
-export interface SubjectAQRecord {
-  course_name: string;
-  aq: string | null;
-}
 export interface SyncSubjectAQInput {
   courseName: string;
   aqs: string[];
 }
+export interface SubjectAQClusterRecord {
+  course_name: string;
+  aq_list: string[];
+  cluster_names: string[];
+}
 
-/* READ - READ SUBJECT AQ */
-export async function fetchSubjectAQ(
+/* READ - FETCH SUBJECTS WITH AQ & CLUSTERS */
+export async function fetchSubjectsAQClusters(
   search: string | null = null,
+  programCode: string | null = null,
+  sortBy: string = "course_name",
   sortDir: string = "ASC",
-  limit: number = 0, // Default to 0 to fetch all records
-  page: number = 1
+  limit: number = 10,
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
 
-    const data = await sql<SubjectAQRecord[]>`
-      SELECT * FROM subjects_read_aq(
+    const data = await sql<SubjectAQClusterRecord[]>`
+      SELECT * FROM subjects_read_aq_clusters(
         ${search || null},
+        ${programCode || null},
+        ${sortBy},
         ${sortDir},
         ${limit},
         ${offset}
-      );
+                    );
     `;
 
     return {
@@ -807,11 +811,43 @@ export async function fetchSubjectAQ(
       data,
     };
   } catch (error) {
-    console.error("Failed to fetch subjects with AQ:", error);
+    console.error("Failed to fetch subjects with AQ and clusters:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch subjects with AQ.",
+      error:
+        (error as Error).message ||
+        "Failed to fetch subjects with AQ and clusters.",
       data: [],
+    };
+  }
+}
+
+/* COUNT - FETCH SUBJECTS WITH AQ & CLUSTERS COUNT */
+export async function fetchSubjectsAQClustersCount(
+  search: string | null = null,
+  programCode: string | null = null,
+) {
+  try {
+    const [result] = await sql<{ subjects_count_aq_clusters: number }[]>`
+      SELECT subjects_count_aq_clusters(
+        ${search || null},
+        ${programCode || null}
+      );
+    `;
+
+    return {
+      success: true,
+      count: result?.subjects_count_aq_clusters ?? 0,
+    };
+  } catch (error) {
+    console.error(
+      "Failed to fetch count for subjects with AQ and clusters:",
+      error,
+    );
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count subjects.",
+      count: 0,
     };
   }
 }
