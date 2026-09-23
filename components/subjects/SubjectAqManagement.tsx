@@ -94,6 +94,7 @@ export default function SubjectAqManagement() {
 
   // --- Target Record / Form State for Sync & Badge Input ---
   const [selectedCourseName, setSelectedCourseName] = useState<string>("");
+  const [selectedProgramCode, setSelectedProgramCode] = useState<string>("");
   const [selectedEntries, setSelectedEntries] = useState<string[]>([]);
   const [aqSearchInput, setAqSearchInput] = useState<string>("");
   const [showAqDropdown, setShowAqDropdown] = useState<boolean>(false);
@@ -167,7 +168,7 @@ export default function SubjectAqManagement() {
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
-  // Load Table Data and Recommendations (triggered independently from typing inside the modal)
+  // Load Table Data and Recommendations
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setSubjectAqs([]);
@@ -197,7 +198,7 @@ export default function SubjectAqManagement() {
     setIsLoading(false);
   }, [debouncedSearch, selectedProgramFilter, sortBy, sortDir, maxRow, currentPage, triggerToast]);
 
-  // Load suggestions separately for modal dropdown to prevent background table re-fetches while typing
+  // Load suggestions separately for modal dropdown
   const loadAqSuggestions = useCallback(async (queryFilter: string | null) => {
     const [aqRes, clusterRes] = await Promise.all([
       fetchMaq(queryFilter, "aq", "ASC", 0, 10),
@@ -263,6 +264,7 @@ export default function SubjectAqManagement() {
   const handleCloseModal = () => {
     setOpenSyncModal(false);
     setSelectedCourseName("");
+    setSelectedProgramCode("");
     setSelectedEntries([]);
     setAqSearchInput("");
     setShowAqDropdown(false);
@@ -270,6 +272,7 @@ export default function SubjectAqManagement() {
 
   const handleOpenSync = (record: SubjectAQClusterRecord) => {
     setSelectedCourseName(record.course_name);
+    setSelectedProgramCode(record.program_code);
     setSelectedEntries(record.aq_list || []);
     setAqSearchInput("");
     setShowAqDropdown(false);
@@ -332,13 +335,14 @@ export default function SubjectAqManagement() {
   };
 
   const handleSyncSubmit = async () => {
-    if (!selectedCourseName.trim()) return;
+    if (!selectedCourseName.trim() || !selectedProgramCode.trim()) return;
 
     startTransition(async () => {
       const actorEmail = activeAccount?.username || activeAccount?.name || "system_user";
 
       const payload: SyncSubjectAQInput = {
         courseName: selectedCourseName,
+        programCode: selectedProgramCode,
         aqs: selectedEntries,
       };
 
@@ -411,12 +415,26 @@ export default function SubjectAqManagement() {
           <TableHead>
             <TableRow>
               <TableHeadCell
-                className="cursor-pointer select-none"
+                className="cursor-pointer select-none text-blue-500"
                 onClick={() => handleSorting("course_name")}
               >
                 <div className="flex items-center gap-1">
                   <span>Course Name</span>
                   {sortBy === "course_name" &&
+                    (sortDir === "ASC" ? (
+                      <FaSortUp className="h-4 w-4" />
+                    ) : (
+                      <FaSortDown className="h-4 w-4" />
+                    ))}
+                </div>
+              </TableHeadCell>
+              <TableHeadCell
+                className="cursor-pointer select-none text-blue-500"
+                onClick={() => handleSorting("program_code")}
+              >
+                <div className="flex items-center gap-1">
+                  <span>Program</span>
+                  {sortBy === "program_code" &&
                     (sortDir === "ASC" ? (
                       <FaSortUp className="h-4 w-4" />
                     ) : (
@@ -432,7 +450,7 @@ export default function SubjectAqManagement() {
           <TableBody className="divide-y">
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={3} className="py-8 text-center">
+                <TableCell colSpan={4} className="py-8 text-center">
                   <div className="flex items-center justify-center gap-2">
                     <Spinner size="sm" />
                     <span className="text-sm text-gray-500 dark:text-gray-400">
@@ -444,7 +462,7 @@ export default function SubjectAqManagement() {
             ) : subjectAqs.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={3}
+                  colSpan={4}
                   className="py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                 >
                   {searchTerm || selectedProgramFilter !== "ALL"
@@ -464,6 +482,11 @@ export default function SubjectAqManagement() {
                     <TableCell className="font-medium text-gray-900 dark:text-white">
                       {item.course_name}
                     </TableCell>
+                    <TableCell className="text-gray-700 dark:text-gray-300">
+                      <Badge color="gray" size="sm" className="inline-block w-fit">
+                        {item.program_code}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="max-w-[320px] truncate">
                       {entriesList.length > 0 ? (
                         <div className="max-w-[320px] truncate">
@@ -471,7 +494,7 @@ export default function SubjectAqManagement() {
                           item.cluster_names.length > 0 ? (
                             <Tooltip
                               className={"dark:bg-gray-800 dark:text-white"}
-                              content={item.aq_list.map((entry, i) => {
+                              content={item.aq_list.map((entry) => {
                                 const aqLabel =
                                   typeof entry === "string" ? entry : entry;
                                 return (
@@ -543,13 +566,23 @@ export default function SubjectAqManagement() {
         <Modal show={openSyncModal} onClose={handleCloseModal} size="md">
           <ModalHeader>Sync Academic Qualification Entries</ModalHeader>
           <ModalBody className="space-y-4">
-            <div>
-              <span className="block text-xs font-semibold text-gray-500 uppercase dark:text-gray-400 mb-1">
-                Course Name
-              </span>
-              <p className="text-base font-medium text-gray-900 dark:text-white">
-                {selectedCourseName}
-              </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <span className="block text-xs font-semibold text-gray-500 uppercase dark:text-gray-400 mb-1">
+                  Course Name
+                </span>
+                <p className="text-base font-medium text-gray-900 dark:text-white">
+                  {selectedCourseName}
+                </p>
+              </div>
+              <div>
+                <span className="block text-xs font-semibold text-gray-500 uppercase dark:text-gray-400 mb-1">
+                  Program Code
+                </span>
+                <p className="text-base font-medium text-gray-900 dark:text-white">
+                  {selectedProgramCode}
+                </p>
+              </div>
             </div>
 
             <div>
@@ -673,7 +706,7 @@ export default function SubjectAqManagement() {
           <ModalFooter>
             <Button
               onClick={handleSyncSubmit}
-              disabled={!selectedCourseName.trim() || isPending}
+              disabled={!selectedCourseName.trim() || !selectedProgramCode.trim() || isPending}
             >
               {isPending ? (
                 <Spinner size="sm" className="mr-2" />

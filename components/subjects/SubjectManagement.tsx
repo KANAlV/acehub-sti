@@ -1376,7 +1376,7 @@ export default function SubjectsManagement() {
           </p>
         </ModalBody>
         <ModalFooter className="flex justify-end gap-2">
-          <Button color="failure" onClick={handleDeleteSubject}>
+          <Button color="red" onClick={handleDeleteSubject}>
             Confirm Delete
           </Button>
           <Button color="alternative" onClick={handleCloseModals}>

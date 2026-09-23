@@ -775,10 +775,12 @@ export async function deleteSubject(
 /** --- SUBJECT AQ --- **/
 export interface SyncSubjectAQInput {
   courseName: string;
+  programCode: string;
   aqs: string[];
 }
 export interface SubjectAQClusterRecord {
   course_name: string;
+  program_code: string;
   aq_list: string[];
   cluster_names: string[];
 }
@@ -790,7 +792,7 @@ export async function fetchSubjectsAQClusters(
   sortBy: string = "course_name",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1,
+  page: number = 1
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -814,9 +816,7 @@ export async function fetchSubjectsAQClusters(
     console.error("Failed to fetch subjects with AQ and clusters:", error);
     return {
       success: false,
-      error:
-        (error as Error).message ||
-        "Failed to fetch subjects with AQ and clusters.",
+      error: (error as Error).message || "Failed to fetch subjects with AQ and clusters.",
       data: [],
     };
   }
@@ -853,22 +853,20 @@ export async function fetchSubjectsAQClustersCount(
 }
 
 /* SYNC SUBJECT AQ ENTRIES */
-export async function syncSubjectAQ(
-  actor: string,
-  input: SyncSubjectAQInput
-) {
+export async function syncSubjectAQ(actor: string, input: SyncSubjectAQInput) {
   try {
     await sql`
       SELECT subject_aq_sync(
-        ${input.courseName},
-        ${input.aqs}
-      );
+               ${input.courseName},
+               ${input.programCode},
+               ${input.aqs}
+             );
     `;
 
     await createLog(
       actor,
       "sync_subject_aq",
-      `course_name: '${input.courseName}', aq_count: ${input.aqs.length}`
+      `course_name: '${input.courseName}', program_code: '${input.programCode}', aq_count: ${input.aqs.length}`,
     );
 
     return {
