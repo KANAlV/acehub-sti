@@ -28,7 +28,13 @@ import {
 import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
 import { HiCheck } from "react-icons/hi2";
 import { useEffect, useState } from "react";
-import { HiExclamation, HiX, HiSearch, HiArchive, HiRefresh } from "react-icons/hi";
+import {
+  HiExclamation,
+  HiX,
+  HiSearch,
+  HiArchive,
+  HiRefresh,
+} from "react-icons/hi";
 import {
   filterAlpha,
   filterAlphaDashSpace,
@@ -93,17 +99,19 @@ export default function TeachersManagement() {
   const [sortTeachersBy, setSortTeachersBy] = useState("surname");
   const [sortTeachersDir, setSortTeachersDir] = useState("ASC");
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] =
-      useState<TeacherStatusFilter>("All Active & On Leave");
+  const [statusFilter, setStatusFilter] = useState<TeacherStatusFilter>(
+    "All Active & On Leave",
+  );
   const [departmentFilter, setDepartmentFilter] =
-      useState<string>("All Departments");
+    useState<string>("All Departments");
 
   // --- Modal Constants --- //
   const [openAddTeacherModal, setOpenAddTeacherModal] = useState(false);
   const [openEditTeacherModal, setOpenEditTeacherModal] = useState(false);
   const [openArchiveModal, setOpenArchiveModal] = useState(false);
   const [openUnarchiveModal, setOpenUnarchiveModal] = useState(false);
-  const [selectedUnarchiveTeacher, setSelectedUnarchiveTeacher] = useState<TeacherRecord | null>(null);
+  const [selectedUnarchiveTeacher, setSelectedUnarchiveTeacher] =
+    useState<TeacherRecord | null>(null);
 
   // --- Form Error States --- //
   const [rowID, setRowID] = useState("");
@@ -123,11 +131,8 @@ export default function TeachersManagement() {
   const [editDepartmentError, setEditDepartmentError] = useState("");
   const [editAvailError, setEditAvailError] = useState("");
 
-  // --- Department Autosuggestion & Filter States --- //
+  // --- Department State --- //
   const [allDepartments, setAllDepartments] = useState<string[]>([]);
-  const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
-  const [showAddDeptDropdown, setShowAddDeptDropdown] = useState(false);
-  const [showEditDeptDropdown, setShowEditDeptDropdown] = useState(false);
 
   // --- Add Form State --- //
   const [inputPscsId, setInputPscsId] = useState("");
@@ -141,7 +146,7 @@ export default function TeachersManagement() {
   const [inputEmploymentType, setInputEmploymentType] = useState("Full-Time");
   const [inputStatus, setInputStatus] = useState("Active");
   const [availabilityList, setAvailabilityList] = useState<AvailabilitySlot[]>(
-      DEFAULT_FULLTIME_AVAILABILITY,
+    DEFAULT_FULLTIME_AVAILABILITY,
   );
 
   // Add Availability Temp Input State
@@ -161,7 +166,7 @@ export default function TeachersManagement() {
   const [newEmploymentType, editEmploymentType] = useState("Full-Time");
   const [newStatus, editStatus] = useState("Active");
   const [editAvailabilityList, setEditAvailabilityList] = useState<
-      AvailabilitySlot[]
+    AvailabilitySlot[]
   >([]);
 
   // Edit Availability Temp Input State
@@ -181,7 +186,7 @@ export default function TeachersManagement() {
   const [baseEmploymentType, setBaseEmploymentType] = useState("Full-Time");
   const [baseStatus, setBaseStatus] = useState("Active");
   const [baseAvailabilityList, setBaseAvailabilityList] = useState<
-      AvailabilitySlot[]
+    AvailabilitySlot[]
   >([]);
 
   // --- Pagination Constants --- //
@@ -227,20 +232,20 @@ export default function TeachersManagement() {
 
     if (avail.length === 0) {
       return (
-          <span className="font-medium text-yellow-500 dark:text-yellow-400">
+        <span className="font-medium text-yellow-500 dark:text-yellow-400">
           [No Preferred Time]
         </span>
       );
     }
 
     return (
-        <div className="flex flex-col gap-0.5">
-          {avail.map((slot, idx) => (
-              <div key={idx} className="whitespace-nowrap">
-                {slot.day}: {slot.startTime} - {slot.endTime}
-              </div>
-          ))}
-        </div>
+      <div className="flex flex-col gap-0.5">
+        {avail.map((slot, idx) => (
+          <div key={idx} className="whitespace-nowrap">
+            {slot.day}: {slot.startTime} - {slot.endTime}
+          </div>
+        ))}
+      </div>
     );
   };
 
@@ -255,79 +260,13 @@ export default function TeachersManagement() {
       const response = await fetchDepartments("", "dept_name", "ASC", 0, 1);
       if (response?.success && response.data) {
         const names = (response.data as DepartmentRecord[]).map(
-            (d) => d.dept_name,
+          (d) => d.dept_name,
         );
         setAllDepartments(names);
       }
     }
     void loadAllDepartments();
   }, []);
-
-  /** --- Department Search & Validation --- **/
-  async function searchDepts(query: string) {
-    const response = await fetchDepartments(
-        query || null,
-        "dept_name",
-        "ASC",
-        20,
-        1,
-    );
-    if (response?.success && response.data) {
-      const names = (response.data as DepartmentRecord[]).map(
-          (d) => d.dept_name,
-      );
-      setDepartmentOptions(names);
-      return names;
-    }
-    setDepartmentOptions([]);
-    return [];
-  }
-
-  const handleAddDepartmentChange = async (value: string) => {
-    const val = filterAlphaDashSpace(value).slice(0, 80);
-    setInputDepartment(val);
-    setShowAddDeptDropdown(true);
-
-    if (!val.trim()) {
-      setDepartmentError("");
-      setDepartmentOptions([]);
-      return;
-    }
-
-    const fetchedNames = await searchDepts(val);
-    const hasMatch = fetchedNames.some(
-        (name) => name.toLowerCase() === val.trim().toLowerCase(),
-    );
-
-    if (!hasMatch) {
-      setDepartmentError("Department must match an existing department.");
-    } else {
-      setDepartmentError("");
-    }
-  };
-
-  const handleEditDepartmentChange = async (value: string) => {
-    const val = filterAlphaDashSpace(value).slice(0, 80);
-    editDepartment(val);
-    setShowEditDeptDropdown(true);
-
-    if (!val.trim()) {
-      setEditDepartmentError("");
-      setDepartmentOptions([]);
-      return;
-    }
-
-    const fetchedNames = await searchDepts(val);
-    const hasMatch = fetchedNames.some(
-        (name) => name.toLowerCase() === val.trim().toLowerCase(),
-    );
-
-    if (!hasMatch) {
-      setEditDepartmentError("Department must match an existing department.");
-    } else {
-      setEditDepartmentError("");
-    }
-  };
 
   /** --- Employment Type Switch Logic --- **/
   const handleAddEmploymentChange = (type: string) => {
@@ -362,7 +301,7 @@ export default function TeachersManagement() {
     }
 
     const selectedDayName =
-        DAYS_OF_WEEK.find((d) => d.id === addAvailDay)?.name || "Monday";
+      DAYS_OF_WEEK.find((d) => d.id === addAvailDay)?.name || "Monday";
 
     const newSlot: AvailabilitySlot = {
       day: selectedDayName,
@@ -389,7 +328,7 @@ export default function TeachersManagement() {
     }
 
     const selectedDayName =
-        DAYS_OF_WEEK.find((d) => d.id === editAvailDay)?.name || "Monday";
+      DAYS_OF_WEEK.find((d) => d.id === editAvailDay)?.name || "Monday";
 
     const newSlot: AvailabilitySlot = {
       day: selectedDayName,
@@ -408,12 +347,20 @@ export default function TeachersManagement() {
   /** --- Table Functions --- **/
   function handleTeacherSorting(sortBy: string) {
     const newDir =
-        sortBy === sortTeachersBy && sortTeachersDir === "ASC" ? "DESC" : "ASC";
+      sortBy === sortTeachersBy && sortTeachersDir === "ASC" ? "DESC" : "ASC";
     setSortTeachersBy(sortBy);
     setSortTeachersDir(newDir);
     setTeachers([]);
     setCurrentTeacherPage(1);
-    void getTeachers(searchTerm, statusFilter, departmentFilter, sortBy, newDir, maxRowTeacher, 1);
+    void getTeachers(
+      searchTerm,
+      statusFilter,
+      departmentFilter,
+      sortBy,
+      newDir,
+      maxRowTeacher,
+      1,
+    );
   }
 
   function onPageChangeTeachers(page: number) {
@@ -423,13 +370,13 @@ export default function TeachersManagement() {
     setTeachers([]);
 
     void getTeachers(
-        searchTerm,
-        statusFilter,
-        departmentFilter,
-        sortTeachersBy,
-        sortTeachersDir,
-        maxRowTeacher,
-        page,
+      searchTerm,
+      statusFilter,
+      departmentFilter,
+      sortTeachersBy,
+      sortTeachersDir,
+      maxRowTeacher,
+      page,
     );
 
     setPageChangingTeachers(false);
@@ -446,33 +393,37 @@ export default function TeachersManagement() {
     setCurrentTeacherPage(1);
   };
 
-  const handleStatusFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleStatusFilterChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
     const selectedStatus = e.target.value as TeacherStatusFilter;
     setStatusFilter(selectedStatus);
     setCurrentTeacherPage(1);
     void getTeachers(
-        searchTerm,
-        selectedStatus,
-        departmentFilter,
-        sortTeachersBy,
-        sortTeachersDir,
-        maxRowTeacher,
-        1,
+      searchTerm,
+      selectedStatus,
+      departmentFilter,
+      sortTeachersBy,
+      sortTeachersDir,
+      maxRowTeacher,
+      1,
     );
   };
 
-  const handleDepartmentFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleDepartmentFilterChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
     const selectedDept = e.target.value;
     setDepartmentFilter(selectedDept);
     setCurrentTeacherPage(1);
     void getTeachers(
-        searchTerm,
-        statusFilter,
-        selectedDept,
-        sortTeachersBy,
-        sortTeachersDir,
-        maxRowTeacher,
-        1,
+      searchTerm,
+      statusFilter,
+      selectedDept,
+      sortTeachersBy,
+      sortTeachersDir,
+      maxRowTeacher,
+      1,
     );
   };
 
@@ -484,19 +435,19 @@ export default function TeachersManagement() {
   };
 
   const handleTeacherCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = filterAlphaNoSpace(e.target.value).slice(0, 6);
+    const val = filterAlphaNoSpace(e.target.value).slice(0, 6).toUpperCase();
     setInputTeacherCode(val);
     setTeacherCodeError(!val ? "Teacher code is required." : "");
   };
 
   const handleFNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = filterAlphaDashSpace(e.target.value).slice(0, 50);
+    const val = filterAlphaDashSpace(e.target.value).slice(0, 50).toUpperCase();
     setInputFName(val);
     setFNameError(!val.trim() ? "First name is required." : "");
   };
 
   const handleSurnameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = filterAlphaDashSpace(e.target.value).slice(0, 50);
+    const val = filterAlphaDashSpace(e.target.value).slice(0, 50).toUpperCase();
     setInputSurname(val);
     setSurnameError(!val.trim() ? "Surname is required." : "");
   };
@@ -522,21 +473,21 @@ export default function TeachersManagement() {
   };
 
   const handleNewTeacherCodeChange = (
-      e: React.ChangeEvent<HTMLInputElement>,
+    e: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const val = filterAlphaNoSpace(e.target.value).slice(0, 6);
+    const val = filterAlphaNoSpace(e.target.value).slice(0, 6).toUpperCase();
     editTeacherCode(val);
     setEditTeacherCodeError(!val ? "Teacher code is required." : "");
   };
 
   const handleNewFNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = filterAlphaDashSpace(e.target.value).slice(0, 50);
+    const val = filterAlphaDashSpace(e.target.value).slice(0, 50).toUpperCase();
     editFName(val);
     setEditFNameError(!val.trim() ? "First name is required." : "");
   };
 
   const handleNewSurnameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = filterAlphaDashSpace(e.target.value).slice(0, 50);
+    const val = filterAlphaDashSpace(e.target.value).slice(0, 50).toUpperCase();
     editSurname(val);
     setEditSurnameError(!val.trim() ? "Surname is required." : "");
   };
@@ -572,8 +523,6 @@ export default function TeachersManagement() {
     setEditDepartmentError("");
     setEditAvailError("");
 
-    setShowAddDeptDropdown(false);
-    setShowEditDeptDropdown(false);
     setOpenAddTeacherModal(false);
     setOpenEditTeacherModal(false);
     setOpenArchiveModal(false);
@@ -638,11 +587,11 @@ export default function TeachersManagement() {
       }
 
       const avail =
-          slots.length > 0
-              ? slots
-              : emp === "Part-Time"
-                  ? []
-                  : DEFAULT_FULLTIME_AVAILABILITY;
+        slots.length > 0
+          ? slots
+          : emp === "Part-Time"
+            ? []
+            : DEFAULT_FULLTIME_AVAILABILITY;
 
       setBasePscsId(pscs);
       setBaseEmail(emailVal);
@@ -669,13 +618,12 @@ export default function TeachersManagement() {
       setEditAvailabilityList(avail);
 
       const isValid = allDepartments.some(
-          (department) =>
-              department.toLowerCase() === dept.trim().toLowerCase(),
+        (department) => department.toLowerCase() === dept.trim().toLowerCase(),
       );
 
       if (!isValid && dept !== "") {
         setEditDepartmentError(
-            "Invalid department code or department missing.",
+          "Invalid department code or department missing.",
         );
       } else {
         setEditDepartmentError("");
@@ -686,50 +634,52 @@ export default function TeachersManagement() {
   }
 
   const isAddFormInvalid =
-      !inputPscsId.trim() ||
-      !inputTeacherCode.trim() ||
-      !inputFName.trim() ||
-      !inputSurname.trim() ||
-      !inputEmail.trim() ||
-      !!pscsIdError ||
-      !!teacherCodeError ||
-      !!fNameError ||
-      !!surnameError ||
-      !!emailError ||
-      !!departmentError;
+    !inputPscsId.trim() ||
+    !inputTeacherCode.trim() ||
+    !inputFName.trim() ||
+    !inputSurname.trim() ||
+    !inputEmail.trim() ||
+    !inputDepartment.trim() ||
+    !!pscsIdError ||
+    !!teacherCodeError ||
+    !!fNameError ||
+    !!surnameError ||
+    !!emailError ||
+    !!departmentError;
 
   const isEditFormInvalid =
-      !newPscsId.trim() ||
-      !newTeacherCode.trim() ||
-      !newFName.trim() ||
-      !newSurname.trim() ||
-      !newEmail.trim() ||
-      !!editPscsIdError ||
-      !!editTeacherCodeError ||
-      !!editFNameError ||
-      !!editSurnameError ||
-      !!editEmailError ||
-      !!editDepartmentError;
+    !newPscsId.trim() ||
+    !newTeacherCode.trim() ||
+    !newFName.trim() ||
+    !newSurname.trim() ||
+    !newEmail.trim() ||
+    !newDepartment.trim() ||
+    !!editPscsIdError ||
+    !!editTeacherCodeError ||
+    !!editFNameError ||
+    !!editSurnameError ||
+    !!editEmailError ||
+    !!editDepartmentError;
 
   const isEditFormUnchanged =
-      newPscsId === basePscsId &&
-      newEmail === baseEmail &&
-      newFName === baseFName &&
-      newMName === baseMName &&
-      newSurname === baseSurname &&
-      newSuffix === baseSuffix &&
-      newTeacherCode === baseTeacherCode &&
-      newDepartment === baseDepartment &&
-      newEmploymentType === baseEmploymentType &&
-      newStatus === baseStatus &&
-      JSON.stringify(editAvailabilityList) ===
+    newPscsId === basePscsId &&
+    newEmail === baseEmail &&
+    newFName === baseFName &&
+    newMName === baseMName &&
+    newSurname === baseSurname &&
+    newSuffix === baseSuffix &&
+    newTeacherCode === baseTeacherCode &&
+    newDepartment === baseDepartment &&
+    newEmploymentType === baseEmploymentType &&
+    newStatus === baseStatus &&
+    JSON.stringify(editAvailabilityList) ===
       JSON.stringify(baseAvailabilityList);
 
   /** --- Database Integration --- **/
   async function getTeacherCount(
-      search: string | null = searchTerm,
-      status: TeacherStatusFilter = statusFilter,
-      department: string = departmentFilter,
+    search: string | null = searchTerm,
+    status: TeacherStatusFilter = statusFilter,
+    department: string = departmentFilter,
   ) {
     const response = await fetchTeachersCount(search, status, department);
 
@@ -737,7 +687,7 @@ export default function TeachersManagement() {
       setTeachersCount(response.count);
     } else {
       setToastMessage(
-          response?.error ?? "[fetchTeachersCount]: An unexpected error occurred",
+        response?.error ?? "[fetchTeachersCount]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -746,31 +696,31 @@ export default function TeachersManagement() {
   }
 
   async function getTeachers(
-      search: string | null = searchTerm,
-      status: TeacherStatusFilter = statusFilter,
-      department: string = departmentFilter,
-      sortby: string = sortTeachersBy,
-      sortdir: string = sortTeachersDir,
-      limit: number = maxRowTeacher,
-      page: number = currentTeacherPage,
+    search: string | null = searchTerm,
+    status: TeacherStatusFilter = statusFilter,
+    department: string = departmentFilter,
+    sortby: string = sortTeachersBy,
+    sortdir: string = sortTeachersDir,
+    limit: number = maxRowTeacher,
+    page: number = currentTeacherPage,
   ) {
     setLoading(true);
 
     const response = await fetchTeachers(
-        search,
-        status,
-        department,
-        sortby,
-        sortdir,
-        limit,
-        page,
+      search,
+      status,
+      department,
+      sortby,
+      sortdir,
+      limit,
+      page,
     );
 
     if (response?.success && response.data) {
       setTeachers(response.data);
     } else {
       setToastMessage(
-          response?.error ?? "[fetchTeachers]: An unexpected error occurred",
+        response?.error ?? "[fetchTeachers]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -806,7 +756,7 @@ export default function TeachersManagement() {
       toastTimer();
     } else {
       setToastMessage(
-          response?.error ?? "[AddTeacher]: An unexpected error occurred",
+        response?.error ?? "[AddTeacher]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -814,13 +764,13 @@ export default function TeachersManagement() {
 
     handleCloseTeacherModals();
     void getTeachers(
-        searchTerm,
-        statusFilter,
-        departmentFilter,
-        sortTeachersBy,
-        sortTeachersDir,
-        maxRowTeacher,
-        currentTeacherPage,
+      searchTerm,
+      statusFilter,
+      departmentFilter,
+      sortTeachersBy,
+      sortTeachersDir,
+      maxRowTeacher,
+      currentTeacherPage,
     );
   }
 
@@ -849,7 +799,7 @@ export default function TeachersManagement() {
       toastTimer();
     } else {
       setToastMessage(
-          response?.error ?? "[UpdateTeacher]: An unexpected error occurred",
+        response?.error ?? "[UpdateTeacher]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -857,13 +807,13 @@ export default function TeachersManagement() {
 
     handleCloseTeacherModals();
     void getTeachers(
-        searchTerm,
-        statusFilter,
-        departmentFilter,
-        sortTeachersBy,
-        sortTeachersDir,
-        maxRowTeacher,
-        currentTeacherPage,
+      searchTerm,
+      statusFilter,
+      departmentFilter,
+      sortTeachersBy,
+      sortTeachersDir,
+      maxRowTeacher,
+      currentTeacherPage,
     );
   }
 
@@ -884,7 +834,11 @@ export default function TeachersManagement() {
       availability: selectedUnarchiveTeacher.availability,
     };
 
-    const response = await updateTeacher(username ?? "system", selectedUnarchiveTeacher.teacher_id, payload);
+    const response = await updateTeacher(
+      username ?? "system",
+      selectedUnarchiveTeacher.teacher_id,
+      payload,
+    );
 
     if (response?.success) {
       setToastMessage("Instructor record restored successfully");
@@ -892,7 +846,7 @@ export default function TeachersManagement() {
       toastTimer();
     } else {
       setToastMessage(
-          response?.error ?? "[UnarchiveTeacher]: An unexpected error occurred",
+        response?.error ?? "[UnarchiveTeacher]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -900,13 +854,13 @@ export default function TeachersManagement() {
 
     handleCloseTeacherModals();
     void getTeachers(
-        searchTerm,
-        statusFilter,
-        departmentFilter,
-        sortTeachersBy,
-        sortTeachersDir,
-        maxRowTeacher,
-        currentTeacherPage,
+      searchTerm,
+      statusFilter,
+      departmentFilter,
+      sortTeachersBy,
+      sortTeachersDir,
+      maxRowTeacher,
+      currentTeacherPage,
     );
   }
 
@@ -919,7 +873,7 @@ export default function TeachersManagement() {
       toastTimer();
     } else {
       setToastMessage(
-          response?.error ?? "[ArchiveTeacher]: An unexpected error occurred",
+        response?.error ?? "[ArchiveTeacher]: An unexpected error occurred",
       );
       setToastType("error");
       setShowToast(true);
@@ -927,13 +881,13 @@ export default function TeachersManagement() {
 
     handleCloseTeacherModals();
     void getTeachers(
-        searchTerm,
-        statusFilter,
-        departmentFilter,
-        sortTeachersBy,
-        sortTeachersDir,
-        maxRowTeacher,
-        currentTeacherPage,
+      searchTerm,
+      statusFilter,
+      departmentFilter,
+      sortTeachersBy,
+      sortTeachersDir,
+      maxRowTeacher,
+      currentTeacherPage,
     );
   }
 
@@ -971,13 +925,13 @@ export default function TeachersManagement() {
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       void getTeachers(
-          searchTerm,
-          statusFilter,
-          departmentFilter,
-          sortTeachersBy,
-          sortTeachersDir,
-          maxRowTeacher,
-          currentTeacherPage,
+        searchTerm,
+        statusFilter,
+        departmentFilter,
+        sortTeachersBy,
+        sortTeachersDir,
+        maxRowTeacher,
+        currentTeacherPage,
       );
     }, 300);
 
@@ -985,1098 +939,1069 @@ export default function TeachersManagement() {
   }, [searchTerm, statusFilter, departmentFilter]);
 
   return (
-      <>
-        {/* Toast Notification */}
-        {showToast && (
-            <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
-              <Toast>
-                <div
-                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                        toastType === "success"
-                            ? "bg-green-100 text-green-500 dark:bg-green-800 dark:text-green-200"
-                            : toastType === "warning"
-                                ? "bg-yellow-100 text-yellow-500 dark:bg-yellow-800 dark:text-yellow-200"
-                                : "bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200"
-                    }`}
-                >
-                  {toastType === "success" && <HiCheck className="h-5 w-5" />}
-                  {toastType === "warning" && <HiExclamation className="h-5 w-5" />}
-                  {toastType === "error" && <HiX className="h-5 w-5" />}
-                </div>
-                <div className="ml-3 text-sm font-normal">{toastMessage}</div>
-                <ToastToggle onDismiss={() => closeToast()} />
-              </Toast>
-              <Progress
-                  progress={Math.min(Math.round(progress), 100)}
-                  size="sm"
-                  className={`${showToastTimer ? "" : "hidden"} ease-linear`}
-              />
-            </div>
-        )}
-
-        {/* Main Content Wrapper */}
-        {/* Header Bar */}
-        <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-          <div>
-            <h2 className="mb-1 text-lg font-bold">Faculty Management</h2>
-            <p className="text-gray-500">
-              Manage instructors, departments, and employment status.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Department Dropdown Filter */}
-            <div className="w-full md:w-48">
-              <Select
-                  id="department-filter"
-                  value={departmentFilter}
-                  onChange={handleDepartmentFilterChange}
-              >
-                <option value="All Departments">All Departments</option>
-                {allDepartments.map((dept) => (
-                    <option key={dept} value={dept}>
-                      {dept}
-                    </option>
-                ))}
-              </Select>
-            </div>
-
-            {/* Status Dropdown Filter */}
-            <div className="w-full md:w-52">
-              <Select
-                  id="status-filter"
-                  value={statusFilter}
-                  onChange={handleStatusFilterChange}
-              >
-                <optgroup label="Active Statuses">
-                  <option value="All Active & On Leave">
-                    All Active & On Leave
-                  </option>
-                  <option value="Active">Active</option>
-                  <option value="On Leave">On Leave</option>
-                </optgroup>
-                <optgroup label="Inactive & Historical">
-                  <option value="Inactive">Inactive</option>
-                  <option value="Archived (Soft-Deleted)">
-                    Archived (Soft-Deleted)
-                  </option>
-                </optgroup>
-                <optgroup label="Everything">
-                  <option value="All Statuses">All Statuses</option>
-                </optgroup>
-              </Select>
-            </div>
-
-            <div className="relative w-full md:w-60">
-              <TextInput
-                  id="search-teachers"
-                  type="text"
-                  placeholder="Search code, name, department..."
-                  value={searchTerm}
-                  onChange={handleSearchChange}
-                  icon={HiSearch}
-                  maxLength={100}
-              />
-              {searchTerm && (
-                  <button
-                      type="button"
-                      onClick={handleClearSearch}
-                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
-                  >
-                    <HiX className="h-4 w-4" />
-                  </button>
-              )}
-            </div>
-
-            <Button
-                className="whitespace-nowrap"
-                onClick={() => setOpenAddTeacherModal(true)}
+    <>
+      {/* Toast Notification */}
+      {showToast && (
+        <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
+          <Toast>
+            <div
+              className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                toastType === "success"
+                  ? "bg-green-100 text-green-500 dark:bg-green-800 dark:text-green-200"
+                  : toastType === "warning"
+                    ? "bg-yellow-100 text-yellow-500 dark:bg-yellow-800 dark:text-yellow-200"
+                    : "bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200"
+              }`}
             >
-              <FaPlus className="mr-2" />
-              Add Instructor
-            </Button>
-          </div>
-        </div>
-
-        {/* Table Section */}
-        <Card className="overflow-x-auto">
-          <Table hoverable>
-            <TableHead>
-              <TableRow>
-                <TableHeadCell
-                    onClick={() => handleTeacherSorting("teacher_code")}
-                >
-                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                    Code
-                    {sortTeachersBy === "teacher_code" &&
-                        (sortTeachersDir === "ASC" ? (
-                            <FaSortUp className="ml-1" />
-                        ) : (
-                            <FaSortDown className="ml-1" />
-                        ))}
-                  </div>
-                </TableHeadCell>
-
-                <TableHeadCell onClick={() => handleTeacherSorting("surname")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                    Instructor Name
-                    {sortTeachersBy === "surname" &&
-                        (sortTeachersDir === "ASC" ? (
-                            <FaSortUp className="ml-1" />
-                        ) : (
-                            <FaSortDown className="ml-1" />
-                        ))}
-                  </div>
-                </TableHeadCell>
-
-                <TableHeadCell onClick={() => handleTeacherSorting("email")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                    Email
-                    {sortTeachersBy === "email" &&
-                        (sortTeachersDir === "ASC" ? (
-                            <FaSortUp className="ml-1" />
-                        ) : (
-                            <FaSortDown className="ml-1" />
-                        ))}
-                  </div>
-                </TableHeadCell>
-
-                <TableHeadCell
-                    onClick={() => handleTeacherSorting("department")}
-                >
-                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                    Department
-                    {sortTeachersBy === "department" &&
-                        (sortTeachersDir === "ASC" ? (
-                            <FaSortUp className="ml-1" />
-                        ) : (
-                            <FaSortDown className="ml-1" />
-                        ))}
-                  </div>
-                </TableHeadCell>
-
-                <TableHeadCell
-                    onClick={() => handleTeacherSorting("employment_type")}
-                >
-                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                    Employment
-                    {sortTeachersBy === "employment_type" &&
-                        (sortTeachersDir === "ASC" ? (
-                            <FaSortUp className="ml-1" />
-                        ) : (
-                            <FaSortDown className="ml-1" />
-                        ))}
-                  </div>
-                </TableHeadCell>
-
-                <TableHeadCell onClick={() => handleTeacherSorting("status")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                    Status
-                    {sortTeachersBy === "status" &&
-                        (sortTeachersDir === "ASC" ? (
-                            <FaSortUp className="ml-1" />
-                        ) : (
-                            <FaSortDown className="ml-1" />
-                        ))}
-                  </div>
-                </TableHeadCell>
-
-                <TableHeadCell>
-                  <span>Availability</span>
-                </TableHeadCell>
-
-                <TableHeadCell>
-                  <span className="sr-only">Actions</span>
-                </TableHeadCell>
-              </TableRow>
-            </TableHead>
-
-            <TableBody className="divide-y">
-              {teachers.length > 0 ? (
-                  teachers.map((item) => {
-                    const displayFullName =
-                        item.full_name ||
-                        [
-                          item.surname ? `${item.surname},` : "",
-                          item.f_name ?? "",
-                          item.m_name ? `${item.m_name.charAt(0)}.` : "",
-                          item.suffix ?? "",
-                        ]
-                            .filter(Boolean)
-                            .join(" ");
-
-                    const isDeptValid =
-                        !item.department ||
-                        allDepartments.some(
-                            (dept) =>
-                                dept.toLowerCase() ===
-                                item.department?.trim().toLowerCase(),
-                        );
-
-                    const isArchived = item.status?.toLowerCase().includes("archive");
-
-                    return (
-                      <TableRow
-                        key={item.teacher_id}
-                        className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                      >
-                        <TableCell className="font-mono text-sm">
-                          {item.teacher_code || "—"}
-                        </TableCell>
-                        <TableCell className="font-medium whitespace-nowrap">
-                          {displayFullName || "—"}
-                        </TableCell>
-                        <TableCell>{item.email || "—"}</TableCell>
-                        <TableCell>
-                          {!isDeptValid ? (
-                            <Tooltip
-                              className={
-                                "border-2 border-gray-900 bg-white text-gray-500 dark:border-white dark:bg-gray-800 dark:text-gray-300"
-                              }
-                              placement={"right"}
-                              content="Invalid department code or department missing"
-                              style={isDarkMode ? "light" : "dark"}
-                            >
-                              <span className="cursor-pointer font-semibold text-red-600 dark:text-red-400">
-                                {item.department || "—"}
-                              </span>
-                            </Tooltip>
-                          ) : (
-                            item.department || "—"
-                          )}
-                        </TableCell>
-                        <TableCell>{item.employment_type || "—"}</TableCell>
-                        <TableCell>
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              item.status === "Active"
-                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                                : item.status === "On Leave"
-                                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
-                                  : item.status === "Inactive"
-                                    ? "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                                    : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                            }`}
-                          >
-                            {item.status || "Active"}
-                          </span>
-                        </TableCell>
-
-                        <TableCell className="max-w-[220px]">
-                          <div className="relative">
-                            <div className="h-12 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto [mask-image:linear-gradient(to_bottom,black_60%,transparent_100%)] pr-1 pb-4 text-xs text-gray-700 dark:scrollbar-thumb-white dark:text-gray-300">
-                              {renderAvailability(item)}
-                            </div>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="flex items-center gap-3">
-                          {isArchived ? (
-                            <a
-                              onClick={() => openUnarchiveConfirmation(item)}
-                              className="flex cursor-pointer items-center gap-1 font-medium text-emerald-600 hover:underline dark:text-emerald-500"
-                            >
-                              <HiRefresh className="h-4 w-4" />
-                              Unarchive
-                            </a>
-                          ) : (
-                            <a
-                              onClick={() => loadEditData(item.teacher_id)}
-                              className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
-                            >
-                              Edit
-                            </a>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-              ) : isLoading ? (
-                  <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                    <TableCell
-                        colSpan={8}
-                        className="py-6 text-center text-sm italic text-gray-500 dark:text-gray-400"
-                    >
-                      <div className="flex items-center justify-center">
-                        <Spinner />
-                        <span className="ml-4">Fetching faculty data...</span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-              ) : (
-                  <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                    <TableCell
-                        colSpan={8}
-                        className="py-6 text-center text-sm italic text-gray-500 dark:text-gray-400"
-                    >
-                      {searchTerm
-                          ? `No instructors matching "${searchTerm}" found.`
-                          : "No faculty entries found."}
-                    </TableCell>
-                  </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Card>
-
-        {/* Pagination Container */}
-        <div
-            className={`mt-4 ${
-                isLoading
-                    ? "pointer-events-none opacity-50 [&_button]:cursor-not-allowed [&_a]:cursor-not-allowed"
-                    : ""
-            } flex w-full justify-center`}
-        >
-          <Pagination
-              layout="pagination"
-              currentPage={currentTeacherPage || 1}
-              totalPages={Math.ceil(teachersCount / maxRowTeacher) || 1}
-              onPageChange={onPageChangeTeachers}
-              showIcons
+              {toastType === "success" && <HiCheck className="h-5 w-5" />}
+              {toastType === "warning" && <HiExclamation className="h-5 w-5" />}
+              {toastType === "error" && <HiX className="h-5 w-5" />}
+            </div>
+            <div className="ml-3 text-sm font-normal">{toastMessage}</div>
+            <ToastToggle onDismiss={() => closeToast()} />
+          </Toast>
+          <Progress
+            progress={Math.min(Math.round(progress), 100)}
+            size="sm"
+            className={`${showToastTimer ? "" : "hidden"} ease-linear`}
           />
         </div>
+      )}
 
-        {/* Modal: Add Teacher */}
-        <Modal
-            show={openAddTeacherModal}
-            onClose={handleCloseTeacherModals}
-            size="2xl"
-        >
-          <ModalHeader>Add New Faculty Member</ModalHeader>
-          <ModalBody>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="pscs_id">PSCS ID *</Label>
-                <TextInput
-                    id="pscs_id"
-                    placeholder="e.g. 1234567890123"
-                    value={inputPscsId}
-                    onChange={handlePscsIdChange}
-                    color={pscsIdError ? "failure" : "gray"}
-                    maxLength={13}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {pscsIdError ? (
-                      <HelperText color="failure">{pscsIdError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+      {/* Main Content Wrapper */}
+      {/* Header Bar */}
+      <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+        <div className={"mb-2"}>
+          <h2 className="mb-1 text-lg font-bold">Faculty Management</h2>
+          <p className="text-gray-500">
+            Manage instructors, departments, and employment status.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Department Dropdown Filter */}
+          <div className="w-full md:w-48">
+            <Select
+              id="department-filter"
+              value={departmentFilter}
+              onChange={handleDepartmentFilterChange}
+            >
+              <option value="All Departments">All Departments</option>
+              {allDepartments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Status Dropdown Filter */}
+          <div className="w-full md:w-52">
+            <Select
+              id="status-filter"
+              value={statusFilter}
+              onChange={handleStatusFilterChange}
+            >
+              <optgroup label="Active Statuses">
+                <option value="All Active & On Leave">
+                  All Active & On Leave
+                </option>
+                <option value="Active">Active</option>
+                <option value="On Leave">On Leave</option>
+              </optgroup>
+              <optgroup label="Inactive & Historical">
+                <option value="Inactive">Inactive</option>
+                <option value="Archived (Soft-Deleted)">
+                  Archived (Soft-Deleted)
+                </option>
+              </optgroup>
+              <optgroup label="Everything">
+                <option value="All Statuses">All Statuses</option>
+              </optgroup>
+            </Select>
+          </div>
+
+          <div className="relative w-full md:w-60">
+            <TextInput
+              id="search-teachers"
+              type="text"
+              placeholder="Search code, name, department..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              icon={HiSearch}
+              maxLength={100}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+              >
+                <HiX className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <Button
+            className="whitespace-nowrap"
+            onClick={() => setOpenAddTeacherModal(true)}
+          >
+            <FaPlus className="mr-2" />
+            Add Instructor
+          </Button>
+        </div>
+      </div>
+
+      {/* Table Section */}
+      <Card className="overflow-x-auto">
+        <Table hoverable>
+          <TableHead>
+            <TableRow>
+              <TableHeadCell
+                onClick={() => handleTeacherSorting("teacher_code")}
+              >
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                  Code
+                  {sortTeachersBy === "teacher_code" &&
+                    (sortTeachersDir === "ASC" ? (
+                      <FaSortUp className="ml-1" />
+                    ) : (
+                      <FaSortDown className="ml-1" />
+                    ))}
+                </div>
+              </TableHeadCell>
+
+              <TableHeadCell onClick={() => handleTeacherSorting("surname")}>
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                  Instructor Name
+                  {sortTeachersBy === "surname" &&
+                    (sortTeachersDir === "ASC" ? (
+                      <FaSortUp className="ml-1" />
+                    ) : (
+                      <FaSortDown className="ml-1" />
+                    ))}
+                </div>
+              </TableHeadCell>
+
+              <TableHeadCell onClick={() => handleTeacherSorting("email")}>
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                  Email
+                  {sortTeachersBy === "email" &&
+                    (sortTeachersDir === "ASC" ? (
+                      <FaSortUp className="ml-1" />
+                    ) : (
+                      <FaSortDown className="ml-1" />
+                    ))}
+                </div>
+              </TableHeadCell>
+
+              <TableHeadCell onClick={() => handleTeacherSorting("department")}>
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                  Department
+                  {sortTeachersBy === "department" &&
+                    (sortTeachersDir === "ASC" ? (
+                      <FaSortUp className="ml-1" />
+                    ) : (
+                      <FaSortDown className="ml-1" />
+                    ))}
+                </div>
+              </TableHeadCell>
+
+              <TableHeadCell
+                onClick={() => handleTeacherSorting("employment_type")}
+              >
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                  Employment
+                  {sortTeachersBy === "employment_type" &&
+                    (sortTeachersDir === "ASC" ? (
+                      <FaSortUp className="ml-1" />
+                    ) : (
+                      <FaSortDown className="ml-1" />
+                    ))}
+                </div>
+              </TableHeadCell>
+
+              <TableHeadCell onClick={() => handleTeacherSorting("status")}>
+                <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                  Status
+                  {sortTeachersBy === "status" &&
+                    (sortTeachersDir === "ASC" ? (
+                      <FaSortUp className="ml-1" />
+                    ) : (
+                      <FaSortDown className="ml-1" />
+                    ))}
+                </div>
+              </TableHeadCell>
+
+              <TableHeadCell>
+                <span>Availability</span>
+              </TableHeadCell>
+
+              <TableHeadCell>
+                <span className="sr-only">Actions</span>
+              </TableHeadCell>
+            </TableRow>
+          </TableHead>
+
+          <TableBody className="divide-y">
+            {teachers.length > 0 ? (
+              teachers.map((item) => {
+                const displayFullName =
+                  item.full_name ||
+                  [
+                    item.surname ? `${item.surname},` : "",
+                    item.f_name ?? "",
+                    item.m_name ? `${item.m_name.charAt(0)}.` : "",
+                    item.suffix ?? "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+
+                const isDeptValid =
+                  !item.department ||
+                  allDepartments.some(
+                    (dept) =>
+                      dept.toLowerCase() ===
+                      item.department?.trim().toLowerCase(),
+                  );
+
+                const isArchived = item.status
+                  ?.toLowerCase()
+                  .includes("archive");
+
+                return (
+                  <TableRow
+                    key={item.teacher_id}
+                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                  >
+                    <TableCell className="font-mono text-sm">
+                      {item.teacher_code || "—"}
+                    </TableCell>
+                    <TableCell className="font-medium whitespace-nowrap">
+                      {displayFullName || "—"}
+                    </TableCell>
+                    <TableCell>{item.email || "—"}</TableCell>
+                    <TableCell>
+                      {!isDeptValid ? (
+                        <Tooltip
+                          className={
+                            "border-2 border-gray-900 bg-white text-gray-500 dark:border-white dark:bg-gray-800 dark:text-gray-300"
+                          }
+                          placement={"right"}
+                          content="Invalid department code or department missing"
+                          style={isDarkMode ? "light" : "dark"}
+                        >
+                          <span className="cursor-pointer font-semibold text-red-600 dark:text-red-400">
+                            {item.department || "—"}
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        item.department || "—"
+                      )}
+                    </TableCell>
+                    <TableCell>{item.employment_type || "—"}</TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          item.status === "Active"
+                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                            : item.status === "On Leave"
+                              ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+                              : item.status === "Inactive"
+                                ? "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                                : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+                        }`}
+                      >
+                        {item.status || "Active"}
+                      </span>
+                    </TableCell>
+
+                    <TableCell className="max-w-[220px]">
+                      <div className="relative">
+                        <div className="h-12 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto [mask-image:linear-gradient(to_bottom,black_60%,transparent_100%)] pr-1 pb-4 text-xs text-gray-700 dark:scrollbar-thumb-white dark:text-gray-300">
+                          {renderAvailability(item)}
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    <TableCell className="flex items-center gap-3">
+                      {isArchived ? (
+                        <a
+                          onClick={() => openUnarchiveConfirmation(item)}
+                          className="flex cursor-pointer items-center gap-1 font-medium text-emerald-600 hover:underline dark:text-emerald-500"
+                        >
+                          <HiRefresh className="h-4 w-4" />
+                          Unarchive
+                        </a>
+                      ) : (
+                        <a
+                          onClick={() => loadEditData(item.teacher_id)}
+                          className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
+                        >
+                          Edit
+                        </a>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            ) : isLoading ? (
+              <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                <TableCell
+                  colSpan={8}
+                  className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                >
+                  <div className="flex items-center justify-center">
+                    <Spinner />
+                    <span className="ml-4">Fetching faculty data...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                <TableCell
+                  colSpan={8}
+                  className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                >
+                  {searchTerm
+                    ? `No instructors matching "${searchTerm}" found.`
+                    : "No faculty entries found."}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      {/* Pagination Container */}
+      <div
+        className={`mt-4 ${
+          isLoading
+            ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed"
+            : ""
+        } flex w-full justify-center`}
+      >
+        <Pagination
+          layout="pagination"
+          currentPage={currentTeacherPage || 1}
+          totalPages={Math.ceil(teachersCount / maxRowTeacher) || 1}
+          onPageChange={onPageChangeTeachers}
+          showIcons
+        />
+      </div>
+
+      {/* Modal: Add Teacher */}
+      <Modal
+        show={openAddTeacherModal}
+        onClose={handleCloseTeacherModals}
+        size="2xl"
+      >
+        <ModalHeader>Add New Faculty Member</ModalHeader>
+        <ModalBody>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="pscs_id">PSCS ID *</Label>
+              <TextInput
+                id="pscs_id"
+                placeholder="e.g. 1234567890123"
+                value={inputPscsId}
+                onChange={handlePscsIdChange}
+                color={pscsIdError ? "failure" : "gray"}
+                maxLength={13}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {pscsIdError ? (
+                  <HelperText color="failure">{pscsIdError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
                   {inputPscsId.length}/13
                 </span>
-                </div>
               </div>
+            </div>
 
-              <div>
-                <Label htmlFor="teacher_code">Teacher Code *</Label>
-                <TextInput
-                    id="teacher_code"
-                    placeholder="e.g. T10452"
-                    value={inputTeacherCode}
-                    onChange={handleTeacherCodeChange}
-                    color={teacherCodeError ? "failure" : "gray"}
-                    maxLength={6}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {teacherCodeError ? (
-                      <HelperText color="failure">{teacherCodeError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+            <div>
+              <Label htmlFor="teacher_code">Teacher Code *</Label>
+              <TextInput
+                id="teacher_code"
+                placeholder="e.g. T10452"
+                value={inputTeacherCode}
+                onChange={handleTeacherCodeChange}
+                color={teacherCodeError ? "failure" : "gray"}
+                maxLength={6}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {teacherCodeError ? (
+                  <HelperText color="failure">{teacherCodeError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
                   {inputTeacherCode.length}/6
                 </span>
-                </div>
               </div>
+            </div>
 
-              <div className="sm:col-span-2">
-                <Label htmlFor="email">Email Address *</Label>
-                <TextInput
-                    id="email"
-                    type="email"
-                    placeholder="e.g. instructor@alabang.sti.edu.ph"
-                    value={inputEmail}
-                    onChange={handleEmailChange}
-                    color={emailError ? "failure" : "gray"}
-                    maxLength={100}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {emailError ? (
-                      <HelperText color="failure">{emailError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+            <div className="sm:col-span-2">
+              <Label htmlFor="email">Email Address *</Label>
+              <TextInput
+                id="email"
+                type="email"
+                placeholder="e.g. instructor@alabang.sti.edu.ph"
+                value={inputEmail}
+                onChange={handleEmailChange}
+                color={emailError ? "failure" : "gray"}
+                maxLength={100}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {emailError ? (
+                  <HelperText color="failure">{emailError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
                   {inputEmail.length}/100
                 </span>
-                </div>
               </div>
+            </div>
 
-              <div>
-                <Label htmlFor="f_name">First Name *</Label>
-                <TextInput
-                    id="f_name"
-                    value={inputFName}
-                    onChange={handleFNameChange}
-                    color={fNameError ? "failure" : "gray"}
-                    maxLength={50}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {fNameError ? (
-                      <HelperText color="failure">{fNameError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+            <div>
+              <Label htmlFor="f_name">First Name *</Label>
+              <TextInput
+                id="f_name"
+                value={inputFName}
+                onChange={handleFNameChange}
+                color={fNameError ? "failure" : "gray"}
+                maxLength={50}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {fNameError ? (
+                  <HelperText color="failure">{fNameError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
                   {inputFName.length}/50
                 </span>
-                </div>
               </div>
+            </div>
 
-              <div>
-                <Label htmlFor="m_name">Middle Name</Label>
-                <TextInput
-                    id="m_name"
-                    value={inputMName}
-                    onChange={(e) =>
-                        setInputMName(
-                            filterAlphaDashSpace(e.target.value).slice(0, 50),
-                        )
-                    }
-                    maxLength={50}
-                />
-                <div className="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
-                  {inputMName.length}/50
-                </div>
+            <div>
+              <Label htmlFor="m_name">Middle Name</Label>
+              <TextInput
+                id="m_name"
+                value={inputMName}
+                onChange={(e) =>
+                  setInputMName(
+                    filterAlphaDashSpace(e.target.value)
+                      .slice(0, 50)
+                      .toUpperCase(),
+                  )
+                }
+                maxLength={50}
+              />
+              <div className="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
+                {inputMName.length}/50
               </div>
+            </div>
 
-              <div>
-                <Label htmlFor="surname">Surname *</Label>
-                <TextInput
-                    id="surname"
-                    value={inputSurname}
-                    onChange={handleSurnameChange}
-                    color={surnameError ? "failure" : "gray"}
-                    maxLength={50}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {surnameError ? (
-                      <HelperText color="failure">{surnameError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+            <div>
+              <Label htmlFor="surname">Surname *</Label>
+              <TextInput
+                id="surname"
+                value={inputSurname}
+                onChange={handleSurnameChange}
+                color={surnameError ? "failure" : "gray"}
+                maxLength={50}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {surnameError ? (
+                  <HelperText color="failure">{surnameError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
                   {inputSurname.length}/50
                 </span>
-                </div>
               </div>
+            </div>
 
-              <div>
-                <Label htmlFor="suffix">Suffix</Label>
-                <TextInput
-                    id="suffix"
-                    placeholder="e.g. Jr., III"
-                    value={inputSuffix}
-                    onChange={(e) =>
-                        setInputSuffix(filterAlpha(e.target.value).slice(0, 10))
-                    }
-                    maxLength={10}
-                />
-                <div className="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
-                  {inputSuffix.length}/10
-                </div>
+            <div>
+              <Label htmlFor="suffix">Suffix</Label>
+              <TextInput
+                id="suffix"
+                placeholder="e.g. Jr., III"
+                value={inputSuffix}
+                onChange={(e) =>
+                  setInputSuffix(
+                    filterAlpha(e.target.value).slice(0, 10).toUpperCase(),
+                  )
+                }
+                maxLength={10}
+              />
+              <div className="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
+                {inputSuffix.length}/10
               </div>
+            </div>
 
-              <div className="relative">
-                <Label htmlFor="department">Department</Label>
-                <TextInput
-                    id="department"
-                    placeholder="Search department..."
-                    value={inputDepartment}
-                    onChange={(e) => handleAddDepartmentChange(e.target.value)}
-                    onFocus={() => {
-                      if (inputDepartment) {
-                        void searchDepts(inputDepartment);
-                        setShowAddDeptDropdown(true);
-                      }
-                    }}
-                    color={departmentError ? "failure" : "gray"}
-                    maxLength={80}
-                />
+            <div>
+              <Label htmlFor="department">Department *</Label>
+              <Select
+                id="department"
+                value={inputDepartment}
+                onChange={(e) => {
+                  setInputDepartment(e.target.value);
+                  setDepartmentError("");
+                }}
+              >
+                <option value="" disabled>
+                  Select a department
+                </option>
+                {allDepartments.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </Select>
+              {departmentError && (
+                <HelperText color="failure" className="mt-1">
+                  {departmentError}
+                </HelperText>
+              )}
+            </div>
 
-                {showAddDeptDropdown && departmentOptions.length > 0 && (
-                    <ul className="absolute top-[68px] z-20 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                      {departmentOptions.map((name) => (
-                          <li
-                              key={name}
-                              onClick={() => {
-                                setInputDepartment(name);
-                                setDepartmentError("");
-                                setShowAddDeptDropdown(false);
-                              }}
-                              className="cursor-pointer px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                          >
-                            {name}
-                          </li>
+            <div>
+              <Label htmlFor="employment_type">Employment Type</Label>
+              <Select
+                id="employment_type"
+                value={inputEmploymentType}
+                onChange={(e) => handleAddEmploymentChange(e.target.value)}
+              >
+                <option value="Full-Time">Full-Time</option>
+                <option value="Part-Time Full Load">Part-Time Full Load</option>
+                <option value="Part-Time">Part-Time</option>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="status">Status</Label>
+              <Select
+                id="status"
+                value={inputStatus}
+                onChange={(e) => setInputStatus(e.target.value)}
+              >
+                <option value="Active">Active</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Inactive">Inactive</option>
+              </Select>
+            </div>
+
+            {inputEmploymentType === "Part-Time" && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2 dark:border-gray-700 dark:bg-gray-800">
+                <Label className="mb-2 block font-semibold">
+                  Part-Time Availability
+                </Label>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
+                  <div>
+                    <Label
+                      htmlFor="add_avail_day"
+                      className="mb-1 block text-xs"
+                    >
+                      Day
+                    </Label>
+                    <Select
+                      id="add_avail_day"
+                      value={addAvailDay}
+                      onChange={(e) => setAddAvailDay(Number(e.target.value))}
+                    >
+                      {DAYS_OF_WEEK.map((day) => (
+                        <option key={day.id} value={day.id}>
+                          {day.name}
+                        </option>
                       ))}
-                    </ul>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label
+                      htmlFor="add_avail_start"
+                      className="mb-1 block text-xs"
+                    >
+                      Start Time
+                    </Label>
+                    <TextInput
+                      id="add_avail_start"
+                      type="time"
+                      value={addAvailStart}
+                      onChange={(e) => setAddAvailStart(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <Label
+                      htmlFor="add_avail_end"
+                      className="mb-1 block text-xs"
+                    >
+                      End Time
+                    </Label>
+                    <TextInput
+                      id="add_avail_end"
+                      type="time"
+                      value={addAvailEnd}
+                      onChange={(e) => setAddAvailEnd(e.target.value)}
+                    />
+                  </div>
+
+                  <Button
+                    type="button"
+                    color="blue"
+                    onClick={handleAddAvailabilitySlot}
+                  >
+                    <FaPlus className="mr-1 h-3 w-3" />
+                    Add
+                  </Button>
+                </div>
+
+                {availError && (
+                  <HelperText color="failure" className="mt-2">
+                    {availError}
+                  </HelperText>
                 )}
 
-                <div className="mt-1 flex items-center justify-between">
-                  {departmentError ? (
-                      <HelperText color="failure">{departmentError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {inputDepartment.length}/80
-                </span>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="employment_type">Employment Type</Label>
-                <Select
-                    id="employment_type"
-                    value={inputEmploymentType}
-                    onChange={(e) => handleAddEmploymentChange(e.target.value)}
-                >
-                  <option value="Full-Time">Full-Time</option>
-                  <option value="Part-Time Full Load">Part-Time Full Load</option>
-                  <option value="Part-Time">Part-Time</option>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="status">Status</Label>
-                <Select
-                    id="status"
-                    value={inputStatus}
-                    onChange={(e) => setInputStatus(e.target.value)}
-                >
-                  <option value="Active">Active</option>
-                  <option value="On Leave">On Leave</option>
-                  <option value="Inactive">Inactive</option>
-                </Select>
-              </div>
-
-              {inputEmploymentType === "Part-Time" && (
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2 dark:border-gray-700 dark:bg-gray-800">
-                    <Label className="mb-2 block font-semibold">
-                      Part-Time Availability
-                    </Label>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
-                      <div>
-                        <Label
-                            htmlFor="add_avail_day"
-                            className="mb-1 block text-xs"
-                        >
-                          Day
-                        </Label>
-                        <Select
-                            id="add_avail_day"
-                            value={addAvailDay}
-                            onChange={(e) => setAddAvailDay(Number(e.target.value))}
-                        >
-                          {DAYS_OF_WEEK.map((day) => (
-                              <option key={day.id} value={day.id}>
-                                {day.name}
-                              </option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div>
-                        <Label
-                            htmlFor="add_avail_start"
-                            className="mb-1 block text-xs"
-                        >
-                          Start Time
-                        </Label>
-                        <TextInput
-                            id="add_avail_start"
-                            type="time"
-                            value={addAvailStart}
-                            onChange={(e) => setAddAvailStart(e.target.value)}
-                        />
-                      </div>
-
-                      <div>
-                        <Label
-                            htmlFor="add_avail_end"
-                            className="mb-1 block text-xs"
-                        >
-                          End Time
-                        </Label>
-                        <TextInput
-                            id="add_avail_end"
-                            type="time"
-                            value={addAvailEnd}
-                            onChange={(e) => setAddAvailEnd(e.target.value)}
-                        />
-                      </div>
-
-                      <Button
-                          type="button"
-                          color="blue"
-                          onClick={handleAddAvailabilitySlot}
-                      >
-                        <FaPlus className="mr-1 h-3 w-3" />
-                        Add
-                      </Button>
-                    </div>
-
-                    {availError && (
-                        <HelperText color="failure" className="mt-2">
-                          {availError}
-                        </HelperText>
-                    )}
-
-                    {availabilityList.length > 0 && (
-                        <div className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                {availabilityList.length > 0 && (
+                  <div className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700">
+                    <span className="text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
                       Configured Schedules
                     </span>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {availabilityList.map((slot, index) => (
-                                <div
-                                    key={index}
-                                    className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                                >
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {availabilityList.map((slot, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        >
                           <span>
                             <strong>{slot.day}:</strong> {slot.startTime} –{" "}
                             {slot.endTime}
                           </span>
-                                  <button
-                                      type="button"
-                                      onClick={() => handleRemoveAvailabilitySlot(index)}
-                                      className="text-red-500 hover:text-red-700"
-                                  >
-                                    <HiX className="h-3 w-3" />
-                                  </button>
-                                </div>
-                            ))}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAvailabilitySlot(index)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <HiX className="h-3 w-3" />
+                          </button>
                         </div>
-                    )}
+                      ))}
+                    </div>
                   </div>
+                )}
+              </div>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button onClick={handleTeacherSubmit} disabled={isAddFormInvalid}>
+            Create Record
+          </Button>
+          <Button color="alternative" onClick={handleCloseTeacherModals}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Modal: Edit Teacher */}
+      <Modal
+        show={openEditTeacherModal}
+        onClose={handleCloseTeacherModals}
+        size="2xl"
+      >
+        <ModalHeader>Update Faculty Member</ModalHeader>
+        <ModalBody>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="edit_pscs_id">PSCS ID *</Label>
+              <TextInput
+                id="edit_pscs_id"
+                value={newPscsId}
+                onChange={handleNewPscsIdChange}
+                color={editPscsIdError ? "failure" : "gray"}
+                maxLength={13}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {editPscsIdError ? (
+                  <HelperText color="failure">{editPscsIdError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {newPscsId.length}/13
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit_teacher_code">Teacher Code *</Label>
+              <TextInput
+                id="edit_teacher_code"
+                value={newTeacherCode}
+                onChange={handleNewTeacherCodeChange}
+                color={editTeacherCodeError ? "failure" : "gray"}
+                maxLength={6}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {editTeacherCodeError ? (
+                  <HelperText color="failure">
+                    {editTeacherCodeError}
+                  </HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {newTeacherCode.length}/6
+                </span>
+              </div>
+            </div>
+
+            <div className="sm:col-span-2">
+              <Label htmlFor="edit_email">Email Address *</Label>
+              <TextInput
+                id="edit_email"
+                type="email"
+                value={newEmail}
+                onChange={handleNewEmailChange}
+                color={editEmailError ? "failure" : "gray"}
+                maxLength={100}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {editEmailError ? (
+                  <HelperText color="failure">{editEmailError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {newEmail.length}/100
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit_f_name">First Name *</Label>
+              <TextInput
+                id="edit_f_name"
+                value={newFName}
+                onChange={handleNewFNameChange}
+                color={editFNameError ? "failure" : "gray"}
+                maxLength={50}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {editFNameError ? (
+                  <HelperText color="failure">{editFNameError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {newFName.length}/50
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit_m_name">Middle Name</Label>
+              <TextInput
+                id="edit_m_name"
+                value={newMName}
+                onChange={(e) =>
+                  editMName(
+                    filterAlphaDashSpace(e.target.value)
+                      .slice(0, 50)
+                      .toUpperCase(),
+                  )
+                }
+                maxLength={50}
+              />
+              <div className="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
+                {newMName.length}/50
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit_surname">Surname *</Label>
+              <TextInput
+                id="edit_surname"
+                value={newSurname}
+                onChange={handleNewSurnameChange}
+                color={editSurnameError ? "failure" : "gray"}
+                maxLength={50}
+              />
+              <div className="mt-1 flex items-center justify-between">
+                {editSurnameError ? (
+                  <HelperText color="failure">{editSurnameError}</HelperText>
+                ) : (
+                  <span />
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {newSurname.length}/50
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit_suffix">Suffix</Label>
+              <TextInput
+                id="edit_suffix"
+                value={newSuffix}
+                onChange={(e) =>
+                  editSuffix(
+                    filterAlpha(e.target.value).slice(0, 10).toUpperCase(),
+                  )
+                }
+                maxLength={10}
+              />
+              <div className="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
+                {newSuffix.length}/10
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit_department">Department *</Label>
+              <Select
+                id="edit_department"
+                value={newDepartment}
+                onChange={(e) => {
+                  editDepartment(e.target.value);
+                  setEditDepartmentError("");
+                }}
+              >
+                <option value="" disabled>
+                  Select a department
+                </option>
+                {allDepartments.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </Select>
+              {editDepartmentError && (
+                <HelperText color="failure" className="mt-1">
+                  {editDepartmentError}
+                </HelperText>
               )}
             </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button onClick={handleTeacherSubmit} disabled={isAddFormInvalid}>
-              Create Record
+
+            <div>
+              <Label htmlFor="edit_employment_type">Employment Type</Label>
+              <Select
+                id="edit_employment_type"
+                value={newEmploymentType}
+                onChange={(e) => handleEditEmploymentChange(e.target.value)}
+              >
+                <option value="Full-Time">Full-Time</option>
+                <option value="Part-Time Full Load">Part-Time Full Load</option>
+                <option value="Part-Time">Part-Time</option>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="edit_status">Status</Label>
+              <Select
+                id="edit_status"
+                value={newStatus}
+                onChange={(e) => editStatus(e.target.value)}
+              >
+                <option value="Active">Active</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Inactive">Inactive</option>
+              </Select>
+            </div>
+
+            {newEmploymentType === "Part-Time" && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2 dark:border-gray-700 dark:bg-gray-800">
+                <Label className="mb-2 block font-semibold">
+                  Part-Time Availability
+                </Label>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
+                  <div>
+                    <Label
+                      htmlFor="edit_avail_day"
+                      className="mb-1 block text-xs"
+                    >
+                      Day
+                    </Label>
+                    <Select
+                      id="edit_avail_day"
+                      value={editAvailDay}
+                      onChange={(e) => setEditAvailDay(Number(e.target.value))}
+                    >
+                      {DAYS_OF_WEEK.map((day) => (
+                        <option key={day.id} value={day.id}>
+                          {day.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label
+                      htmlFor="edit_avail_start"
+                      className="mb-1 block text-xs"
+                    >
+                      Start Time
+                    </Label>
+                    <TextInput
+                      id="edit_avail_start"
+                      type="time"
+                      value={editAvailStart}
+                      onChange={(e) => setEditAvailStart(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <Label
+                      htmlFor="edit_avail_end"
+                      className="mb-1 block text-xs"
+                    >
+                      End Time
+                    </Label>
+                    <TextInput
+                      id="edit_avail_end"
+                      type="time"
+                      value={editAvailEnd}
+                      onChange={(e) => setEditAvailEnd(e.target.value)}
+                    />
+                  </div>
+
+                  <Button
+                    type="button"
+                    color="blue"
+                    onClick={handleEditAddAvailabilitySlot}
+                  >
+                    <FaPlus className="mr-1 h-3 w-3" />
+                    Add
+                  </Button>
+                </div>
+
+                {editAvailError && (
+                  <HelperText color="failure" className="mt-2">
+                    {editAvailError}
+                  </HelperText>
+                )}
+
+                {editAvailabilityList.length > 0 && (
+                  <div className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700">
+                    <span className="text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+                      Configured Schedules
+                    </span>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {editAvailabilityList?.length > 0 &&
+                        editAvailabilityList.map((slot, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                          >
+                            <span>
+                              <strong>{slot.day}:</strong> {slot.startTime} –{" "}
+                              {slot.endTime}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleEditRemoveAvailabilitySlot(index)
+                              }
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <HiX className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter className="flex justify-between">
+          <Button
+            color="yellow"
+            onClick={() => {
+              setOpenEditTeacherModal(false);
+              setOpenArchiveModal(true);
+            }}
+          >
+            <HiArchive className="mr-1 h-5 w-5" />
+            Archive
+          </Button>
+
+          <div className="flex gap-2">
+            <Button
+              onClick={handleTeacherUpdate}
+              disabled={isEditFormUnchanged || isEditFormInvalid}
+            >
+              Save Changes
             </Button>
             <Button color="alternative" onClick={handleCloseTeacherModals}>
               Cancel
             </Button>
-          </ModalFooter>
-        </Modal>
+          </div>
+        </ModalFooter>
+      </Modal>
 
-        {/* Modal: Edit Teacher */}
-        <Modal
-            show={openEditTeacherModal}
-            onClose={handleCloseTeacherModals}
-            size="2xl"
-        >
-          <ModalHeader>Update Faculty Member</ModalHeader>
-          <ModalBody>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="edit_pscs_id">PSCS ID *</Label>
-                <TextInput
-                    id="edit_pscs_id"
-                    value={newPscsId}
-                    onChange={handleNewPscsIdChange}
-                    color={editPscsIdError ? "failure" : "gray"}
-                    maxLength={13}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {editPscsIdError ? (
-                      <HelperText color="failure">{editPscsIdError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {newPscsId.length}/13
-                </span>
-                </div>
-              </div>
+      {/* Modal: Archive Confirmation */}
+      <Modal
+        show={openArchiveModal}
+        onClose={handleCloseTeacherModals}
+        size="md"
+      >
+        <ModalHeader>Confirm Archival</ModalHeader>
+        <ModalBody>
+          <div className="text-center">
+            <HiExclamation className="mx-auto mb-4 h-14 w-14 text-yellow-400 dark:text-yellow-300" />
+            <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+              Are you sure you want to archive this instructor record?
+            </h3>
+          </div>
+        </ModalBody>
+        <ModalFooter className="justify-center">
+          <Button color="yellow" onClick={handleTeacherArchive}>
+            Yes, Archive
+          </Button>
+          <Button color="alternative" onClick={handleCloseTeacherModals}>
+            No, Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
 
-              <div>
-                <Label htmlFor="edit_teacher_code">Teacher Code *</Label>
-                <TextInput
-                    id="edit_teacher_code"
-                    value={newTeacherCode}
-                    onChange={handleNewTeacherCodeChange}
-                    color={editTeacherCodeError ? "failure" : "gray"}
-                    maxLength={6}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {editTeacherCodeError ? (
-                      <HelperText color="failure">
-                        {editTeacherCodeError}
-                      </HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {newTeacherCode.length}/6
-                </span>
-                </div>
-              </div>
-
-              <div className="sm:col-span-2">
-                <Label htmlFor="edit_email">Email Address *</Label>
-                <TextInput
-                    id="edit_email"
-                    type="email"
-                    value={newEmail}
-                    onChange={handleNewEmailChange}
-                    color={editEmailError ? "failure" : "gray"}
-                    maxLength={100}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {editEmailError ? (
-                      <HelperText color="failure">{editEmailError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {newEmail.length}/100
-                </span>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="edit_f_name">First Name *</Label>
-                <TextInput
-                    id="edit_f_name"
-                    value={newFName}
-                    onChange={handleNewFNameChange}
-                    color={editFNameError ? "failure" : "gray"}
-                    maxLength={50}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {editFNameError ? (
-                      <HelperText color="failure">{editFNameError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {newFName.length}/50
-                </span>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="edit_m_name">Middle Name</Label>
-                <TextInput
-                    id="edit_m_name"
-                    value={newMName}
-                    onChange={(e) =>
-                        editMName(filterAlphaDashSpace(e.target.value).slice(0, 50))
-                    }
-                    maxLength={50}
-                />
-                <div className="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
-                  {newMName.length}/50
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="edit_surname">Surname *</Label>
-                <TextInput
-                    id="edit_surname"
-                    value={newSurname}
-                    onChange={handleNewSurnameChange}
-                    color={editSurnameError ? "failure" : "gray"}
-                    maxLength={50}
-                />
-                <div className="mt-1 flex items-center justify-between">
-                  {editSurnameError ? (
-                      <HelperText color="failure">{editSurnameError}</HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {newSurname.length}/50
-                </span>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="edit_suffix">Suffix</Label>
-                <TextInput
-                    id="edit_suffix"
-                    value={newSuffix}
-                    onChange={(e) =>
-                        editSuffix(filterAlpha(e.target.value).slice(0, 10))
-                    }
-                    maxLength={10}
-                />
-                <div className="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
-                  {newSuffix.length}/10
-                </div>
-              </div>
-
-              <div className="relative">
-                <Label htmlFor="edit_department">Department</Label>
-                <TextInput
-                    id="edit_department"
-                    placeholder="Search department..."
-                    value={newDepartment}
-                    onChange={(e) => handleEditDepartmentChange(e.target.value)}
-                    onFocus={() => {
-                      if (newDepartment) {
-                        void searchDepts(newDepartment);
-                        setShowEditDeptDropdown(true);
-                      }
-                    }}
-                    color={editDepartmentError ? "failure" : "gray"}
-                    maxLength={80}
-                />
-
-                {showEditDeptDropdown && departmentOptions.length > 0 && (
-                    <ul className="absolute top-[68px] z-20 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                      {departmentOptions.map((name) => (
-                          <li
-                              key={name}
-                              onClick={() => {
-                                editDepartment(name);
-                                setEditDepartmentError("");
-                                setShowEditDeptDropdown(false);
-                              }}
-                              className="cursor-pointer px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                          >
-                            {name}
-                          </li>
-                      ))}
-                    </ul>
-                )}
-
-                <div className="mt-1 flex items-center justify-between">
-                  {editDepartmentError ? (
-                      <HelperText color="failure">
-                        {editDepartmentError}
-                      </HelperText>
-                  ) : (
-                      <span />
-                  )}
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {newDepartment.length}/80
-                </span>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="edit_employment_type">Employment Type</Label>
-                <Select
-                    id="edit_employment_type"
-                    value={newEmploymentType}
-                    onChange={(e) => handleEditEmploymentChange(e.target.value)}
-                >
-                  <option value="Full-Time">Full-Time</option>
-                  <option value="Part-Time Full Load">Part-Time Full Load</option>
-                  <option value="Part-Time">Part-Time</option>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="edit_status">Status</Label>
-                <Select
-                    id="edit_status"
-                    value={newStatus}
-                    onChange={(e) => editStatus(e.target.value)}
-                >
-                  <option value="Active">Active</option>
-                  <option value="On Leave">On Leave</option>
-                  <option value="Inactive">Inactive</option>
-                </Select>
-              </div>
-
-              {newEmploymentType === "Part-Time" && (
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2 dark:border-gray-700 dark:bg-gray-800">
-                    <Label className="mb-2 block font-semibold">
-                      Part-Time Availability
-                    </Label>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
-                      <div>
-                        <Label
-                            htmlFor="edit_avail_day"
-                            className="mb-1 block text-xs"
-                        >
-                          Day
-                        </Label>
-                        <Select
-                            id="edit_avail_day"
-                            value={editAvailDay}
-                            onChange={(e) => setEditAvailDay(Number(e.target.value))}
-                        >
-                          {DAYS_OF_WEEK.map((day) => (
-                              <option key={day.id} value={day.id}>
-                                {day.name}
-                              </option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div>
-                        <Label
-                            htmlFor="edit_avail_start"
-                            className="mb-1 block text-xs"
-                        >
-                          Start Time
-                        </Label>
-                        <TextInput
-                            id="edit_avail_start"
-                            type="time"
-                            value={editAvailStart}
-                            onChange={(e) => setEditAvailStart(e.target.value)}
-                        />
-                      </div>
-
-                      <div>
-                        <Label
-                            htmlFor="edit_avail_end"
-                            className="mb-1 block text-xs"
-                        >
-                          End Time
-                        </Label>
-                        <TextInput
-                            id="edit_avail_end"
-                            type="time"
-                            value={editAvailEnd}
-                            onChange={(e) => setEditAvailEnd(e.target.value)}
-                        />
-                      </div>
-
-                      <Button
-                          type="button"
-                          color="blue"
-                          onClick={handleEditAddAvailabilitySlot}
-                      >
-                        <FaPlus className="mr-1 h-3 w-3" />
-                        Add
-                      </Button>
-                    </div>
-
-                    {editAvailError && (
-                        <HelperText color="failure" className="mt-2">
-                          {editAvailError}
-                        </HelperText>
-                    )}
-
-                    {editAvailabilityList.length > 0 && (
-                        <div className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                      Configured Schedules
-                    </span>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {editAvailabilityList.map((slot, index) => (
-                                <div
-                                    key={index}
-                                    className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                                >
-                          <span>
-                            <strong>{slot.day}:</strong> {slot.startTime} –{" "}
-                            {slot.endTime}
-                          </span>
-                                  <button
-                                      type="button"
-                                      onClick={() =>
-                                          handleEditRemoveAvailabilitySlot(index)
-                                      }
-                                      className="text-red-500 hover:text-red-700"
-                                  >
-                                    <HiX className="h-3 w-3" />
-                                  </button>
-                                </div>
-                            ))}
-                          </div>
-                        </div>
-                    )}
-                  </div>
-              )}
-            </div>
-          </ModalBody>
-          <ModalFooter className="flex justify-between">
-            <Button
-                color="yellow"
-                onClick={() => {
-                  setOpenEditTeacherModal(false);
-                  setOpenArchiveModal(true);
-                }}
-            >
-              <HiArchive className="mr-1 h-5 w-5" />
-              Archive
-            </Button>
-
-            <div className="flex gap-2">
-              <Button
-                  onClick={handleTeacherUpdate}
-                  disabled={isEditFormUnchanged || isEditFormInvalid}
-              >
-                Save Changes
-              </Button>
-              <Button color="alternative" onClick={handleCloseTeacherModals}>
-                Cancel
-              </Button>
-            </div>
-          </ModalFooter>
-        </Modal>
-
-        {/* Modal: Archive Confirmation */}
-        <Modal
-            show={openArchiveModal}
-            onClose={handleCloseTeacherModals}
-            size="md"
-        >
-          <ModalHeader>Confirm Archival</ModalHeader>
-          <ModalBody>
-            <div className="text-center">
-              <HiExclamation className="mx-auto mb-4 h-14 w-14 text-yellow-400 dark:text-yellow-300" />
-              <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-                Are you sure you want to archive this instructor record?
-              </h3>
-            </div>
-          </ModalBody>
-          <ModalFooter className="justify-center">
-            <Button color="yellow" onClick={handleTeacherArchive}>
-              Yes, Archive
-            </Button>
-            <Button color="alternative" onClick={handleCloseTeacherModals}>
-              No, Cancel
-            </Button>
-          </ModalFooter>
-        </Modal>
-
-        {/* Modal: Unarchive Confirmation */}
-        <Modal
-            show={openUnarchiveModal}
-            onClose={handleCloseTeacherModals}
-            size="md"
-        >
-          <ModalHeader>Confirm Unarchive</ModalHeader>
-          <ModalBody>
-            <div className="text-center">
-              <HiRefresh className="mx-auto mb-4 h-14 w-14 text-emerald-500 dark:text-emerald-400" />
-              <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
-                Are you sure you want to unarchive <b className="font-bold dark:text-white">{selectedUnarchiveTeacher?.full_name}&#39;s</b> record? This will restore their status to Active.
-              </h3>
-            </div>
-          </ModalBody>
-          <ModalFooter className="justify-center">
-            <Button color="green" onClick={() => void handleTeacherUnarchive()}>
-              Yes, Unarchive
-            </Button>
-            <Button color="alternative" onClick={handleCloseTeacherModals}>
-              No, Cancel
-            </Button>
-          </ModalFooter>
-        </Modal>
-      </>
+      {/* Modal: Unarchive Confirmation */}
+      <Modal
+        show={openUnarchiveModal}
+        onClose={handleCloseTeacherModals}
+        size="md"
+      >
+        <ModalHeader>Confirm Unarchive</ModalHeader>
+        <ModalBody>
+          <div className="text-center">
+            <HiRefresh className="mx-auto mb-4 h-14 w-14 text-emerald-500 dark:text-emerald-400" />
+            <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+              Are you sure you want to unarchive{" "}
+              <b className="font-bold dark:text-white">
+                {selectedUnarchiveTeacher?.full_name}&#39;s
+              </b>{" "}
+              record? This will restore their status to Active.
+            </h3>
+          </div>
+        </ModalBody>
+        <ModalFooter className="justify-center">
+          <Button color="green" onClick={() => void handleTeacherUnarchive()}>
+            Yes, Unarchive
+          </Button>
+          <Button color="alternative" onClick={handleCloseTeacherModals}>
+            No, Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </>
   );
 }
