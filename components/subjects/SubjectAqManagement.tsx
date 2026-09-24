@@ -29,6 +29,7 @@ import {
   Progress,
   Badge,
   Tooltip,
+  useThemeMode,
 } from "flowbite-react";
 import { HiSearch, HiX, HiCheck, HiExclamation, HiPencil } from "react-icons/hi";
 import { FaSortUp, FaSortDown, FaSync } from "react-icons/fa";
@@ -63,6 +64,9 @@ interface SuggestionItem {
 }
 
 export default function SubjectAqManagement() {
+  const { computedMode } = useThemeMode();
+  const isDarkMode = computedMode === "dark";
+
   // --- MSAL Auth State for Actor ---
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
@@ -483,7 +487,11 @@ export default function SubjectAqManagement() {
                       {item.course_name}
                     </TableCell>
                     <TableCell className="text-gray-700 dark:text-gray-300">
-                      <Badge color="gray" size="sm" className="inline-block w-fit">
+                      <Badge
+                        color="gray"
+                        size="sm"
+                        className="inline-block w-fit"
+                      >
                         {item.program_code}
                       </Badge>
                     </TableCell>
@@ -493,7 +501,9 @@ export default function SubjectAqManagement() {
                           {item.cluster_names &&
                           item.cluster_names.length > 0 ? (
                             <Tooltip
-                              className={"dark:bg-gray-800 dark:text-white"}
+                              className={
+                                "border-2 border-gray-900 bg-white text-gray-500 dark:border-white dark:bg-gray-800 dark:text-gray-300"
+                              }
                               content={item.aq_list.map((entry) => {
                                 const aqLabel =
                                   typeof entry === "string" ? entry : entry;
@@ -503,7 +513,7 @@ export default function SubjectAqManagement() {
                                   </div>
                                 );
                               })}
-                              style="light"
+                              style={isDarkMode ? "light" : "dark"}
                             >
                               {item.cluster_names.join(", ")} [
                               {item.aq_list.length.toString()}]

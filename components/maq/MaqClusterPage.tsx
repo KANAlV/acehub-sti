@@ -23,6 +23,7 @@ import {
   Label,
   ToggleSwitch,
   Tooltip,
+  useThemeMode,
 } from "flowbite-react";
 import {
   HiSearch,
@@ -54,6 +55,9 @@ import {
 import { useMsal } from "@azure/msal-react";
 
 export default function MaqClusterPage() {
+  const { computedMode } = useThemeMode();
+  const isDarkMode = computedMode === "dark";
+
   // --- MSAL Auth State for Actor ---
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
@@ -488,7 +492,9 @@ export default function MaqClusterPage() {
                     <TableCell>
                       {entriesList.length > 0 ? (
                         <Tooltip
-                          className={"dark:bg-gray-800 dark:text-white"}
+                          className={
+                            "border-2 border-gray-900 bg-white text-gray-500 dark:border-white dark:bg-gray-800 dark:text-gray-300"
+                          }
                           content={entriesList.map((entry, i) => {
                             const aqLabel =
                               typeof entry === "string" ? entry : entry.aq;
@@ -498,15 +504,13 @@ export default function MaqClusterPage() {
                               </div>
                             );
                           })}
-                          style="light"
+                          style={isDarkMode ? "light" : "dark"}
                         >
                           <div className="max-w-[320px] items-center gap-1.5 truncate">
                             {entriesList.map((entry, i) => {
                               const aqLabel =
                                 typeof entry === "string" ? entry : entry.aq;
-                              return (
-                                  <>  {aqLabel}  </>
-                              );
+                              return <> {aqLabel} </>;
                             })}
                           </div>
                         </Tooltip>
@@ -648,10 +652,14 @@ export default function MaqClusterPage() {
                   </div>
 
                   <Tooltip
+                    className={
+                      "border-2 border-gray-900 bg-white text-gray-500 dark:border-white dark:bg-gray-800 dark:text-gray-300"
+                    }
                     placement={"bottom"}
                     content={
                       "Allows you to create qualifications not in the list"
                     }
+                    style={isDarkMode ? "light" : "dark"}
                   >
                     <div className={"shrink-0 sm:self-center"}>
                       <ToggleSwitch

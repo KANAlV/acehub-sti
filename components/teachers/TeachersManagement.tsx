@@ -23,6 +23,7 @@ import {
   Toast,
   ToastToggle,
   Tooltip,
+  useThemeMode,
 } from "flowbite-react";
 import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
 import { HiCheck } from "react-icons/hi2";
@@ -78,6 +79,9 @@ const DEFAULT_FULLTIME_AVAILABILITY: AvailabilitySlot[] = [
 ];
 
 export default function TeachersManagement() {
+  const { computedMode } = useThemeMode();
+  const isDarkMode = computedMode === "dark";
+
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
   const username = activeAccount?.username;
@@ -1212,75 +1216,79 @@ export default function TeachersManagement() {
                     const isArchived = item.status?.toLowerCase().includes("archive");
 
                     return (
-                        <TableRow
-                            key={item.teacher_id}
-                            className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                        >
-                          <TableCell className="font-mono text-sm">
-                            {item.teacher_code || "—"}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap font-medium">
-                            {displayFullName || "—"}
-                          </TableCell>
-                          <TableCell>{item.email || "—"}</TableCell>
-                          <TableCell>
-                            {!isDeptValid ? (
-                                <Tooltip
-                                    placement={"right"}
-                                    content="Invalid department code or department missing"
-                                >
-                          <span className="cursor-pointer font-semibold text-red-600 dark:text-red-400">
-                            {item.department || "—"}
-                          </span>
-                                </Tooltip>
-                            ) : (
-                                item.department || "—"
-                            )}
-                          </TableCell>
-                          <TableCell>{item.employment_type || "—"}</TableCell>
-                          <TableCell>
-                      <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              item.status === "Active"
-                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                                  : item.status === "On Leave"
-                                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
-                                      : item.status === "Inactive"
-                                          ? "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                                          : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                          }`}
+                      <TableRow
+                        key={item.teacher_id}
+                        className="bg-white dark:border-gray-700 dark:bg-gray-800"
                       >
-                        {item.status || "Active"}
-                      </span>
-                          </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {item.teacher_code || "—"}
+                        </TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">
+                          {displayFullName || "—"}
+                        </TableCell>
+                        <TableCell>{item.email || "—"}</TableCell>
+                        <TableCell>
+                          {!isDeptValid ? (
+                            <Tooltip
+                              className={
+                                "border-2 border-gray-900 bg-white text-gray-500 dark:border-white dark:bg-gray-800 dark:text-gray-300"
+                              }
+                              placement={"right"}
+                              content="Invalid department code or department missing"
+                              style={isDarkMode ? "light" : "dark"}
+                            >
+                              <span className="cursor-pointer font-semibold text-red-600 dark:text-red-400">
+                                {item.department || "—"}
+                              </span>
+                            </Tooltip>
+                          ) : (
+                            item.department || "—"
+                          )}
+                        </TableCell>
+                        <TableCell>{item.employment_type || "—"}</TableCell>
+                        <TableCell>
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                              item.status === "Active"
+                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                                : item.status === "On Leave"
+                                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+                                  : item.status === "Inactive"
+                                    ? "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                                    : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+                            }`}
+                          >
+                            {item.status || "Active"}
+                          </span>
+                        </TableCell>
 
-                          <TableCell className="max-w-[220px]">
-                            <div className="relative">
-                              <div className="h-12 overflow-y-auto pr-1 pb-4 text-xs text-gray-700 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-400 [mask-image:linear-gradient(to_bottom,black_60%,transparent_100%)] dark:text-gray-300 dark:scrollbar-thumb-white">
-                                {renderAvailability(item)}
-                              </div>
+                        <TableCell className="max-w-[220px]">
+                          <div className="relative">
+                            <div className="h-12 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto [mask-image:linear-gradient(to_bottom,black_60%,transparent_100%)] pr-1 pb-4 text-xs text-gray-700 dark:scrollbar-thumb-white dark:text-gray-300">
+                              {renderAvailability(item)}
                             </div>
-                          </TableCell>
+                          </div>
+                        </TableCell>
 
-                          <TableCell className="flex items-center gap-3">
-                            {isArchived ? (
-                                <a
-                                    onClick={() => openUnarchiveConfirmation(item)}
-                                    className="flex cursor-pointer items-center gap-1 font-medium text-emerald-600 hover:underline dark:text-emerald-500"
-                                >
-                                  <HiRefresh className="h-4 w-4" />
-                                  Unarchive
-                                </a>
-                            ) : (
-                                <a
-                                    onClick={() => loadEditData(item.teacher_id)}
-                                    className="cursor-pointer font-medium text-primary-600 hover:underline dark:text-primary-500"
-                                >
-                                  Edit
-                                </a>
-                            )}
-                          </TableCell>
-                        </TableRow>
+                        <TableCell className="flex items-center gap-3">
+                          {isArchived ? (
+                            <a
+                              onClick={() => openUnarchiveConfirmation(item)}
+                              className="flex cursor-pointer items-center gap-1 font-medium text-emerald-600 hover:underline dark:text-emerald-500"
+                            >
+                              <HiRefresh className="h-4 w-4" />
+                              Unarchive
+                            </a>
+                          ) : (
+                            <a
+                              onClick={() => loadEditData(item.teacher_id)}
+                              className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
+                            >
+                              Edit
+                            </a>
+                          )}
+                        </TableCell>
+                      </TableRow>
                     );
                   })
               ) : isLoading ? (
