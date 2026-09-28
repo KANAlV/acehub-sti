@@ -157,8 +157,11 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
         className={`fixed top-17 bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent border-r border-gray-200 bg-gray-200 shadow-lg shadow-gray-400/60 transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
         aria-label="Sidebar"
       >
+        {/* Navigation Items (Stretches to fill remaining vertical space) */}
         <SidebarItems className="flex flex-1 flex-col justify-between">
+          {/* Main Top Navigation */}
           <SidebarItemGroup>
+            {/* Mobile Sidebar Toggle */}
             <div className="w-full md:hidden">
               {!collapsed ? (
                 <Button
@@ -188,17 +191,17 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
               )}
             </div>
 
-            {/* Sidebar navigation items rendered based on permissions */}
+            {/* Sidebar Items */}
             {!collapsed ? (
               <>
                 <Button
                   outline
                   color="alternative"
                   onClick={() => router.push("/dashboard")}
-                  className="w-full cursor-pointer justify-start hover:bg-gray-500/20"
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20`}
                 >
                   <HiChartPie className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">Dashboard</span>
+                  {!collapsed && <span className="ml-2">Dashboard</span>}
                 </Button>
 
                 <Button
@@ -208,17 +211,17 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.personal_schedule ? "" : "hidden"}`}
                 >
                   <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">Personal Info</span>
+                  {!collapsed && <span className="ml-2">Personal Info</span>}
                 </Button>
 
                 <Button
                   outline
                   color="alternative"
-                  onClick={() => router.push(`/booking`)}
+                  onClick={() => router.push(`/room_reservation`)}
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
                 >
                   <MdOutlineEditCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">Booking</span>
+                  {!collapsed && <span className="ml-2">Room Reservation</span>}
                 </Button>
 
                 <Button
@@ -228,40 +231,57 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.schedules ? "" : "hidden"}`}
                 >
                   <HiCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">Schedules</span>
+                  {!collapsed && <span className="ml-2">Schedules</span>}
                 </Button>
 
-                <Button
+                <Button //Dropdown Courses
                   outline
                   color="alternative"
                   onClick={() => setDropdownCourses(!dropdownCourses)}
-                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.courses ? "" : "hidden"}`}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""} ${permissions?.courses ? "" : "hidden"}`}
                 >
                   <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <div className="ml-2 flex w-full items-center justify-between">
-                    <span>Courses</span>
-                    {dropdownCourses ? <HiChevronUp className="h-4 w-4" /> : <HiChevronDown className="h-4 w-4" />}
-                  </div>
+                  {!collapsed && (
+                    <div className="ml-2 flex w-full items-center justify-between">
+                      <span>Courses</span>
+                      {dropdownCourses ? (
+                        <HiChevronUp className="h-4 w-4" />
+                      ) : (
+                        <HiChevronDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  )}
                 </Button>
 
-                <div className={`flex flex-col ${dropdownCourses ? "block" : "hidden"} ml-4 justify-start`}>
+                <div // Dropdown Courses Container
+                  className={`flex flex-col ${dropdownCourses ? "block" : "hidden"} ${
+                    collapsed
+                      ? "justify-center border-y-1 border-gray-200 dark:border-gray-700"
+                      : "ml-4 justify-start"
+                  } `}
+                >
                   <Button
                     outline
                     color="alternative"
                     onClick={() => router.push("/courses/shs")}
-                    className="w-full cursor-pointer justify-start hover:bg-gray-500/20"
+                    className={`w-full cursor-pointer hover:bg-gray-500/20 ${
+                      collapsed ? "justify-center p-2" : "justify-start"
+                    }`}
                   >
                     <HiMiniAcademicCap className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                    <span className="ml-2">SHS</span>
+                    {!collapsed && <span className="ml-2">SHS</span>}
                   </Button>
+
                   <Button
                     outline
                     color="alternative"
                     onClick={() => router.push("/courses/tertiary")}
-                    className="w-full cursor-pointer justify-start hover:bg-gray-500/20"
+                    className={`w-full cursor-pointer hover:bg-gray-500/20 ${
+                      collapsed ? "justify-center p-2" : "justify-start"
+                    }`}
                   >
                     <HiMiniBuildingLibrary className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                    <span className="ml-2">Tertiary</span>
+                    {!collapsed && <span className="ml-2">Tertiary</span>}
                   </Button>
                 </div>
 
@@ -272,7 +292,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.rooms ? "" : "hidden"}`}
                 >
                   <HiMiniBuildingOffice className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">Rooms</span>
+                  {!collapsed && <span className="ml-2">Rooms</span>}
                 </Button>
 
                 <Button
@@ -282,7 +302,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.subjects ? "" : "hidden"}`}
                 >
                   <HiBookOpen className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">Subjects</span>
+                  {!collapsed && <span className="ml-2">Subjects</span>}
                 </Button>
 
                 <Button
@@ -292,7 +312,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.teachers ? "" : "hidden"}`}
                 >
                   <HiUsers className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">Teachers</span>
+                  {!collapsed && <span className="ml-2">Teachers</span>}
                 </Button>
 
                 <Button
@@ -302,7 +322,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.maq ? "" : "hidden"}`}
                 >
                   <HiDocumentCheck className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">MAQ</span>
+                  {!collapsed && <span className="ml-2">MAQ</span>}
                 </Button>
 
                 <Button
@@ -312,64 +332,289 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.fcce ? "" : "hidden"}`}
                 >
                   <HiClipboardDocument className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  <span className="ml-2">FCCE</span>
+                  {!collapsed && <span className="ml-2">FCCE</span>}
                 </Button>
               </>
             ) : (
-              /* Collapsed View Shortcuts */
+              /** Collapsed */
               <>
                 <Tooltip content={"Dashboard"} placement={"right"}>
-                  <Button outline color="alternative" onClick={() => router.push("/dashboard")} className="w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20">
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/dashboard")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                  >
                     <HiChartPie className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"Personal Info"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push(`/user`)}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.personal_schedule ? "" : "hidden"}`}
+                  >
+                    <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"Room Reservation"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push(`/room_reservation`)}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
+                  >
+                    <MdOutlineEditCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"Schedules"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/schedules")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.schedules ? "" : "hidden"}`}
+                  >
+                    <HiCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"Courses"} placement={"right"}>
+                  <Button //Dropdown Courses
+                    outline
+                    color="alternative"
+                    onClick={() => setDropdownCourses(!dropdownCourses)}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""} ${permissions?.courses ? "" : "hidden"}`}
+                  >
+                    <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                    {!collapsed && (
+                      <div className="ml-2 flex w-full items-center justify-between">
+                        <span>Courses</span>
+                        {dropdownCourses ? (
+                          <HiChevronUp className="h-4 w-4" />
+                        ) : (
+                          <HiChevronDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    )}
+                  </Button>
+                </Tooltip>
+
+                <div // Dropdown Courses Container
+                  className={`flex flex-col ${dropdownCourses ? "block" : "hidden"} ${
+                    collapsed
+                      ? "justify-center border-y-1 border-gray-200 dark:border-gray-700"
+                      : "ml-4 justify-start"
+                  } `}
+                >
+                  <Tooltip content={"SHS"} placement={"right"}>
+                    <Button
+                      outline
+                      color="alternative"
+                      onClick={() => router.push("/courses/shs")}
+                      className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                    >
+                      <HiMiniAcademicCap className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                      {!collapsed && <span className="ml-2">SHS</span>}
+                    </Button>
+                  </Tooltip>
+
+                  <Tooltip content={"Tertiary"} placement={"right"}>
+                    <Button
+                      outline
+                      color="alternative"
+                      onClick={() => router.push("/courses/tertiary")}
+                      className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                    >
+                      <HiMiniBuildingLibrary className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                    </Button>
+                  </Tooltip>
+                </div>
+
+                <Tooltip content={"Rooms"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/rooms")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.rooms ? "" : "hidden"}`}
+                  >
+                    <HiMiniBuildingOffice className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"Subjects"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/subjects")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.subjects ? "" : "hidden"}`}
+                  >
+                    <HiBookOpen className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"Teachers"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/teachers")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.teachers ? "" : "hidden"}`}
+                  >
+                    <HiUsers className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"MAQ"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/maq")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.maq ? "" : "hidden"}`}
+                  >
+                    <HiDocumentCheck className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"FCCE"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/fcce")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.fcce ? "" : "hidden"}`}
+                  >
+                    <HiClipboardDocument className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                   </Button>
                 </Tooltip>
               </>
             )}
           </SidebarItemGroup>
 
+          {/* Middle Group */}
           <SidebarItemGroup>
-            <Button
-              outline
-              color="alternative"
-              onClick={() => router.push("/help")}
-              className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.help ? "" : "hidden"}`}
-            >
-              <HiQuestionMarkCircle className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-              {!collapsed && <span className="ml-2">Help</span>}
-            </Button>
-            <Button
-              outline
-              color="alternative"
-              onClick={() => router.push("/configurations")}
-              className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
-            >
-              <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-              {!collapsed && <span className="ml-2">Configurations</span>}
-            </Button>
+            {!collapsed ? (
+              <>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/help")}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.help ? "" : "hidden"}`}
+                >
+                  <HiQuestionMarkCircle className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  {!collapsed && <span className="ml-2">Help</span>}
+                </Button>
+
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => router.push("/configurations")}
+                  className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
+                >
+                  <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  {!collapsed && <span className="ml-2">Configurations</span>}
+                </Button>
+              </>
+            ) : (
+              /** Collapsed View */
+              <>
+                <Tooltip content={"Help"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/help")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.help ? "" : "hidden"}`}
+                  >
+                    <HiQuestionMarkCircle className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+
+                <Tooltip content={"Configurations"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => router.push("/configurations")}
+                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
+                  >
+                    <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                  </Button>
+                </Tooltip>
+              </>
+            )}
           </SidebarItemGroup>
 
+          {/* Bottom Group */}
           <SidebarItemGroup>
-            <div className="flex w-full justify-center border-b border-gray-200 pb-4 dark:border-gray-700">
-              <Image src={"/sti_logo.png"} alt={"STI Alabang Logo"} width={collapsed ? 40 : 60} height={collapsed ? 40 : 60} />
-            </div>
-            <Button
-              outline
-              color="alternative"
-              onClick={() => setCollapsed(!collapsed)}
-              className="hidden w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20 md:flex"
-            >
-              {!collapsed ? (
-                <>
-                  <TbLayoutSidebarLeftCollapse className="h-6 w-6 shrink-0" />
-                  <span className="ml-2">Collapse Sidebar</span>
-                </>
-              ) : (
-                <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
-              )}
-            </Button>
+            {!collapsed ? (
+              <div
+                className={`flex w-full justify-center border-b border-gray-200 pb-4 dark:border-gray-700`}
+              >
+                <Image
+                  src={"/sti_logo.png"}
+                  alt={"STI Alabang Logo"}
+                  width={60}
+                  height={60}
+                />
+              </div>
+            ) : (
+              <div
+                className={`w-full border-b border-gray-200 pb-4 dark:border-gray-700`}
+              >
+                <Image
+                  src={"/sti_logo.png"}
+                  alt={"STI Alabang Logo"}
+                  width={40}
+                  height={40}
+                />
+              </div>
+            )}
+
+            {/* PC Sidebar Toggle */}
+            {!collapsed ? (
+              <>
+                <Button
+                  outline
+                  color="alternative"
+                  onClick={() => setCollapsed(!collapsed)}
+                  className={`hidden w-full cursor-pointer justify-center text-gray-500 hover:bg-gray-500/20 md:flex`}
+                >
+                  {!collapsed ? (
+                    <>
+                      <TbLayoutSidebarLeftCollapse className="h-6 w-6 shrink-0" />
+                      <span className="ml-2">Collapse Sidebar</span>
+                    </>
+                  ) : (
+                    <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
+                  )}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Tooltip content={"Expand Sidebar"} placement={"right"}>
+                  <Button
+                    outline
+                    color="alternative"
+                    onClick={() => setCollapsed(!collapsed)}
+                    className={`hidden w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 md:block`}
+                  >
+                    <TbLayoutSidebarLeftExpand className="h-6 w-6 shrink-0" />
+                  </Button>
+                </Tooltip>
+              </>
+            )}
           </SidebarItemGroup>
         </SidebarItems>
       </Sidebar>
+
+      {/* Mobile Sidebar On-Click Outside */}
+      <div
+        className={`fixed top-[0px] bottom-0 left-0 z-10 h-full w-full ${collapsed ? "hidden md:hidden" : "md:hidden"} `}
+        onClick={() => setCollapsed(true)}
+      />
+
+      {/* Mobile Sidebar Spacer */}
+      <div className={"w-12 md:hidden"} />
     </>
   );
 }
