@@ -948,7 +948,7 @@ export default function FcceManagement() {
         </div>
 
         <div className="my-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-          <div className="relative w-full md:w-64">
+          <div className="relative mb-2 w-full md:w-64">
             <TextInput
               id="search-fcce"
               type="text"
@@ -970,12 +970,12 @@ export default function FcceManagement() {
 
           <div className="flex flex-wrap items-center gap-3">
             {/* Academic Year / Semester Dropdown Filter */}
-            <div className="w-48">
+            <div className="w-full md:w-48">
               <Select
                 id="ay-sem-filter"
                 value={selectedAySem}
                 onChange={handleAySemChange}
-                className="[&_select]:max-h-48 [&_select]:overflow-y-auto"
+                className="w-full md:w-48 [&_select]:max-h-48 [&_select]:overflow-y-auto"
               >
                 <option value="ALL">All Academic Years</option>
                 {academicYearList.map((item) => (
@@ -1024,7 +1024,7 @@ export default function FcceManagement() {
             )}
 
             {/* Archive View Selection Dropdown */}
-            <div className="w-40">
+            <div className="w-full md:w-40">
               <Select
                 id="archive-filter"
                 value={archiveFilter}
@@ -1038,7 +1038,7 @@ export default function FcceManagement() {
 
             <Button
               color="yellow"
-              className="whitespace-nowrap"
+              className="w-full md:w-48 whitespace-nowrap"
               onClick={() => setOpenArchiveAllModal(true)}
             >
               <HiOutlineArchive className="mr-2 h-4 w-4" />
@@ -1046,7 +1046,7 @@ export default function FcceManagement() {
             </Button>
 
             <Button
-              className="whitespace-nowrap"
+              className="w-full whitespace-nowrap md:w-48"
               onClick={() => setOpenAddModal(true)}
             >
               <FaPlus className="mr-2" />
@@ -1258,19 +1258,19 @@ export default function FcceManagement() {
                   >
                     {searchTerm
                       ? `No ${
-                        viewMode === "UNMATCHED" ? "unmatched " : ""
-                      }records matching "${searchTerm}" found.`
+                          viewMode === "UNMATCHED" ? "unmatched " : ""
+                        }records matching "${searchTerm}" found.`
                       : archiveFilter === "ARCHIVED"
                         ? `No archived ${
-                          viewMode === "UNMATCHED" ? "unmatched " : ""
-                        }FCCE entries found.`
-                        : archiveFilter === "BOTH"
-                          ? `No ${
                             viewMode === "UNMATCHED" ? "unmatched " : ""
                           }FCCE entries found.`
+                        : archiveFilter === "BOTH"
+                          ? `No ${
+                              viewMode === "UNMATCHED" ? "unmatched " : ""
+                            }FCCE entries found.`
                           : `No active ${
-                            viewMode === "UNMATCHED" ? "unmatched " : ""
-                          }FCCE entries found.`}
+                              viewMode === "UNMATCHED" ? "unmatched " : ""
+                            }FCCE entries found.`}
                   </TableCell>
                 </TableRow>
               )}

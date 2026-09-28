@@ -778,6 +778,7 @@ export interface SyncSubjectAQInput {
   programCode: string;
   aqs: string[];
 }
+
 export interface SubjectAQClusterRecord {
   course_name: string;
   program_code: string;
@@ -789,6 +790,7 @@ export interface SubjectAQClusterRecord {
 export async function fetchSubjectsAQClusters(
   search: string | null = null,
   programCode: string | null = null,
+  aqFilter: string = "ALL",
   sortBy: string = "course_name",
   sortDir: string = "ASC",
   limit: number = 10,
@@ -801,6 +803,7 @@ export async function fetchSubjectsAQClusters(
       SELECT * FROM subjects_read_aq_clusters(
         ${search || null},
         ${programCode || null},
+        ${aqFilter},
         ${sortBy},
         ${sortDir},
         ${limit},
@@ -826,13 +829,15 @@ export async function fetchSubjectsAQClusters(
 export async function fetchSubjectsAQClustersCount(
   search: string | null = null,
   programCode: string | null = null,
+  aqFilter: string = "ALL"
 ) {
   try {
     const [result] = await sql<{ subjects_count_aq_clusters: number }[]>`
       SELECT subjects_count_aq_clusters(
-        ${search || null},
-        ${programCode || null}
-      );
+               ${search || null},
+               ${programCode || null},
+               ${aqFilter}
+             );
     `;
 
     return {

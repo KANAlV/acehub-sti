@@ -4,7 +4,12 @@ import { useMsal } from "@azure/msal-react";
 import { DarkThemeToggle, Spinner } from "flowbite-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { authorizeAndSyncUser, syncUserToDatabase } from "@/app/actions/user";
+import { authorizeAndSyncUser } from "@/app/actions/user";
+import {
+  seedConfiguration,
+  seedDepartments,
+  seedRoomTypes,
+} from "@/app/actions/system";
 import Image from "next/image";
 
 export default function LoginPage() {
@@ -28,10 +33,15 @@ export default function LoginPage() {
       try {
         setIsSyncing(true);
 
-        // Delegate domain/student checks, role check, and sync to Server Action
+        // 1. Delegate domain/student checks, role check, and sync to Server Action
         const result = await authorizeAndSyncUser(userEmail, userName);
 
         if (result.authorized) {
+          // 2. Seed initial default configurations safely upon first login/sync
+          await seedConfiguration();
+          await seedRoomTypes();
+          await seedDepartments();
+
           router.push("/dashboard");
         } else {
           router.push("/restricted_access");
@@ -64,7 +74,9 @@ export default function LoginPage() {
         <div className="flex flex-col items-center gap-4">
           <Spinner size="xl" aria-label="Authenticating..." />
           <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
-            {isSyncing ? "Syncing account details..." : "Authenticating..."}
+            {isSyncing
+              ? "Syncing account details & system..."
+              : "Authenticating..."}
           </p>
         </div>
       </div>
