@@ -857,6 +857,36 @@ export async function fetchSubjectsAQClustersCount(
   }
 }
 
+/* COUNT - FETCH SUBJECTS WITH NO AQ COUNT */
+export async function fetchSubjectsCountNoAQ(
+  search: string | null = null,
+  programCode: string | null = null
+) {
+  try {
+    const [result] = await sql<{ subjects_count_no_aq: number }[]>`
+      SELECT subjects_count_no_aq(
+        ${search || null},
+        ${programCode || null}
+      );
+    `;
+
+    return {
+      success: true,
+      count: result?.subjects_count_no_aq ?? 0,
+    };
+  } catch (error) {
+    console.error(
+      "Failed to fetch count for subjects with no AQ:",
+      error,
+    );
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count subjects with no AQ.",
+      count: 0,
+    };
+  }
+}
+
 /* SYNC SUBJECT AQ ENTRIES */
 export async function syncSubjectAQ(actor: string, input: SyncSubjectAQInput) {
   try {

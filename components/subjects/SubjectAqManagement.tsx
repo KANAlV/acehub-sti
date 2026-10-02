@@ -30,6 +30,7 @@ import {
   Badge,
   Tooltip,
   useThemeMode,
+  ToggleSwitch, // Imported ToggleSwitch from flowbite-react
 } from "flowbite-react";
 import {
   HiSearch,
@@ -55,8 +56,9 @@ import {
   MaqRecord,
   MaqClusterWithEntriesRecord,
   MaqClusterEntryItem,
-  SyncSubjectAQInput,
+  SyncSubjectAQInput, fetchSubjectsCountNoAQ,
 } from "@/app/actions/system";
+import {HiQuestionMarkCircle} from "react-icons/hi2";
 
 interface ProgramRecord {
   program_code: string;
@@ -84,6 +86,7 @@ export default function SubjectAqManagement() {
 
   // --- Data State ---
   const [subjectAqs, setSubjectAqs] = useState<SubjectAQClusterRecord[]>([]);
+  const [noAqCount, setNoAqCount] = useState(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPending, startTransition] = useTransition();
 
@@ -119,6 +122,9 @@ export default function SubjectAqManagement() {
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   const [aqSearchInput, setAqSearchInput] = useState<string>("");
   const [showAqDropdown, setShowAqDropdown] = useState<boolean>(false);
+
+  // --- No AQ Required Toggle State ---
+  const [noAqRequired, setNoAqRequired] = useState<boolean>(false);
 
   // --- Toast State & Timer Ref ---
   const [showToast, setShowToast] = useState<boolean>(false);
@@ -193,6 +199,10 @@ export default function SubjectAqManagement() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setSubjectAqs([]);
+    setNoAqCount(0);
+
+    const getNoAqCount = await fetchSubjectsCountNoAQ();
+    setNoAqCount(getNoAqCount.count);
 
     const programParam =
       selectedProgramFilter === "ALL" ? null : selectedProgramFilter;
@@ -322,6 +332,7 @@ export default function SubjectAqManagement() {
     setSelectedItems([]);
     setAqSearchInput("");
     setShowAqDropdown(false);
+    setNoAqRequired(false);
   };
 
   const handleOpenSync = async (record: SubjectAQClusterRecord) => {
@@ -329,42 +340,53 @@ export default function SubjectAqManagement() {
     setSelectedProgramCode(record.program_code);
 
     const rawAqList = record.aq_list || [];
-    const items: SelectedItem[] = [];
-    const processedAqs = new Set<string>();
 
-    const suggestions = await loadAqSuggestions(null);
-    const clusterNamesInRecord = record.cluster_names || [];
+    // Check if the record explicitly contains a null entry (No AQ Required)
+    const hasExplicitNull = rawAqList.includes("NULL");
 
-    suggestions.forEach((opt) => {
-      if (opt.type === "cluster") {
-        const clusterEntryNames = (opt.entries || [])
-          .map((e) => (typeof e === "string" ? e : e.aq))
-          .filter(Boolean);
+    if (hasExplicitNull) {
+      setNoAqRequired(true);
+      setSelectedItems([]);
+    } else {
+      setNoAqRequired(false);
+      const items: SelectedItem[] = [];
+      const processedAqs = new Set<string>();
 
-        const hasAllEntries =
-          clusterEntryNames.length > 0 &&
-          clusterEntryNames.every((entryAq) => rawAqList.includes(entryAq));
+      const suggestions = await loadAqSuggestions(null);
+      const clusterNamesInRecord = record.cluster_names || [];
 
-        const isExactSize = rawAqList.length === clusterEntryNames.length;
+      suggestions.forEach((opt) => {
+        if (opt.type === "cluster") {
+          const clusterEntryNames = (opt.entries || [])
+            .map((e) => (typeof e === "string" ? e : e.aq))
+            .filter(Boolean);
 
-        const matchesCluster =
-          (hasAllEntries && isExactSize) ||
-          clusterNamesInRecord.includes(opt.name);
+          const hasAllEntries =
+            clusterEntryNames.length > 0 &&
+            clusterEntryNames.every((entryAq) => rawAqList.includes(entryAq));
 
-        if (matchesCluster) {
-          items.push({ name: opt.name, type: "cluster" });
-          clusterEntryNames.forEach((aq) => processedAqs.add(aq));
+          const isExactSize = rawAqList.length === clusterEntryNames.length;
+
+          const matchesCluster =
+            (hasAllEntries && isExactSize) ||
+            clusterNamesInRecord.includes(opt.name);
+
+          if (matchesCluster) {
+            items.push({ name: opt.name, type: "cluster" });
+            clusterEntryNames.forEach((aq) => processedAqs.add(aq));
+          }
         }
-      }
-    });
+      });
 
-    rawAqList.forEach((aq) => {
-      if (!processedAqs.has(aq)) {
-        items.push({ name: aq, type: "maq" });
-      }
-    });
+      rawAqList.forEach((aq) => {
+        if (aq !== null && !processedAqs.has(aq)) {
+          items.push({ name: aq, type: "maq" });
+        }
+      });
 
-    setSelectedItems(items);
+      setSelectedItems(items);
+    }
+
     setAqSearchInput("");
     setShowAqDropdown(false);
     setOpenSyncModal(true);
@@ -376,9 +398,14 @@ export default function SubjectAqManagement() {
     opt.name.toLowerCase().includes(trimmedAqInput.toLowerCase()),
   );
 
-  const clusterOptions = filteredAqOptions.filter(
-    (opt) => opt.type === "cluster",
+  // Enforce single cluster limit in UI option filtering
+  const hasClusterSelected = selectedItems.some(
+    (item) => item.type === "cluster",
   );
+  const clusterOptions = filteredAqOptions.filter(
+    (opt) => opt.type === "cluster" && !hasClusterSelected,
+  );
+
   const selectedNamesSet = new Set(selectedItems.map((item) => item.name));
   const maqOptionsList = filteredAqOptions.filter(
     (opt) => opt.type === "maq" && !selectedNamesSet.has(opt.name),
@@ -399,6 +426,12 @@ export default function SubjectAqManagement() {
   };
 
   const handleSelectCluster = (clusterItem: SuggestionItem) => {
+    // Prevent adding more than one cluster
+    if (selectedItems.some((item) => item.type === "cluster")) {
+      triggerToast("Only one cluster can be selected at a time.", "warning");
+      return;
+    }
+
     if (!selectedItems.some((item) => item.name === clusterItem.name)) {
       setSelectedItems((prev) => [
         ...prev,
@@ -423,33 +456,39 @@ export default function SubjectAqManagement() {
       const actorEmail =
         activeAccount?.username || activeAccount?.name || "system_user";
 
-      // Flatten any selected clusters back into their underlying individual AQs for the payload
-      const expandedAqs: string[] = [];
+      // Explicitly type as (string | null>[] | null) or cast safely if your backend type requires it
+      let expandedAqs: (string | null)[] | null;
 
-      selectedItems.forEach((item) => {
-        if (item.type === "cluster") {
-          const foundCluster = aqOptions.find(
-            (opt) => opt.name === item.name && opt.type === "cluster",
-          );
-          if (foundCluster && foundCluster.entries) {
-            foundCluster.entries.forEach((entry) => {
-              const entryAq = typeof entry === "string" ? entry : entry.aq;
-              if (entryAq && !expandedAqs.includes(entryAq)) {
-                expandedAqs.push(entryAq);
-              }
-            });
+      if (noAqRequired) {
+        expandedAqs = [null]; // Submits [null] when toggle is active to indicate "AQ not required"
+      } else {
+        const collectedAqs: string[] = [];
+        selectedItems.forEach((item) => {
+          if (item.type === "cluster") {
+            const foundCluster = aqOptions.find(
+              (opt) => opt.name === item.name && opt.type === "cluster",
+            );
+            if (foundCluster && foundCluster.entries) {
+              foundCluster.entries.forEach((entry) => {
+                const entryAq = typeof entry === "string" ? entry : entry.aq;
+                if (entryAq && !collectedAqs.includes(entryAq)) {
+                  collectedAqs.push(entryAq);
+                }
+              });
+            }
+          } else {
+            if (!collectedAqs.includes(item.name)) {
+              collectedAqs.push(item.name);
+            }
           }
-        } else {
-          if (!expandedAqs.includes(item.name)) {
-            expandedAqs.push(item.name);
-          }
-        }
-      });
+        });
+        expandedAqs = collectedAqs;
+      }
 
       const payload: SyncSubjectAQInput = {
         courseName: selectedCourseName,
         programCode: selectedProgramCode,
-        aqs: expandedAqs, // Sends the fully expanded individual AQs to the backend
+        aqs: expandedAqs as never, // Type assertion used here specifically to satisfy SyncSubjectAQInput if its type definition expects string[] instead of (string | null)[]
       };
 
       const res = await syncSubjectAQ(actorEmail, payload);
@@ -487,6 +526,18 @@ export default function SubjectAqManagement() {
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {/* No Aq Warning */}
+          {noAqCount !== 0 && (
+            <Button
+              color={"light"}
+              className={"flex flex-wrap gap-2 border-transparent hover:border-black dark:hover:border-white"}
+              onClick={() => setAqFilterState("NO_AQ")}
+            >
+              <HiExclamation className={"h-8 w-8 text-yellow-400"} />
+              {noAqCount} Subject(s) have no set AQ
+            </Button>
+          )}
+
           {/* Program Filter Dropdown */}
           <div className="w-full sm:w-48">
             <Select
@@ -521,6 +572,7 @@ export default function SubjectAqManagement() {
             >
               <option value="ALL">All AQ Status</option>
               <option value="WITH_AQ">With AQ Assigned</option>
+              <option value="NO_AQ_REQUIRED">No AQ Required</option>
               <option value="NO_AQ">No AQ Assigned</option>
             </Select>
           </div>
@@ -608,7 +660,7 @@ export default function SubjectAqManagement() {
                 return (
                   <TableRow
                     key={`subject-aq-${index}`}
-                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                    className={`${entriesList.length == 0 ? "bg-yellow-300/20 dark:bg-yellow-700/20" : "bg-white dark:bg-gray-800"} dark:border-gray-700`}
                   >
                     <TableCell className="font-medium text-gray-900 dark:text-white">
                       {item.course_name}
@@ -625,20 +677,23 @@ export default function SubjectAqManagement() {
                     <TableCell className="max-w-[320px] truncate">
                       {entriesList.length > 0 ? (
                         <div className="max-w-[320px] truncate">
-                          {item.cluster_names &&
-                          item.cluster_names.length > 0 ? (
+                          {entriesList.length === 1 &&
+                          entriesList[0] === "NULL" ? (
+                            <span className="font-medium text-gray-600 dark:text-gray-300">
+                              No AQ Required
+                            </span>
+                          ) : item.cluster_names &&
+                            item.cluster_names.length > 0 ? (
                             <Tooltip
                               className={
                                 "border-2 border-gray-900 bg-white text-gray-500 dark:border-white dark:bg-gray-800 dark:text-gray-300"
                               }
-                              content={item.aq_list.map((entry) => {
+                              content={item.aq_list.map((entry, idx) => {
                                 const aqLabel =
-                                  typeof entry === "string" ? entry : entry;
-                                return (
-                                  <div key={item.cluster_names + " " + aqLabel}>
-                                    {aqLabel}
-                                  </div>
-                                );
+                                  entry === "NULL"
+                                    ? "No AQ Required"
+                                    : String(entry);
+                                return <div key={idx}>{aqLabel}</div>;
                               })}
                               style={isDarkMode ? "light" : "dark"}
                             >
@@ -648,8 +703,8 @@ export default function SubjectAqManagement() {
                           ) : (
                             item.aq_list.map((entry, i) => {
                               const aqLabel =
-                                typeof entry === "string"
-                                  ? entry
+                                entry === "NULL"
+                                  ? "No AQ Required"
                                   : String(entry);
                               return (
                                 <React.Fragment key={i}>
@@ -722,154 +777,190 @@ export default function SubjectAqManagement() {
               </div>
             </div>
 
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <Label>Academic Qualifications (AQ)</Label>
-              </div>
-
-              {/* AQ Suggestion Input */}
-              <div className="relative mb-2">
-                <TextInput
-                  placeholder="Type to search qualification or cluster..."
-                  value={aqSearchInput}
-                  onChange={handleAqInputChange}
-                  onFocus={() => {
-                    if (aqSearchInput.trim().length > 0) {
-                      setShowAqDropdown(true);
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  No AQ Required
+                </span>
+                <ToggleSwitch
+                  checked={noAqRequired}
+                  label=""
+                  onChange={(checked) => {
+                    setNoAqRequired(checked);
+                    if (checked) {
+                      setSelectedItems([]); // Clear selected items when toggled on
                     }
                   }}
-                  color="gray"
                 />
+              </div>
 
-                {/* Structured Dropdown Menu */}
-                {showAqDropdown && trimmedAqInput.length > 0 && (
-                  <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                    {filteredAqOptions.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-gray-400 dark:text-gray-500">
-                        No qualifications or clusters found.
-                      </div>
-                    ) : (
-                      <>
-                        {/* Clusters Section */}
-                        {clusterOptions.length > 0 && (
-                          <div>
-                            <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700 dark:text-gray-400">
-                              Clusters
+              {!noAqRequired && (
+                <>
+                  <div>
+                    <div className="mb-1 flex items-center justify-between">
+                      <Label>Academic Qualifications (AQ)</Label>
+                      <Tooltip
+                        style={isDarkMode ? "dark" : "light"}
+                        content={
+                          "Select and add AQ by searching and clicking on the reccomendations that appear. (Only one Cluster can be added.)"
+                        }
+                      >
+                        <HiQuestionMarkCircle
+                          className={"h-5 w-5 text-gray-400"}
+                        />
+                      </Tooltip>
+                    </div>
+
+                    {/* AQ Suggestion Input */}
+                    <div className="relative mb-2">
+                      <TextInput
+                        placeholder="Type to search qualification or cluster..."
+                        value={aqSearchInput}
+                        onChange={handleAqInputChange}
+                        onFocus={() => {
+                          if (aqSearchInput.trim().length > 0) {
+                            setShowAqDropdown(true);
+                          }
+                        }}
+                        color="gray"
+                      />
+
+                      {/* Structured Dropdown Menu */}
+                      {showAqDropdown && trimmedAqInput.length > 0 && (
+                        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                          {filteredAqOptions.length === 0 ? (
+                            <div className="p-4 text-center text-xs text-gray-400 dark:text-gray-500">
+                              No qualifications or clusters found.
                             </div>
-                            {clusterOptions.map((opt) => {
-                              const subEntries = opt.entries || [];
-                              const subEntriesLabels = subEntries
-                                .map((entry: MaqClusterEntryItem) =>
-                                  typeof entry === "string" ? entry : entry.aq,
-                                )
-                                .filter(Boolean);
-
-                              return (
-                                <div
-                                  key={opt.name}
-                                  className="dark:hover:bg-gray-750 cursor-pointer border-b border-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:text-black"
-                                  onClick={() => handleSelectCluster(opt)}
-                                >
-                                  <div className="flex items-center gap-2 font-medium">
-                                    <MdFolderCopy className="h-4 w-4 shrink-0 text-blue-500" />
-                                    <span>{opt.name}</span>
+                          ) : (
+                            <>
+                              {/* Clusters Section */}
+                              {clusterOptions.length > 0 && (
+                                <div>
+                                  <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700 dark:text-gray-400">
+                                    Clusters
                                   </div>
-                                  {subEntriesLabels.length > 0 && (
-                                    <div className="mt-1 ml-6 flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 dark:hover:text-black">
-                                      <span>└</span>
+                                  {clusterOptions.map((opt) => {
+                                    const subEntries = opt.entries || [];
+                                    const subEntriesLabels = subEntries
+                                      .map((entry: MaqClusterEntryItem) =>
+                                        typeof entry === "string"
+                                          ? entry
+                                          : entry.aq,
+                                      )
+                                      .filter(Boolean);
+
+                                    return (
+                                      <div
+                                        key={opt.name}
+                                        className="dark:hover:bg-gray-750 cursor-pointer border-b border-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:text-black"
+                                        onClick={() => handleSelectCluster(opt)}
+                                      >
+                                        <div className="flex items-center gap-2 font-medium">
+                                          <MdFolderCopy className="h-4 w-4 shrink-0 text-blue-500" />
+                                          <span>{opt.name}</span>
+                                        </div>
+                                        {subEntriesLabels.length > 0 && (
+                                          <div className="mt-1 ml-6 flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 dark:hover:text-black">
+                                            <span>└</span>
+                                            <span className="truncate">
+                                              {subEntriesLabels.join(", ")}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Individual Qualifications Section */}
+                              {maqOptionsList.length > 0 && (
+                                <div>
+                                  <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700 dark:text-gray-400">
+                                    Individual Qualifications
+                                  </div>
+                                  {maqOptionsList.map((opt) => (
+                                    <div
+                                      key={opt.name}
+                                      className="dark:hover:bg-gray-750 flex cursor-pointer items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-700 last:border-none hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:text-black"
+                                      onClick={() => handleSelectMaq(opt.name)}
+                                    >
+                                      <IoMdDocument className="h-4 w-4 shrink-0 text-gray-400" />
                                       <span className="truncate">
-                                        {subEntriesLabels.join(", ")}
+                                        {opt.name}
                                       </span>
                                     </div>
-                                  )}
+                                  ))}
                                 </div>
-                              );
-                            })}
-                          </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Selected AQ / Cluster Badges List */}
+                    <div className="flex min-h-[42px] flex-col gap-2 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 dark:border-gray-700">
+                        <span className="text-xs font-semibold text-gray-500 uppercase dark:text-gray-400">
+                          Selected Qualifications & Clusters
+                        </span>
+                        {selectedItems.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleClearAll}
+                            className="text-xs font-semibold text-red-500 transition-colors hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            Clear All
+                          </button>
                         )}
+                      </div>
 
-                        {/* Individual Qualifications Section */}
-                        {maqOptionsList.length > 0 && (
-                          <div>
-                            <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700 dark:text-gray-400">
-                              Individual Qualifications
-                            </div>
-                            {maqOptionsList.map((opt) => (
-                              <div
-                                key={opt.name}
-                                className="dark:hover:bg-gray-750 flex cursor-pointer items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-700 last:border-none hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:text-black"
-                                onClick={() => handleSelectMaq(opt.name)}
-                              >
-                                <IoMdDocument className="h-4 w-4 shrink-0 text-gray-400" />
-                                <span className="truncate">{opt.name}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Selected AQ / Cluster Badges List */}
-              <div className="flex min-h-[42px] flex-col gap-2 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 dark:border-gray-700">
-                  <span className="text-xs font-semibold text-gray-500 uppercase dark:text-gray-400">
-                    Selected Qualifications & Clusters
-                  </span>
-                  {selectedItems.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleClearAll}
-                      className="text-xs font-semibold text-red-500 transition-colors hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                    >
-                      Clear All
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {selectedItems.length === 0 ? (
-                    <span className="self-center py-1 text-xs text-gray-400 dark:text-gray-500">
-                      Type above to search and add academic qualifications or
-                      clusters...
-                    </span>
-                  ) : (
-                    selectedItems.map((item) => {
-                      const isCluster = item.type === "cluster";
-                      return (
-                        <Badge
-                          key={item.name}
-                          color={isCluster ? "blue" : "gray"}
-                          size="sm"
-                          className={
-                            isCluster
-                              ? "bg-blue-500 text-white dark:bg-blue-600"
-                              : ""
-                          }
-                        >
-                          <span className="inline-flex items-center gap-1.5 py-0.5">
-                            {isCluster ? (
-                              <MdFolderCopy className="h-3.5 w-3.5 shrink-0" />
-                            ) : (
-                              <IoMdDocument className="h-3.5 w-3.5 shrink-0" />
-                            )}
-                            <span>{item.name}</span>
-                            <HiX
-                              className="h-3.5 w-3.5 shrink-0 cursor-pointer hover:text-red-300"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveItem(item.name);
-                              }}
-                            />
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {selectedItems.length === 0 ? (
+                          <span className="self-center py-1 text-xs text-gray-400 dark:text-gray-500">
+                            Type above to search and add academic qualifications
+                            or clusters...
                           </span>
-                        </Badge>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
+                        ) : (
+                          selectedItems.map((item) => {
+                            const isCluster = item.type === "cluster";
+                            return (
+                              <Badge
+                                key={item.name}
+                                color={isCluster ? "blue" : "gray"}
+                                size="sm"
+                                className={
+                                  isCluster
+                                    ? "bg-blue-500 text-white dark:bg-blue-600 [&>span]:text-white"
+                                    : ""
+                                }
+                              >
+                                <span className="inline-flex items-center gap-1.5 py-0.5 text-white">
+                                  {isCluster ? (
+                                    <MdFolderCopy className="h-3.5 w-3.5 shrink-0 text-white" />
+                                  ) : (
+                                    <IoMdDocument className="h-3.5 w-3.5 shrink-0" />
+                                  )}
+                                  <span>{item.name}</span>
+                                  <HiX
+                                    className="h-3.5 w-3.5 shrink-0 cursor-pointer hover:text-red-300"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveItem(item.name);
+                                    }}
+                                  />
+                                </span>
+                              </Badge>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </ModalBody>
           <ModalFooter>
