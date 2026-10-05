@@ -972,7 +972,7 @@ export default function TeachersManagement() {
       {/* Header Bar */}
       <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
         <div className={"mb-2"}>
-          <h2 className="mb-1 text-lg font-bold">Faculty Management</h2>
+          <h2 className="mb-1 text-lg font-bold">Teachers Management</h2>
           <p className="text-gray-500">
             Manage instructors, departments, and employment status.
           </p>

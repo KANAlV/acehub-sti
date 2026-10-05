@@ -1129,6 +1129,571 @@ export async function archiveTeacher(actor: string, teacherId: string) {
   }
 }
 
+/**********************
+ * Pre-assignment Tab *
+ **********************/
+
+export interface PreassignmentTemplateRecord {
+  preassignment_name: string;
+  date_added: string;
+}
+
+/* CREATE */
+export async function createPreassignmentTemplate(preassignmentName: string) {
+  try {
+    await sql`
+      SELECT preassignment_template_create(${preassignmentName});
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to create preassignment template:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create preassignment template.",
+    };
+  }
+}
+
+/* READ */
+export async function fetchPreassignmentTemplates(
+    search: string | null = null,
+    sortBy: string = "preassignment_name",
+    sortDir: string = "ASC",
+    limit: number = 10,
+    page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<PreassignmentTemplateRecord[]>`
+      SELECT * FROM preassignment_template_read(
+          ${search || null},
+          ${sortBy},
+          ${sortDir},
+          ${limit},
+          ${offset}
+                    );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch preassignment templates:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch preassignment templates.",
+      data: [],
+    };
+  }
+}
+
+/* DELETE */
+export async function deletePreassignmentTemplate(preassignmentName: string) {
+  try {
+    await sql`
+      SELECT preassignment_template_delete(${preassignmentName});
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete preassignment template:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete preassignment template.",
+    };
+  }
+}
+
+/* COUNT */
+export async function fetchPreassignmentTemplatesCount(search: string | null = null) {
+  try {
+    const [result] = await sql<{ preassignment_template_count: number }[]>`
+      SELECT preassignment_template_count(${search || null});
+    `;
+
+    return {
+      success: true,
+      count: result?.preassignment_template_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch preassignment template count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count preassignment templates.",
+      count: 0,
+    };
+  }
+}
+
+/*************************
+ * TEACHER PRE-ASSIGNMENT *
+ *************************/
+
+export interface TeacherPreassignmentRecord {
+  preassignment_id: string;
+  preassignment_name: string;
+  teacher_id: string;
+  subject_id: string;
+  merge_lec_lab: boolean;
+  teacher_name?: string;
+  subject_name?: string;
+  department?: string;
+}
+
+export interface TeacherPreassignmentSummaryRecord {
+  teacher_id: string;
+  pscs_id: string;
+  email: string;
+  f_name: string;
+  m_name: string;
+  surname: string;
+  suffix: string;
+  full_name: string;
+  teacher_code: string;
+  department: string;
+  requirement_type: string;
+  employment_type: string;
+  status: string;
+  availability: never;
+  preferences: never;
+  created_at: string;
+  updated_at: string;
+  subjects_count: number;
+  total_load: number;
+}
+
+/* READ WITH PREASSIGNMENT METRICS */
+export async function fetchTeachersWithPreassignment(
+  preassignmentName: string | null = null,
+  search: string | null = null,
+  status: string = "All Active & On Leave",
+  department: string = "All Departments",
+  sortBy: string = "surname",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<TeacherPreassignmentSummaryRecord[]>`
+      SELECT * FROM teachers_read_with_preassignment(
+        ${preassignmentName || null},
+        ${search || null},
+        ${status},
+        ${department},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to fetch teachers with preassignment:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch teachers.",
+      data: [],
+    };
+  }
+}
+
+/* COUNT WITH PREASSIGNMENT FILTERS */
+export async function fetchTeachersCountWithPreassignment(
+  preassignmentName: string | null = null,
+  search: string | null = null,
+  status: string = "All Active & On Leave",
+  department: string = "All Departments"
+) {
+  try {
+    const [result] = await sql<{ teachers_count_with_preassignment: number }[]>`
+      SELECT teachers_count_with_preassignment(
+        ${preassignmentName || null},
+        ${search || null},
+        ${status},
+        ${department}
+      );
+    `;
+
+    return { success: true, count: result?.teachers_count_with_preassignment ?? 0 };
+  } catch (error) {
+    console.error("Failed to count teachers with preassignment:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count teachers.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE */
+export async function createTeacherPreassignment(
+  preassignmentName: string,
+  teacherId: string,
+  subjectId: string,
+  mergeLecLab: boolean = false
+) {
+  try {
+    await sql`
+      SELECT teacher_preassignment_create(
+        ${preassignmentName},
+        ${teacherId},
+        ${subjectId},
+        ${mergeLecLab}
+      );
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to create teacher preassignment:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create teacher preassignment.",
+    };
+  }
+}
+
+/* READ */
+export async function fetchTeacherPreassignments(
+  preassignmentName: string | null = null,
+  department: string = "ALL",
+  search: string | null = null,
+  sortBy: string = "preassignment_id",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<TeacherPreassignmentRecord[]>`
+      SELECT * FROM teacher_preassignment_read(
+        ${preassignmentName || null},
+        ${department},
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Failed to fetch teacher preassignments:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch teacher preassignments.",
+      data: [],
+    };
+  }
+}
+
+/* UPDATE */
+export async function updateTeacherPreassignment(
+  preassignmentId: string,
+  preassignmentName: string,
+  teacherId: string,
+  subjectId: string,
+  mergeLecLab: boolean
+) {
+  try {
+    await sql`
+      SELECT teacher_preassignment_update(
+        ${preassignmentId},
+        ${preassignmentName},
+        ${teacherId},
+        ${subjectId},
+        ${mergeLecLab}
+      );
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update teacher preassignment:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update teacher preassignment.",
+    };
+  }
+}
+
+/* DELETE */
+export async function deleteTeacherPreassignment(preassignmentId: string) {
+  try {
+    await sql`
+      SELECT teacher_preassignment_delete(${preassignmentId});
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete teacher preassignment:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete teacher preassignment.",
+    };
+  }
+}
+
+/* COUNT */
+export async function fetchTeacherPreassignmentsCount(
+  preassignmentName: string | null = null,
+  department: string = "ALL",
+  search: string | null = null
+) {
+  try {
+    const [result] = await sql<{ teacher_preassignment_count: number }[]>`
+      SELECT teacher_preassignment_count(
+        ${preassignmentName || null},
+        ${department},
+        ${search || null}
+      );
+    `;
+
+    return {
+      success: true,
+      count: result?.teacher_preassignment_count ?? 0,
+    };
+  } catch (error) {
+    console.error("Failed to fetch teacher preassignment count:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count teacher preassignments.",
+      count: 0,
+    };
+  }
+}
+
+/**************
+ * TEACHER AQ *
+ **************/
+
+// Define a type for safe JSON payloads
+export type JSONValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JSONValue[]
+  | { [key: string]: JSONValue };
+
+export interface AQRecord {
+  aq_id: string;
+  pscs_id: string;
+  aq: string;
+  contents: Record<string, JSONValue>;
+  approved: string;
+  created_at: string;
+}
+
+export interface TeacherWithAqRecord {
+  teacher_id: string;
+  pscs_id: string;
+  teacher_code: string;
+  full_name: string;
+  email: string;
+  department: string;
+  status: string;
+  aq_count: number;
+}
+
+/* FETCH TEACHERS WITH AQ COUNT */
+export async function fetchTeachersWithAq(
+  search: string | null = null,
+  status: string = "All Active & On Leave",
+  department: string = "All Departments",
+  sortBy: string = "surname",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<TeacherWithAqRecord[]>`
+      SELECT * FROM teachers_with_aq_read(
+        ${search || null},
+        ${status},
+        ${department},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+                    );
+    `;
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to fetch teachers with AQ:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch teachers.",
+      data: [],
+    };
+  }
+}
+
+/* COUNT TEACHERS WITH AQ FILTERS */
+export async function fetchTeachersWithAqCount(
+  search: string | null = null,
+  status: string = "All Active & On Leave",
+  department: string = "All Departments"
+) {
+  try {
+    const [result] = await sql<{ teachers_with_aq_count: number }[]>`
+      SELECT teachers_with_aq_count(
+               ${search || null},
+               ${status},
+               ${department}
+             );
+    `;
+
+    return { success: true, count: result?.teachers_with_aq_count ?? 0 };
+  } catch (error) {
+    console.error("Failed to count teachers with AQ:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count teachers.",
+      count: 0,
+    };
+  }
+}
+
+/* CREATE */
+export async function createTeacherAQ(
+  pscsId: string,
+  aq: string,
+  contents: Record<string, JSONValue> = {},
+  approved: string = "Pending"
+) {
+  try {
+    const [result] = await sql<{ teacher_aq_create: string }[]>`
+      SELECT teacher_aq_create(
+               ${pscsId},
+               ${aq},
+               ${sql.json(contents as unknown as JSONValue)},
+               ${approved}
+             );
+    `;
+    return { success: true, aq_id: result?.teacher_aq_create };
+  } catch (error) {
+    console.error("Failed to create teacher AQ record:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create teacher AQ record.",
+    };
+  }
+}
+
+/* READ */
+export async function fetchTeacherAQRecords(
+  search: string | null = null,
+  pscsId: string | null = null,
+  approved: string | null = null,
+  sortBy: string = "created_at",
+  sortDir: string = "DESC",
+  limit: number = 10,
+  page: number = 1
+) {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<AQRecord[]>`
+      SELECT * FROM teacher_aq_read(
+        ${search || null},
+        ${pscsId || null},
+        ${approved || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+                    );
+    `;
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to fetch teacher AQ records:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch teacher AQ records.",
+      data: [],
+    };
+  }
+}
+
+/* UPDATE */
+export async function updateTeacherAQ(
+  aqId: string,
+  pscsId: string,
+  aq: string,
+  contents: Record<string, JSONValue>,
+  approved: string
+) {
+  try {
+    await sql`
+      SELECT teacher_aq_update(
+               ${aqId},
+               ${pscsId},
+               ${aq},
+               ${sql.json(contents as unknown as JSONValue)},
+               ${approved}
+             );
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update teacher AQ record:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update teacher AQ record.",
+    };
+  }
+}
+
+/* DELETE */
+export async function deleteTeacherAQ(aqId: string) {
+  try {
+    await sql`
+      SELECT teacher_aq_delete(${aqId});
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete teacher AQ record:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete teacher AQ record.",
+    };
+  }
+}
+
+/* COUNT */
+export async function fetchTeacherAQCount(
+  search: string | null = null,
+  pscsId: string | null = null,
+  approved: string | null = null
+) {
+  try {
+    const [result] = await sql<{ teacher_aq_count: number }[]>`
+      SELECT teacher_aq_count(
+               ${search || null},
+               ${pscsId || null},
+               ${approved || null}
+             );
+    `;
+
+    return { success: true, count: result?.teacher_aq_count ?? 0 };
+  } catch (error) {
+    console.error("Failed to count teacher AQ records:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count teacher AQ records.",
+      count: 0,
+    };
+  }
+}
+
 /*******
  * MAQ *
  *******/

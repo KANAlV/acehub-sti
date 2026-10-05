@@ -25,6 +25,7 @@ This project was built using the following stack, libraries, and infrastructure:
 * **`@aws-sdk/client-s3`** (v3.1138.0) – Official AWS SDK v3 client for object storage integration
 * **ExcelJS** – Library used to generate and export schedule spreadsheets (.xlsx)
 * **FileSaver.js** – Client-side library used to trigger browser file downloads
+* **file-type** – Detects file type from magic bytes (used to infer ContentType on upload)
 
 ### **Package Manager**
 * **npm** – Node Package Manager (v12.0.2)
@@ -99,6 +100,14 @@ npm install flowbite flowbite-react
 
 ```bash
 npm install exceljs file-saver
+```
+
+---
+
+### File-Type
+
+```bash
+npm install file-type   
 ```
 
 ---
