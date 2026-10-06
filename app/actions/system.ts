@@ -1135,7 +1135,14 @@ export async function archiveTeacher(actor: string, teacherId: string) {
 
 export interface PreassignmentTemplateRecord {
   preassignment_name: string;
+  config: Record<string, unknown>;
   date_added: string;
+}
+/* FETCH BY ID */
+export interface CurriculumRecord {
+  curriculum_id: string;
+  curriculum_version: string;
+  created_at: string;
 }
 
 /* CREATE */
@@ -1151,6 +1158,21 @@ export async function createPreassignmentTemplate(preassignmentName: string) {
       success: false,
       error: (error as Error).message || "Failed to create preassignment template.",
     };
+  }
+}
+
+/* READ BY ID */
+export async function fetchCurriculumById(curriculumId: string) {
+  try {
+    const data = await sql<CurriculumRecord[]>`
+      SELECT * FROM curriculum_read_by_id(${curriculumId});
+    `;
+
+    return { success: true, data: data[0] || null };
+  } catch (error: unknown) {
+    const errorMessage =
+        error instanceof Error ? error.message : "Failed to fetch curriculum.";
+    return { success: false, error: errorMessage, data: null };
   }
 }
 
@@ -1236,7 +1258,6 @@ export interface TeacherPreassignmentRecord {
   teacher_id: string;
   subject_id: string;
   merge_lec_lab: boolean;
-  teacher_name?: string;
   subject_name?: string;
   department?: string;
 }
@@ -1357,40 +1378,28 @@ export async function createTeacherPreassignment(
 
 /* READ */
 export async function fetchTeacherPreassignments(
-  preassignmentName: string | null = null,
-  department: string = "ALL",
-  search: string | null = null,
-  sortBy: string = "preassignment_id",
-  sortDir: string = "ASC",
-  limit: number = 10,
-  page: number = 1
+  teacherId: string,
+  preassignmentName?: string | null
 ) {
   try {
-    const offset = limit > 0 ? (page - 1) * limit : 0;
-
     const data = await sql<TeacherPreassignmentRecord[]>`
       SELECT * FROM teacher_preassignment_read(
+        ${teacherId || null},
         ${preassignmentName || null},
-        ${department},
-        ${search || null},
-        ${sortBy},
-        ${sortDir},
-        ${limit},
-        ${offset}
-      );
+        'ALL',
+        null,
+        'preassignment_id',
+        'ASC',
+        100,
+        0
+                    );
     `;
 
-    return {
-      success: true,
-      data,
-    };
-  } catch (error) {
-    console.error("Failed to fetch teacher preassignments:", error);
-    return {
-      success: false,
-      error: (error as Error).message || "Failed to fetch teacher preassignments.",
-      data: [],
-    };
+    return { success: true, data };
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to fetch preassignments.";
+    return { success: false, error: errorMessage, data: [] };
   }
 }
 
@@ -1418,6 +1427,22 @@ export async function updateTeacherPreassignment(
     return {
       success: false,
       error: (error as Error).message || "Failed to update teacher preassignment.",
+    };
+  }
+}
+
+/* UPDATE CONFIG */
+export async function updateTeacherPreassignmentConfig(preassignment_name: string, config: string[]) {
+  try {
+    await sql`
+      SELECT preassignment_template_update_config(${preassignment_name}, ${config});
+    `;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update preassignment config:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update preassignment config.",
     };
   }
 }
