@@ -30,8 +30,15 @@ import {
   Badge,
   Tooltip,
   useThemeMode,
+  ToggleSwitch, // Imported ToggleSwitch from flowbite-react
 } from "flowbite-react";
-import { HiSearch, HiX, HiCheck, HiExclamation, HiPencil } from "react-icons/hi";
+import {
+  HiSearch,
+  HiX,
+  HiCheck,
+  HiExclamation,
+  HiPencil,
+} from "react-icons/hi";
 import { FaSortUp, FaSortDown, FaSync } from "react-icons/fa";
 import { MdFolderCopy } from "react-icons/md";
 import { IoMdDocument } from "react-icons/io";
@@ -49,8 +56,9 @@ import {
   MaqRecord,
   MaqClusterWithEntriesRecord,
   MaqClusterEntryItem,
-  SyncSubjectAQInput,
+  SyncSubjectAQInput, fetchSubjectsCountNoAQ,
 } from "@/app/actions/system";
+import {HiQuestionMarkCircle} from "react-icons/hi2";
 
 interface ProgramRecord {
   program_code: string;
@@ -63,6 +71,11 @@ interface SuggestionItem {
   entries: MaqClusterEntryItem[];
 }
 
+interface SelectedItem {
+  name: string;
+  type: "maq" | "cluster";
+}
+
 export default function SubjectAqManagement() {
   const { computedMode } = useThemeMode();
   const isDarkMode = computedMode === "dark";
@@ -73,6 +86,7 @@ export default function SubjectAqManagement() {
 
   // --- Data State ---
   const [subjectAqs, setSubjectAqs] = useState<SubjectAQClusterRecord[]>([]);
+  const [noAqCount, setNoAqCount] = useState(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPending, startTransition] = useTransition();
 
@@ -80,8 +94,14 @@ export default function SubjectAqManagement() {
   const [aqOptions, setAqOptions] = useState<SuggestionItem[]>([]);
 
   // --- Program Filter State ---
-  const [selectedProgramFilter, setSelectedProgramFilter] = useState<string>("ALL");
-  const [allProgramsFilterList, setAllProgramsFilterList] = useState<ProgramRecord[]>([]);
+  const [selectedProgramFilter, setSelectedProgramFilter] =
+    useState<string>("ALL");
+  const [allProgramsFilterList, setAllProgramsFilterList] = useState<
+    ProgramRecord[]
+  >([]);
+
+  // --- AQ Status Filter State ---
+  const [aqFilterState, setAqFilterState] = useState<string>("ALL");
 
   // --- Search & Pagination State ---
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -99,9 +119,12 @@ export default function SubjectAqManagement() {
   // --- Target Record / Form State for Sync & Badge Input ---
   const [selectedCourseName, setSelectedCourseName] = useState<string>("");
   const [selectedProgramCode, setSelectedProgramCode] = useState<string>("");
-  const [selectedEntries, setSelectedEntries] = useState<string[]>([]);
+  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   const [aqSearchInput, setAqSearchInput] = useState<string>("");
   const [showAqDropdown, setShowAqDropdown] = useState<boolean>(false);
+
+  // --- No AQ Required Toggle State ---
+  const [noAqRequired, setNoAqRequired] = useState<boolean>(false);
 
   // --- Toast State & Timer Ref ---
   const [showToast, setShowToast] = useState<boolean>(false);
@@ -176,19 +199,41 @@ export default function SubjectAqManagement() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setSubjectAqs([]);
+    setNoAqCount(0);
 
-    const programParam = selectedProgramFilter === "ALL" ? null : selectedProgramFilter;
+    const getNoAqCount = await fetchSubjectsCountNoAQ();
+    setNoAqCount(getNoAqCount.count);
+
+    const programParam =
+      selectedProgramFilter === "ALL" ? null : selectedProgramFilter;
 
     const [resData, countRes, progRes] = await Promise.all([
-      fetchSubjectsAQClusters(debouncedSearch, programParam, sortBy, sortDir, maxRow, currentPage),
-      fetchSubjectsAQClustersCount(debouncedSearch, programParam),
-      fetchPrograms ? fetchPrograms() : Promise.resolve({ success: false, data: [] }),
+      fetchSubjectsAQClusters(
+        debouncedSearch,
+        programParam,
+        aqFilterState,
+        sortBy,
+        sortDir,
+        maxRow,
+        currentPage,
+      ),
+      fetchSubjectsAQClustersCount(
+        debouncedSearch,
+        programParam,
+        aqFilterState,
+      ),
+      fetchPrograms
+        ? fetchPrograms()
+        : Promise.resolve({ success: false, data: [] }),
     ]);
 
     if (resData.success && resData.data) {
       setSubjectAqs(resData.data);
     } else {
-      triggerToast(resData.error || "Failed to load subjects with AQ and clusters.", "error");
+      triggerToast(
+        resData.error || "Failed to load subjects with AQ and clusters.",
+        "error",
+      );
     }
 
     if (countRes.success) {
@@ -200,7 +245,16 @@ export default function SubjectAqManagement() {
     }
 
     setIsLoading(false);
-  }, [debouncedSearch, selectedProgramFilter, sortBy, sortDir, maxRow, currentPage, triggerToast]);
+  }, [
+    debouncedSearch,
+    selectedProgramFilter,
+    aqFilterState,
+    sortBy,
+    sortDir,
+    maxRow,
+    currentPage,
+    triggerToast,
+  ]);
 
   // Load suggestions separately for modal dropdown
   const loadAqSuggestions = useCallback(async (queryFilter: string | null) => {
@@ -239,6 +293,7 @@ export default function SubjectAqManagement() {
     }
 
     setAqOptions(combinedSuggestions);
+    return combinedSuggestions;
   }, []);
 
   useEffect(() => {
@@ -255,6 +310,11 @@ export default function SubjectAqManagement() {
     }
   }, [aqSearchInput, openSyncModal, loadAqSuggestions]);
 
+  // Clear All Selected Items
+  const handleClearAll = () => {
+    setSelectedItems([]);
+  };
+
   // Sorting
   const handleSorting = (column: string) => {
     if (sortBy === column) {
@@ -269,30 +329,86 @@ export default function SubjectAqManagement() {
     setOpenSyncModal(false);
     setSelectedCourseName("");
     setSelectedProgramCode("");
-    setSelectedEntries([]);
+    setSelectedItems([]);
     setAqSearchInput("");
     setShowAqDropdown(false);
+    setNoAqRequired(false);
   };
 
-  const handleOpenSync = (record: SubjectAQClusterRecord) => {
+  const handleOpenSync = async (record: SubjectAQClusterRecord) => {
     setSelectedCourseName(record.course_name);
     setSelectedProgramCode(record.program_code);
-    setSelectedEntries(record.aq_list || []);
+
+    const rawAqList = record.aq_list || [];
+
+    // Check if the record explicitly contains a null entry (No AQ Required)
+    const hasExplicitNull = rawAqList.includes("NULL");
+
+    if (hasExplicitNull) {
+      setNoAqRequired(true);
+      setSelectedItems([]);
+    } else {
+      setNoAqRequired(false);
+      const items: SelectedItem[] = [];
+      const processedAqs = new Set<string>();
+
+      const suggestions = await loadAqSuggestions(null);
+      const clusterNamesInRecord = record.cluster_names || [];
+
+      suggestions.forEach((opt) => {
+        if (opt.type === "cluster") {
+          const clusterEntryNames = (opt.entries || [])
+            .map((e) => (typeof e === "string" ? e : e.aq))
+            .filter(Boolean);
+
+          const hasAllEntries =
+            clusterEntryNames.length > 0 &&
+            clusterEntryNames.every((entryAq) => rawAqList.includes(entryAq));
+
+          const isExactSize = rawAqList.length === clusterEntryNames.length;
+
+          const matchesCluster =
+            (hasAllEntries && isExactSize) ||
+            clusterNamesInRecord.includes(opt.name);
+
+          if (matchesCluster) {
+            items.push({ name: opt.name, type: "cluster" });
+            clusterEntryNames.forEach((aq) => processedAqs.add(aq));
+          }
+        }
+      });
+
+      rawAqList.forEach((aq) => {
+        if (aq !== null && !processedAqs.has(aq)) {
+          items.push({ name: aq, type: "maq" });
+        }
+      });
+
+      setSelectedItems(items);
+    }
+
     setAqSearchInput("");
     setShowAqDropdown(false);
     setOpenSyncModal(true);
-    void loadAqSuggestions(null);
   };
 
   // Filter AQ options for dropdown based on input and existing selections
   const trimmedAqInput = aqSearchInput.trim();
-  const filteredAqOptions = aqOptions.filter(
-    (opt) => opt.name.toLowerCase().includes(trimmedAqInput.toLowerCase())
+  const filteredAqOptions = aqOptions.filter((opt) =>
+    opt.name.toLowerCase().includes(trimmedAqInput.toLowerCase()),
   );
 
-  const clusterOptions = filteredAqOptions.filter((opt) => opt.type === "cluster");
+  // Enforce single cluster limit in UI option filtering
+  const hasClusterSelected = selectedItems.some(
+    (item) => item.type === "cluster",
+  );
+  const clusterOptions = filteredAqOptions.filter(
+    (opt) => opt.type === "cluster" && !hasClusterSelected,
+  );
+
+  const selectedNamesSet = new Set(selectedItems.map((item) => item.name));
   const maqOptionsList = filteredAqOptions.filter(
-    (opt) => opt.type === "maq" && !selectedEntries.includes(opt.name)
+    (opt) => opt.type === "maq" && !selectedNamesSet.has(opt.name),
   );
 
   const handleAqInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -302,62 +418,93 @@ export default function SubjectAqManagement() {
   };
 
   const handleSelectMaq = (name: string) => {
-    if (!selectedEntries.includes(name)) {
-      setSelectedEntries((prev) => [...prev, name]);
+    if (!selectedItems.some((item) => item.name === name)) {
+      setSelectedItems((prev) => [...prev, { name, type: "maq" }]);
     }
     setAqSearchInput("");
     setShowAqDropdown(false);
   };
 
   const handleSelectCluster = (clusterItem: SuggestionItem) => {
-    const clusterEntries = clusterItem.entries || [];
-    const newAqNames: string[] = [];
+    // Prevent adding more than one cluster
+    if (selectedItems.some((item) => item.type === "cluster")) {
+      triggerToast("Only one cluster can be selected at a time.", "warning");
+      return;
+    }
 
-    clusterEntries.forEach((entry: MaqClusterEntryItem) => {
-      const aqLabel = typeof entry === "string" ? entry : entry.aq;
-      if (aqLabel && !newAqNames.includes(aqLabel)) {
-        newAqNames.push(aqLabel);
-      }
-    });
-
-    setSelectedEntries((prev) => {
-      const combined = [...prev];
-      newAqNames.forEach((name) => {
-        if (!combined.includes(name)) {
-          combined.push(name);
-        }
-      });
-      return combined;
-    });
+    if (!selectedItems.some((item) => item.name === clusterItem.name)) {
+      setSelectedItems((prev) => [
+        ...prev,
+        { name: clusterItem.name, type: "cluster" },
+      ]);
+    }
 
     setAqSearchInput("");
     setShowAqDropdown(false);
   };
 
-  const handleRemoveAq = (aqToRemove: string) => {
-    setSelectedEntries((prev) => prev.filter((item) => item !== aqToRemove));
+  const handleRemoveItem = (nameToRemove: string) => {
+    setSelectedItems((prev) =>
+      prev.filter((item) => item.name !== nameToRemove),
+    );
   };
 
   const handleSyncSubmit = async () => {
     if (!selectedCourseName.trim() || !selectedProgramCode.trim()) return;
 
     startTransition(async () => {
-      const actorEmail = activeAccount?.username || activeAccount?.name || "system_user";
+      const actorEmail =
+        activeAccount?.username || activeAccount?.name || "system_user";
+
+      // Explicitly type as (string | null>[] | null) or cast safely if your backend type requires it
+      let expandedAqs: (string | null)[] | null;
+
+      if (noAqRequired) {
+        expandedAqs = [null]; // Submits [null] when toggle is active to indicate "AQ not required"
+      } else {
+        const collectedAqs: string[] = [];
+        selectedItems.forEach((item) => {
+          if (item.type === "cluster") {
+            const foundCluster = aqOptions.find(
+              (opt) => opt.name === item.name && opt.type === "cluster",
+            );
+            if (foundCluster && foundCluster.entries) {
+              foundCluster.entries.forEach((entry) => {
+                const entryAq = typeof entry === "string" ? entry : entry.aq;
+                if (entryAq && !collectedAqs.includes(entryAq)) {
+                  collectedAqs.push(entryAq);
+                }
+              });
+            }
+          } else {
+            if (!collectedAqs.includes(item.name)) {
+              collectedAqs.push(item.name);
+            }
+          }
+        });
+        expandedAqs = collectedAqs;
+      }
 
       const payload: SyncSubjectAQInput = {
         courseName: selectedCourseName,
         programCode: selectedProgramCode,
-        aqs: selectedEntries,
+        aqs: expandedAqs as never, // Type assertion used here specifically to satisfy SyncSubjectAQInput if its type definition expects string[] instead of (string | null)[]
       };
 
       const res = await syncSubjectAQ(actorEmail, payload);
 
       if (res.success) {
-        triggerToast("Subject Academic Qualifications successfully synced!", "success");
+        triggerToast(
+          "Subject Academic Qualifications successfully synced!",
+          "success",
+        );
         handleCloseModal();
         void loadData();
       } else {
-        triggerToast(res.error || "Failed to sync subject Academic Qualifications.", "error");
+        triggerToast(
+          res.error || "Failed to sync subject Academic Qualifications.",
+          "error",
+        );
       }
     });
   };
@@ -373,11 +520,24 @@ export default function SubjectAqManagement() {
             Subject Academic Qualification Management
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Manage and sync course academic qualifications (AQ) configuration entries.
+            Manage and sync course academic qualifications (AQ) configuration
+            entries.
           </p>
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {/* No Aq Warning */}
+          {noAqCount !== 0 && (
+            <Button
+              color={"light"}
+              className={"flex flex-wrap gap-2 border-transparent hover:border-black dark:hover:border-white"}
+              onClick={() => setAqFilterState("NO_AQ")}
+            >
+              <HiExclamation className={"h-8 w-8 text-yellow-400"} />
+              {noAqCount} Subject(s) have no set AQ
+            </Button>
+          )}
+
           {/* Program Filter Dropdown */}
           <div className="w-full sm:w-48">
             <Select
@@ -400,6 +560,23 @@ export default function SubjectAqManagement() {
             </Select>
           </div>
 
+          {/* AQ Status Filter Dropdown */}
+          <div className="w-full sm:w-44">
+            <Select
+              id="aq-filter-select"
+              value={aqFilterState}
+              onChange={(e) => {
+                setAqFilterState(e.target.value);
+                setCurrentPage(1);
+              }}
+            >
+              <option value="ALL">All AQ Status</option>
+              <option value="WITH_AQ">With AQ Assigned</option>
+              <option value="NO_AQ_REQUIRED">No AQ Required</option>
+              <option value="NO_AQ">No AQ Assigned</option>
+            </Select>
+          </div>
+
           <div className="w-full sm:w-64">
             <TextInput
               id="search-subject-aq"
@@ -419,7 +596,7 @@ export default function SubjectAqManagement() {
           <TableHead>
             <TableRow>
               <TableHeadCell
-                className="cursor-pointer select-none text-blue-500"
+                className="cursor-pointer text-blue-500 select-none"
                 onClick={() => handleSorting("course_name")}
               >
                 <div className="flex items-center gap-1">
@@ -433,7 +610,7 @@ export default function SubjectAqManagement() {
                 </div>
               </TableHeadCell>
               <TableHeadCell
-                className="cursor-pointer select-none text-blue-500"
+                className="cursor-pointer text-blue-500 select-none"
                 onClick={() => handleSorting("program_code")}
               >
                 <div className="flex items-center gap-1">
@@ -469,7 +646,9 @@ export default function SubjectAqManagement() {
                   colSpan={4}
                   className="py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                 >
-                  {searchTerm || selectedProgramFilter !== "ALL"
+                  {searchTerm ||
+                  selectedProgramFilter !== "ALL" ||
+                  aqFilterState !== "ALL"
                     ? `No matching subject Academic Qualification records found.`
                     : "No subject Academic Qualification entries found."}
                 </TableCell>
@@ -481,7 +660,7 @@ export default function SubjectAqManagement() {
                 return (
                   <TableRow
                     key={`subject-aq-${index}`}
-                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                    className={`${entriesList.length == 0 ? "bg-yellow-300/20 dark:bg-yellow-700/20" : "bg-white dark:bg-gray-800"} dark:border-gray-700`}
                   >
                     <TableCell className="font-medium text-gray-900 dark:text-white">
                       {item.course_name}
@@ -498,20 +677,23 @@ export default function SubjectAqManagement() {
                     <TableCell className="max-w-[320px] truncate">
                       {entriesList.length > 0 ? (
                         <div className="max-w-[320px] truncate">
-                          {item.cluster_names &&
-                          item.cluster_names.length > 0 ? (
+                          {entriesList.length === 1 &&
+                          entriesList[0] === "NULL" ? (
+                            <span className="font-medium text-gray-600 dark:text-gray-300">
+                              No AQ Required
+                            </span>
+                          ) : item.cluster_names &&
+                            item.cluster_names.length > 0 ? (
                             <Tooltip
                               className={
                                 "border-2 border-gray-900 bg-white text-gray-500 dark:border-white dark:bg-gray-800 dark:text-gray-300"
                               }
-                              content={item.aq_list.map((entry) => {
+                              content={item.aq_list.map((entry, idx) => {
                                 const aqLabel =
-                                  typeof entry === "string" ? entry : entry;
-                                return (
-                                  <div key={item.cluster_names + " " + aqLabel}>
-                                    {aqLabel}
-                                  </div>
-                                );
+                                  entry === "NULL"
+                                    ? "No AQ Required"
+                                    : String(entry);
+                                return <div key={idx}>{aqLabel}</div>;
                               })}
                               style={isDarkMode ? "light" : "dark"}
                             >
@@ -521,8 +703,8 @@ export default function SubjectAqManagement() {
                           ) : (
                             item.aq_list.map((entry, i) => {
                               const aqLabel =
-                                typeof entry === "string"
-                                  ? entry
+                                entry === "NULL"
+                                  ? "No AQ Required"
                                   : String(entry);
                               return (
                                 <React.Fragment key={i}>
@@ -543,7 +725,7 @@ export default function SubjectAqManagement() {
                       <Button
                         size="xs"
                         color="alternative"
-                        onClick={() => handleOpenSync(item)}
+                        onClick={() => void handleOpenSync(item)}
                         className="inline-flex items-center"
                       >
                         <HiPencil className="mr-1.5 h-3 w-3" />
@@ -575,10 +757,10 @@ export default function SubjectAqManagement() {
       {openSyncModal && (
         <Modal show={openSyncModal} onClose={handleCloseModal} size="md">
           <ModalHeader>Sync Academic Qualification Entries</ModalHeader>
-          <ModalBody className="space-y-4">
+          <ModalBody className="space-y-4 overflow-visible">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <span className="block text-xs font-semibold text-gray-500 uppercase dark:text-gray-400 mb-1">
+                <span className="mb-1 block text-xs font-semibold text-gray-500 uppercase dark:text-gray-400">
                   Course Name
                 </span>
                 <p className="text-base font-medium text-gray-900 dark:text-white">
@@ -586,7 +768,7 @@ export default function SubjectAqManagement() {
                 </p>
               </div>
               <div>
-                <span className="block text-xs font-semibold text-gray-500 uppercase dark:text-gray-400 mb-1">
+                <span className="mb-1 block text-xs font-semibold text-gray-500 uppercase dark:text-gray-400">
                   Program Code
                 </span>
                 <p className="text-base font-medium text-gray-900 dark:text-white">
@@ -595,128 +777,200 @@ export default function SubjectAqManagement() {
               </div>
             </div>
 
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <Label>Academic Qualifications (AQ)</Label>
-              </div>
-
-              {/* AQ Suggestion Input */}
-              <div className="relative mb-2">
-                <TextInput
-                  placeholder="Type to search qualification or cluster..."
-                  value={aqSearchInput}
-                  onChange={handleAqInputChange}
-                  onFocus={() => {
-                    if (aqSearchInput.trim().length > 0) {
-                      setShowAqDropdown(true);
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  No AQ Required
+                </span>
+                <ToggleSwitch
+                  checked={noAqRequired}
+                  label=""
+                  onChange={(checked) => {
+                    setNoAqRequired(checked);
+                    if (checked) {
+                      setSelectedItems([]); // Clear selected items when toggled on
                     }
                   }}
-                  color="gray"
                 />
+              </div>
 
-                {/* Structured Dropdown Menu */}
-                {showAqDropdown && trimmedAqInput.length > 0 && (
-                  <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                    {filteredAqOptions.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-gray-400 dark:text-gray-500">
-                        No qualifications or clusters found.
-                      </div>
-                    ) : (
-                      <>
-                        {/* Clusters Section */}
-                        {clusterOptions.length > 0 && (
-                          <div>
-                            <div className="bg-gray-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:bg-gray-700 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                              Clusters
+              {!noAqRequired && (
+                <>
+                  <div>
+                    <div className="mb-1 flex items-center justify-between">
+                      <Label>Academic Qualifications (AQ)</Label>
+                      <Tooltip
+                        style={isDarkMode ? "dark" : "light"}
+                        content={
+                          "Select and add AQ by searching and clicking on the reccomendations that appear. (Only one Cluster can be added.)"
+                        }
+                      >
+                        <HiQuestionMarkCircle
+                          className={"h-5 w-5 text-gray-400"}
+                        />
+                      </Tooltip>
+                    </div>
+
+                    {/* AQ Suggestion Input */}
+                    <div className="relative mb-2">
+                      <TextInput
+                        placeholder="Type to search qualification or cluster..."
+                        value={aqSearchInput}
+                        onChange={handleAqInputChange}
+                        onFocus={() => {
+                          if (aqSearchInput.trim().length > 0) {
+                            setShowAqDropdown(true);
+                          }
+                        }}
+                        color="gray"
+                      />
+
+                      {/* Structured Dropdown Menu */}
+                      {showAqDropdown && trimmedAqInput.length > 0 && (
+                        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                          {filteredAqOptions.length === 0 ? (
+                            <div className="p-4 text-center text-xs text-gray-400 dark:text-gray-500">
+                              No qualifications or clusters found.
                             </div>
-                            {clusterOptions.map((opt) => {
-                              const subEntries = opt.entries || [];
-                              const subEntriesLabels = subEntries
-                                .map((entry: MaqClusterEntryItem) =>
-                                  typeof entry === "string" ? entry : entry.aq
-                                )
-                                .filter(Boolean);
-
-                              return (
-                                <div
-                                  key={opt.name}
-                                  className="border-b border-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-750 dark:hover:text-black cursor-pointer"
-                                  onClick={() => handleSelectCluster(opt)}
-                                >
-                                  <div className="flex items-center gap-2 font-medium">
-                                    <MdFolderCopy className="h-4 w-4 shrink-0 text-blue-500" />
-                                    <span>{opt.name}</span>
+                          ) : (
+                            <>
+                              {/* Clusters Section */}
+                              {clusterOptions.length > 0 && (
+                                <div>
+                                  <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700 dark:text-gray-400">
+                                    Clusters
                                   </div>
-                                  {subEntriesLabels.length > 0 && (
-                                    <div className="ml-6 mt-1 text-xs text-gray-400 dark:text-gray-500 dark:hover:text-black flex items-center gap-1">
-                                      <span>└</span>
+                                  {clusterOptions.map((opt) => {
+                                    const subEntries = opt.entries || [];
+                                    const subEntriesLabels = subEntries
+                                      .map((entry: MaqClusterEntryItem) =>
+                                        typeof entry === "string"
+                                          ? entry
+                                          : entry.aq,
+                                      )
+                                      .filter(Boolean);
+
+                                    return (
+                                      <div
+                                        key={opt.name}
+                                        className="dark:hover:bg-gray-750 cursor-pointer border-b border-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:text-black"
+                                        onClick={() => handleSelectCluster(opt)}
+                                      >
+                                        <div className="flex items-center gap-2 font-medium">
+                                          <MdFolderCopy className="h-4 w-4 shrink-0 text-blue-500" />
+                                          <span>{opt.name}</span>
+                                        </div>
+                                        {subEntriesLabels.length > 0 && (
+                                          <div className="mt-1 ml-6 flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 dark:hover:text-black">
+                                            <span>└</span>
+                                            <span className="truncate">
+                                              {subEntriesLabels.join(", ")}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Individual Qualifications Section */}
+                              {maqOptionsList.length > 0 && (
+                                <div>
+                                  <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700 dark:text-gray-400">
+                                    Individual Qualifications
+                                  </div>
+                                  {maqOptionsList.map((opt) => (
+                                    <div
+                                      key={opt.name}
+                                      className="dark:hover:bg-gray-750 flex cursor-pointer items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-700 last:border-none hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:text-black"
+                                      onClick={() => handleSelectMaq(opt.name)}
+                                    >
+                                      <IoMdDocument className="h-4 w-4 shrink-0 text-gray-400" />
                                       <span className="truncate">
-                                        {subEntriesLabels.join(", ")}
+                                        {opt.name}
                                       </span>
                                     </div>
-                                  )}
+                                  ))}
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                        {/* Individual Qualifications Section */}
-                        {maqOptionsList.length > 0 && (
-                          <div>
-                            <div className="bg-gray-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:bg-gray-700 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
-                              Individual Qualifications
-                            </div>
-                            {maqOptionsList.map((opt) => (
-                              <div
-                                key={opt.name}
-                                className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-750 dark:hover:text-black cursor-pointer last:border-none"
-                                onClick={() => handleSelectMaq(opt.name)}
-                              >
-                                <IoMdDocument className="h-4 w-4 shrink-0 text-gray-400" />
-                                <span className="truncate">{opt.name}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Selected AQ Badges List */}
-              <div className="flex min-h-[42px] flex-wrap gap-1.5 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
-                {selectedEntries.length === 0 ? (
-                  <span className="self-center text-xs text-gray-400 dark:text-gray-500">
-                    Type above to search and add academic qualifications...
-                  </span>
-                ) : (
-                  selectedEntries.map((aqName) => {
-                    return (
-                      <Badge key={aqName} color="blue" size="sm">
-                        <span className="inline-flex items-center gap-1.5">
-                          <IoMdDocument className="h-3.5 w-3.5 shrink-0" />
-                          <span>{aqName}</span>
-                          <HiX
-                            className="h-3.5 w-3.5 shrink-0 cursor-pointer hover:text-red-500"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveAq(aqName);
-                            }}
-                          />
+                    {/* Selected AQ / Cluster Badges List */}
+                    <div className="flex min-h-[42px] flex-col gap-2 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 dark:border-gray-700">
+                        <span className="text-xs font-semibold text-gray-500 uppercase dark:text-gray-400">
+                          Selected Qualifications & Clusters
                         </span>
-                      </Badge>
-                    );
-                  })
-                )}
-              </div>
+                        {selectedItems.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleClearAll}
+                            className="text-xs font-semibold text-red-500 transition-colors hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            Clear All
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {selectedItems.length === 0 ? (
+                          <span className="self-center py-1 text-xs text-gray-400 dark:text-gray-500">
+                            Type above to search and add academic qualifications
+                            or clusters...
+                          </span>
+                        ) : (
+                          selectedItems.map((item) => {
+                            const isCluster = item.type === "cluster";
+                            return (
+                              <Badge
+                                key={item.name}
+                                color={isCluster ? "blue" : "gray"}
+                                size="sm"
+                                className={
+                                  isCluster
+                                    ? "bg-blue-500 text-white dark:bg-blue-600 [&>span]:text-white"
+                                    : ""
+                                }
+                              >
+                                <span className="inline-flex items-center gap-1.5 py-0.5 text-white">
+                                  {isCluster ? (
+                                    <MdFolderCopy className="h-3.5 w-3.5 shrink-0 text-white" />
+                                  ) : (
+                                    <IoMdDocument className="h-3.5 w-3.5 shrink-0" />
+                                  )}
+                                  <span>{item.name}</span>
+                                  <HiX
+                                    className="h-3.5 w-3.5 shrink-0 cursor-pointer hover:text-red-300"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveItem(item.name);
+                                    }}
+                                  />
+                                </span>
+                              </Badge>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </ModalBody>
           <ModalFooter>
             <Button
               onClick={handleSyncSubmit}
-              disabled={!selectedCourseName.trim() || !selectedProgramCode.trim() || isPending}
+              disabled={
+                !selectedCourseName.trim() ||
+                !selectedProgramCode.trim() ||
+                isPending
+              }
             >
               {isPending ? (
                 <Spinner size="sm" className="mr-2" />

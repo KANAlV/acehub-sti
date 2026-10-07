@@ -510,7 +510,7 @@ export default function MaqClusterPage() {
                             {entriesList.map((entry, i) => {
                               const aqLabel =
                                 typeof entry === "string" ? entry : entry.aq;
-                              return <> {aqLabel} </>;
+                              return <span key={aqLabel}> {aqLabel} </span>;
                             })}
                           </div>
                         </Tooltip>

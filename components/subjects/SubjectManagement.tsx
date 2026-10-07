@@ -139,6 +139,8 @@ export default function SubjectsManagement() {
   const [courseNameError, setCourseNameError] = useState<string>("");
   const [lecUnitsError, setLecUnitsError] = useState<string>("");
   const [labUnitsError, setLabUnitsError] = useState<string>("");
+  const [yearLevelError, setYearLevelError] = useState<string>("");
+  const [termError, setTermError] = useState<string>("");
 
   // --- Toast State & Timer Ref ---
   const [showToast, setShowToast] = useState<boolean>(false);
@@ -230,7 +232,6 @@ export default function SubjectsManagement() {
           setRoomTypeList([]);
         }
 
-        // Combine both SHS and Tertiary programs without level restrictions for the header filter dropdown
         const combinedPrograms: ProgramRecord[] = [
           ...(shsProgRes?.success && Array.isArray(shsProgRes.data)
             ? shsProgRes.data
@@ -262,6 +263,12 @@ export default function SubjectsManagement() {
   };
 
   const currentEduLevel = getEducationLevel(selectedYear);
+  const isTertiaryYear = [
+    "1st Year",
+    "2nd Year",
+    "3rd Year",
+    "4th Year",
+  ].includes(selectedYear);
 
   // Fetch Programs inside Modals based on selected Year Level
   useEffect(() => {
@@ -293,7 +300,7 @@ export default function SubjectsManagement() {
     loadPrograms();
   }, [currentEduLevel]);
 
-  // Sync year_term string
+  // Sync year_term string and evaluate term validation
   useEffect(() => {
     if (!selectedYear) {
       setFormData((prev) => ({ ...prev, year_term: null }));
@@ -303,13 +310,20 @@ export default function SubjectsManagement() {
     const isSHS = selectedYear === "Grade 11" || selectedYear === "Grade 12";
     if (isSHS) {
       setFormData((prev) => ({ ...prev, year_term: selectedYear }));
+      setTermError("");
     } else {
       const combined = selectedTerm
         ? `${selectedYear} - ${selectedTerm}`
         : selectedYear;
       setFormData((prev) => ({ ...prev, year_term: combined }));
+
+      if (isTertiaryYear && !selectedTerm) {
+        setTermError("Term is required for 1st - 4th Year levels.");
+      } else {
+        setTermError("");
+      }
     }
-  }, [selectedYear, selectedTerm]);
+  }, [selectedYear, selectedTerm, isTertiaryYear]);
 
   // Debounce search input
   useEffect(() => {
@@ -323,7 +337,7 @@ export default function SubjectsManagement() {
   // Load Table Data with immediate row flushing and loading state
   const loadData = useCallback(() => {
     setIsLoading(true);
-    setSubjects([]); // Flush rows immediately so table shows spinner state instantly
+    setSubjects([]);
 
     startTransition(async () => {
       const programCodeParam =
@@ -472,6 +486,8 @@ export default function SubjectsManagement() {
     setCourseNameError("");
     setLecUnitsError("");
     setLabUnitsError("");
+    setYearLevelError("");
+    setTermError("");
   };
 
   const handleOpenEdit = (subject: SubjectRecord) => {
@@ -515,7 +531,9 @@ export default function SubjectsManagement() {
       !formData.curriculum?.trim() ||
       !formData.program_code?.trim() ||
       !formData.course_code?.trim() ||
-      !formData.course_name?.trim()
+      !formData.course_name?.trim() ||
+      !selectedYear.trim() ||
+      (isTertiaryYear && !selectedTerm.trim())
     ) {
       return;
     }
@@ -537,7 +555,9 @@ export default function SubjectsManagement() {
       !formData.curriculum?.trim() ||
       !formData.program_code?.trim() ||
       !formData.course_code?.trim() ||
-      !formData.course_name?.trim()
+      !formData.course_name?.trim() ||
+      !selectedYear.trim() ||
+      (isTertiaryYear && !selectedTerm.trim())
     ) {
       return;
     }
@@ -573,12 +593,16 @@ export default function SubjectsManagement() {
     !formData.program_code?.trim() ||
     !formData.course_code?.trim() ||
     !formData.course_name?.trim() ||
+    !selectedYear.trim() ||
+    (isTertiaryYear && !selectedTerm.trim()) ||
     Boolean(curriculumError) ||
     Boolean(programError) ||
     Boolean(courseCodeError) ||
     Boolean(courseNameError) ||
     Boolean(lecUnitsError) ||
-    Boolean(labUnitsError);
+    Boolean(labUnitsError) ||
+    Boolean(yearLevelError) ||
+    Boolean(termError);
 
   const isSHS = selectedYear === "Grade 11" || selectedYear === "Grade 12";
 
@@ -668,7 +692,7 @@ export default function SubjectsManagement() {
             </div>
 
             <Button
-              className="whitespace-nowrap"
+              className="whitespace-nowrap w-full sm:w-auto"
               onClick={() => {
                 setFormData(initialFormState);
                 setSelectedYear("");
@@ -676,6 +700,8 @@ export default function SubjectsManagement() {
                 setIsNewCurriculum(false);
                 setCurriculumError("");
                 setProgramError("");
+                setYearLevelError("");
+                setTermError("");
                 setOpenAddModal(true);
               }}
             >
@@ -726,11 +752,11 @@ export default function SubjectsManagement() {
                   </div>
                 </TableHeadCell>
 
-                <TableHeadCell>Program</TableHeadCell>
+                <TableHeadCell>Program / Strand</TableHeadCell>
+                <TableHeadCell>Year / Term</TableHeadCell>
                 <TableHeadCell>Lec Units</TableHeadCell>
                 <TableHeadCell>Lab Units</TableHeadCell>
                 <TableHeadCell>Lab Type</TableHeadCell>
-                <TableHeadCell>Year / Term</TableHeadCell>
 
                 <TableHeadCell>
                   <span className="sr-only">Actions</span>
@@ -753,6 +779,7 @@ export default function SubjectsManagement() {
                     </TableCell>
                     <TableCell>{item.course_name}</TableCell>
                     <TableCell>{item.program_code || "—"}</TableCell>
+                    <TableCell>{item.year_term || "—"}</TableCell>
                     <TableCell>{item.lecture_units}</TableCell>
                     <TableCell>{item.lab_units}</TableCell>
                     <TableCell>
@@ -761,9 +788,8 @@ export default function SubjectsManagement() {
                       )?.value ||
                         item.lab_type_name ||
                         item.lab_type ||
-                        "—"}
+                        "No Laboratory"}
                     </TableCell>
-                    <TableCell>{item.year_term || "—"}</TableCell>
                     <TableCell>
                       <a
                         onClick={() => handleOpenEdit(item)}
@@ -825,16 +851,61 @@ export default function SubjectsManagement() {
         <ModalHeader>Add New Subject</ModalHeader>
         <ModalBody>
           <div className="flex flex-col gap-4">
-            {/* 1. Year Level & Term */}
+            {/* 1. Course Details with Limit Indicators */}
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="course_code">Course Code *</Label>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {(formData.course_code || "").length}/10
+                </span>
+              </div>
+              <TextInput
+                id="course_code"
+                placeholder="e.g. CS101"
+                value={formData.course_code || ""}
+                onChange={handleInputChange}
+                color={courseCodeError ? "failure" : "gray"}
+                maxLength={10}
+              />
+              {courseCodeError && (
+                <HelperText color="failure">{courseCodeError}</HelperText>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="course_name">Course Name *</Label>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {(formData.course_name || "").length}/200
+                </span>
+              </div>
+              <TextInput
+                id="course_name"
+                placeholder="e.g. Intro to Computing"
+                value={formData.course_name || ""}
+                onChange={handleInputChange}
+                color={courseNameError ? "failure" : "gray"}
+                maxLength={200}
+              />
+              {courseNameError && (
+                <HelperText color="failure">{courseNameError}</HelperText>
+              )}
+            </div>
+
+            {/* 2. Year Level (*) & Term (Required if 1st-4th Year) */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="year_level_select">Year Level</Label>
+                <Label htmlFor="year_level_select">Year Level *</Label>
                 <Select
                   id="year_level_select"
                   value={selectedYear}
+                  color={yearLevelError ? "failure" : "gray"}
                   onChange={(e) => {
                     const yr = e.target.value;
                     setSelectedYear(yr);
+                    setYearLevelError(
+                      yr.trim() === "" ? "Year Level is required." : "",
+                    );
                     if (yr === "Grade 11" || yr === "Grade 12") {
                       setSelectedTerm("");
                     }
@@ -849,15 +920,31 @@ export default function SubjectsManagement() {
                   <option value="3rd Year">3rd Year</option>
                   <option value="4th Year">4th Year</option>
                 </Select>
+                {yearLevelError && (
+                  <HelperText color="failure">{yearLevelError}</HelperText>
+                )}
               </div>
 
               <div>
-                <Label htmlFor="term_select">Term</Label>
+                <Label htmlFor="term_select">
+                  Term {isTertiaryYear ? "*" : ""}
+                </Label>
                 <Select
                   id="term_select"
                   value={selectedTerm}
                   disabled={isSHS || !selectedYear}
-                  onChange={(e) => setSelectedTerm(e.target.value)}
+                  color={termError ? "failure" : "gray"}
+                  onChange={(e) => {
+                    const trm = e.target.value;
+                    setSelectedTerm(trm);
+                    if (isTertiaryYear && !trm.trim()) {
+                      setTermError(
+                        "Term is required for 1st - 4th Year levels.",
+                      );
+                    } else {
+                      setTermError("");
+                    }
+                  }}
                 >
                   <option value="">Select Term...</option>
                   <option value="Term 1">Term 1</option>
@@ -865,10 +952,13 @@ export default function SubjectsManagement() {
                   <option value="Term 3">Term 3</option>
                   <option value="Term 4">Term 4</option>
                 </Select>
+                {termError && (
+                  <HelperText color="failure">{termError}</HelperText>
+                )}
               </div>
             </div>
 
-            {/* 2. Required Filtered Program */}
+            {/* 3. Required Filtered Program */}
             <div>
               <Label htmlFor="program_code">Program *</Label>
               <Select
@@ -896,7 +986,7 @@ export default function SubjectsManagement() {
               )}
             </div>
 
-            {/* 3. Required Curriculum Selection / Text Input Toggle */}
+            {/* 4. Required Curriculum Selection / Text Input Toggle */}
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <Label htmlFor="curriculum">Curriculum *</Label>
@@ -971,47 +1061,6 @@ export default function SubjectsManagement() {
                     <HelperText color="failure">{curriculumError}</HelperText>
                   )}
                 </div>
-              )}
-            </div>
-
-            {/* 4. Course Details with Limit Indicators */}
-            <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="course_code">Course Code *</Label>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {(formData.course_code || "").length}/10
-                </span>
-              </div>
-              <TextInput
-                id="course_code"
-                placeholder="e.g. CS101"
-                value={formData.course_code || ""}
-                onChange={handleInputChange}
-                color={courseCodeError ? "failure" : "gray"}
-                maxLength={10}
-              />
-              {courseCodeError && (
-                <HelperText color="failure">{courseCodeError}</HelperText>
-              )}
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="course_name">Course Name *</Label>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {(formData.course_name || "").length}/200
-                </span>
-              </div>
-              <TextInput
-                id="course_name"
-                placeholder="e.g. Intro to Computing"
-                value={formData.course_name || ""}
-                onChange={handleInputChange}
-                color={courseNameError ? "failure" : "gray"}
-                maxLength={200}
-              />
-              {courseNameError && (
-                <HelperText color="failure">{courseNameError}</HelperText>
               )}
             </div>
 
@@ -1090,16 +1139,61 @@ export default function SubjectsManagement() {
         <ModalHeader>Edit Subject</ModalHeader>
         <ModalBody>
           <div className="flex flex-col gap-4">
-            {/* 1. Year Level & Term */}
+            {/* Course Details with Limit Indicators */}
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="course_code">Course Code *</Label>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {(formData.course_code || "").length}/10
+                </span>
+              </div>
+              <TextInput
+                id="course_code"
+                placeholder="e.g. CS101"
+                value={formData.course_code || ""}
+                onChange={handleInputChange}
+                color={courseCodeError ? "failure" : "gray"}
+                maxLength={10}
+              />
+              {courseCodeError && (
+                <HelperText color="failure">{courseCodeError}</HelperText>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="course_name">Course Name *</Label>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {(formData.course_name || "").length}/200
+                </span>
+              </div>
+              <TextInput
+                id="course_name"
+                placeholder="e.g. Intro to Computing"
+                value={formData.course_name || ""}
+                onChange={handleInputChange}
+                color={courseNameError ? "failure" : "gray"}
+                maxLength={200}
+              />
+              {courseNameError && (
+                <HelperText color="failure">{courseNameError}</HelperText>
+              )}
+            </div>
+
+            {/* Year Level (*) & Term (Required if 1st-4th Year) */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="year_level_select_edit">Year Level</Label>
+                <Label htmlFor="year_level_select_edit">Year Level *</Label>
                 <Select
                   id="year_level_select_edit"
                   value={selectedYear}
+                  color={yearLevelError ? "failure" : "gray"}
                   onChange={(e) => {
                     const yr = e.target.value;
                     setSelectedYear(yr);
+                    setYearLevelError(
+                      yr.trim() === "" ? "Year Level is required." : "",
+                    );
                     if (yr === "Grade 11" || yr === "Grade 12") {
                       setSelectedTerm("");
                     }
@@ -1114,15 +1208,31 @@ export default function SubjectsManagement() {
                   <option value="3rd Year">3rd Year</option>
                   <option value="4th Year">4th Year</option>
                 </Select>
+                {yearLevelError && (
+                  <HelperText color="failure">{yearLevelError}</HelperText>
+                )}
               </div>
 
               <div>
-                <Label htmlFor="term_select_edit">Term</Label>
+                <Label htmlFor="term_select_edit">
+                  Term {isTertiaryYear ? "*" : ""}
+                </Label>
                 <Select
                   id="term_select_edit"
                   value={selectedTerm}
                   disabled={isSHS || !selectedYear}
-                  onChange={(e) => setSelectedTerm(e.target.value)}
+                  color={termError ? "failure" : "gray"}
+                  onChange={(e) => {
+                    const trm = e.target.value;
+                    setSelectedTerm(trm);
+                    if (isTertiaryYear && !trm.trim()) {
+                      setTermError(
+                        "Term is required for 1st - 4th Year levels.",
+                      );
+                    } else {
+                      setTermError("");
+                    }
+                  }}
                 >
                   <option value="">Select Term...</option>
                   <option value="Term 1">Term 1</option>
@@ -1130,10 +1240,13 @@ export default function SubjectsManagement() {
                   <option value="Term 3">Term 3</option>
                   <option value="Term 4">Term 4</option>
                 </Select>
+                {termError && (
+                  <HelperText color="failure">{termError}</HelperText>
+                )}
               </div>
             </div>
 
-            {/* 2. Required Filtered Program */}
+            {/* Required Filtered Program */}
             <div>
               <Label htmlFor="program_code">Program *</Label>
               <Select
@@ -1161,7 +1274,7 @@ export default function SubjectsManagement() {
               )}
             </div>
 
-            {/* 3. Required Curriculum Selection / Text Input Toggle */}
+            {/* Required Curriculum Selection / Text Input Toggle */}
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <Label htmlFor="curriculum">Curriculum *</Label>
@@ -1239,48 +1352,7 @@ export default function SubjectsManagement() {
               )}
             </div>
 
-            {/* 4. Course Details with Limit Indicators */}
-            <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="course_code">Course Code *</Label>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {(formData.course_code || "").length}/10
-                </span>
-              </div>
-              <TextInput
-                id="course_code"
-                placeholder="e.g. CS101"
-                value={formData.course_code || ""}
-                onChange={handleInputChange}
-                color={courseCodeError ? "failure" : "gray"}
-                maxLength={10}
-              />
-              {courseCodeError && (
-                <HelperText color="failure">{courseCodeError}</HelperText>
-              )}
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="course_name">Course Name *</Label>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {(formData.course_name || "").length}/200
-                </span>
-              </div>
-              <TextInput
-                id="course_name"
-                placeholder="e.g. Intro to Computing"
-                value={formData.course_name || ""}
-                onChange={handleInputChange}
-                color={courseNameError ? "failure" : "gray"}
-                maxLength={200}
-              />
-              {courseNameError && (
-                <HelperText color="failure">{courseNameError}</HelperText>
-              )}
-            </div>
-
-            {/* 5. Units & Lab Type Dropdown */}
+            {/* Units & Lab Type Dropdown */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="lecture_units">Lec Units (0 - 8)</Label>

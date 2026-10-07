@@ -11,7 +11,7 @@ import {
   Tooltip,
 } from "flowbite-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HiExclamation } from "react-icons/hi";
 import {
   HiBookOpen,
@@ -36,16 +36,7 @@ import {
 import Image from "next/image";
 import { FaCubes } from "react-icons/fa6";
 import { AccountInfo } from "@azure/msal-common";
-import {
-  authorizeAndSyncUser,
-  fetchUserLogoffStatus,
-  fetchUserRole,
-} from "@/app/actions/user";
-import {
-  seedConfiguration,
-  seedDepartments,
-  seedRoomTypes,
-} from "@/app/actions/system";
+import { fetchUserRole } from "@/app/actions/user";
 import { VerifyBlacklistStatus } from "@/utils/verifyBlacklistStatus";
 import { MdOutlineEditCalendar } from "react-icons/md";
 
@@ -72,6 +63,7 @@ interface UserPermissions {
 export default function SidebarFunction({ account }: SidebarFunctionProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const hasFetchedPermissions = useRef(false);
 
   const [collapsed, setCollapsed] = useState(false);
   const [dropdownCourses, setDropdownCourses] = useState(false);
@@ -82,103 +74,57 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
+  // Fetch permissions safely ONCE when username changes
   useEffect(() => {
-    async function logoff() {
-      if (!account?.username) return;
-      const logoffUser = await fetchUserLogoffStatus(account.username);
-
-      if (logoffUser.logoff) {
-        router.push("/logout");
-      }
-    }
-
-    async function fetchPermissions() {
-      if (!account?.username) return;
-
-      const result = await fetchUserRole(account.username);
-
-      if (result.success && result.data) {
-        // Map all permission fields returned from user_get_role
-        setPermissions({
-          booking: Boolean(result.data.booking),
-          personal_schedule: Boolean(result.data.personal_schedule),
-          academic_qualification: Boolean(result.data.academic_qualification),
-          schedules: Boolean(result.data.schedules),
-          courses: Boolean(result.data.courses),
-          rooms: Boolean(result.data.rooms),
-          subjects: Boolean(result.data.subjects),
-          teachers: Boolean(result.data.teachers),
-          maq: Boolean(result.data.maq),
-          fcce: Boolean(result.data.fcce),
-          help: Boolean(result.data.help),
-          config: Boolean(result.data.config),
-          superuser: Boolean(result.data.superuser),
-        });
-      } else {
-        console.error("Failed to fetch permissions:", result.error);
-        setToastMessage(result?.error ?? "An unexpected error occurred");
-        setShowToast(true);
-        setPermissions(null);
-      }
-
+    if (!account?.username) {
       setLoading(false);
+      return;
     }
 
-    async function initializeConfiguration() {
-      const isSeeded = await seedConfiguration();
-      if (isSeeded) {
-        console.log("[System] Default configurations seeded successfully.");
-      }
-    }
+    if (hasFetchedPermissions.current) return;
+    hasFetchedPermissions.current = true;
 
-    async function initializeRoomTypes() {
-      const isSeeded = await seedRoomTypes();
-      if (isSeeded) {
-        console.log("[System] Default room types seeded successfully.");
-      }
-    }
+    const username = account.username;
 
-    async function initializeDepartments() {
-      const isSeeded = await seedDepartments();
-      if (isSeeded) {
-        console.log("[System] Default departments types seeded successfully.");
-      }
-    }
-
-    async function studentCheck() {
+    async function loadPermissions() {
       try {
-        if (!account?.username || !account?.name) return;
-
-        // Delegate domain/student checks, role check, and sync to Server Action
-        const result = await authorizeAndSyncUser(
-          account.username,
-          account.name,
-        );
-
-        if (!result.authorized) {
-          router.push("/restricted_access");
+        const result = await fetchUserRole(username);
+        if (result.success && result.data) {
+          setPermissions({
+            booking: Boolean(result.data.booking),
+            personal_schedule: Boolean(result.data.personal_schedule),
+            academic_qualification: Boolean(result.data.academic_qualification),
+            schedules: Boolean(result.data.schedules),
+            courses: Boolean(result.data.courses),
+            rooms: Boolean(result.data.rooms),
+            subjects: Boolean(result.data.subjects),
+            teachers: Boolean(result.data.teachers),
+            maq: Boolean(result.data.maq),
+            fcce: Boolean(result.data.fcce),
+            help: Boolean(result.data.help),
+            config: Boolean(result.data.config),
+            superuser: Boolean(result.data.superuser),
+          });
+        } else {
+          setToastMessage(result?.error ?? "Failed to fetch permissions");
+          setShowToast(true);
         }
       } catch (error) {
-        console.error("Failed to sync user before navigation:", error);
+        console.error("Permission fetch error:", error);
+      } finally {
+        setLoading(false);
       }
     }
 
-    /** Logoff User on Role Change **/
-    logoff();
-
-    /** Check if user is Student **/
-    studentCheck();
-
-    /** --- Default Values Generation --- **/
-    initializeConfiguration();
-    initializeRoomTypes();
-    initializeDepartments();
-
-    fetchPermissions();
-  }, [account]);
+    loadPermissions();
+  }, [account?.username]);
 
   /** --- Blacklist Checker --- **/
-  useEffect(() => {if(account){VerifyBlacklistStatus(account!.username);}}, [account, pathname]);
+  useEffect(() => {
+    if (account?.username) {
+      VerifyBlacklistStatus(account.username);
+    }
+  }, [account?.username, pathname]);
 
   function closeToast() {
     setShowToast(false);
@@ -271,11 +217,11 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                 <Button
                   outline
                   color="alternative"
-                  onClick={() => router.push(`/booking`)}
+                  onClick={() => router.push(`/room_reservation`)}
                   className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
                 >
                   <MdOutlineEditCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                  {!collapsed && <span className="ml-2">Booking</span>}
+                  {!collapsed && <span className="ml-2">Room Reservation</span>}
                 </Button>
 
                 <Button
@@ -414,11 +360,11 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                   </Button>
                 </Tooltip>
 
-                <Tooltip content={"Booking"} placement={"right"}>
+                <Tooltip content={"Room Reservation"} placement={"right"}>
                   <Button
                     outline
                     color="alternative"
-                    onClick={() => router.push(`/booking`)}
+                    onClick={() => router.push(`/room_reservation`)}
                     className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
                   >
                     <MdOutlineEditCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
