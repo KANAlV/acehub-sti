@@ -52,7 +52,7 @@ export default function TeachersPage() {
           active={activeTabKey === "academic qualifications"}
           icon={HiDocumentCheck}
         >
-            {activeTabKey === "pre-assign subjects" && <TeacherAQs />}
+            {activeTabKey === "academic qualifications" && <TeacherAQs />}
         </TabItem>
       </Tabs>
     </div>
