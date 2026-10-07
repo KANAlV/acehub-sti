@@ -8,6 +8,7 @@ import {
   HiUsers,
 } from "react-icons/hi2";
 import PreassignmentTemplatesManagement from "@/components/teachers/Preassignments";
+import TeacherAQs from "@/components/teachers/TeacherAQs";
 
 export default function TeachersPage() {
   const [activeTabKey, setActiveTabKey] = useState("teachers management");
