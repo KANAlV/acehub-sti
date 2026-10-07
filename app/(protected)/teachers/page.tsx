@@ -1,20 +1,22 @@
 "use client";
 import TeachersManagement from "@/components/teachers/TeachersManagement";
 import { TabItem, Tabs } from "flowbite-react";
-import { useEffect, useState } from "react";
-import { HiArrowDownOnSquareStack, HiDocumentCheck, HiUsers } from "react-icons/hi2";
+import { useState } from "react";
+import {
+  HiArrowDownOnSquareStack,
+  HiDocumentCheck,
+  HiUsers,
+} from "react-icons/hi2";
+import PreassignmentTemplatesManagement from "@/components/teachers/Preassignments";
 
 export default function TeachersPage() {
   const [activeTabKey, setActiveTabKey] = useState("teachers management");
-  const availableMainTabs: string[] = [];
 
-  useEffect(() => {
-    availableMainTabs.push(
-      "teachers management",
-      "pre-assign subjects",
-      "academic qualifications",
-    );
-  }, []);
+  const availableMainTabs = [
+    "teachers management",
+    "pre-assign subjects",
+    "academic qualifications",
+  ];
 
   return (
     <div className={"m-8"}>
@@ -41,7 +43,7 @@ export default function TeachersPage() {
           active={activeTabKey === "pre-assign subjects"}
           icon={HiArrowDownOnSquareStack}
         >
-          {activeTabKey === "pre-assign subjects" }
+          {activeTabKey === "pre-assign subjects" && <PreassignmentTemplatesManagement />}
         </TabItem>
 
         <TabItem
@@ -49,7 +51,7 @@ export default function TeachersPage() {
           active={activeTabKey === "academic qualifications"}
           icon={HiDocumentCheck}
         >
-          {activeTabKey === "academic qualifications" }
+            {activeTabKey === "pre-assign subjects" && <TeacherAQs />}
         </TabItem>
       </Tabs>
     </div>
