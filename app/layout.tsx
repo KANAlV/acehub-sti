@@ -26,7 +26,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <title>Acehub | Faculty Scheduling</title>
+        <title>AceHub | Faculty Scheduling</title>
         <ThemeModeScript />
       </head>
       <body

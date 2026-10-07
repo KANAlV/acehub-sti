@@ -138,6 +138,14 @@ export default function TeacherPreassignmentManagement({
 
   // --- Config Consts ---
   const [curriculumAdd, setCurriculumAdd] = useState<CurriculumRecord[]>([]);
+  const [initialCurriculumAdd, setInitialCurriculumAdd] = useState<
+    CurriculumRecord[]
+  >([]);
+  const [isSubmittingConfig, setIsSubmittingConfig] = useState<boolean>(false);
+
+  // --- Add Consts ---
+  const [isSubmittingAddPreAssignment, setIsSubmittingAddPreAssignment] =
+    useState(false);
 
   // --- Toast State & Timer Ref ---
   const [showToast, setShowToast] = useState<boolean>(false);
@@ -222,6 +230,7 @@ export default function TeacherPreassignmentManagement({
     async function loadTemplateConfigStandalone() {
       if (!preassignmentName || preassignmentName.trim() === "") {
         setCurriculumAdd([]);
+        setInitialCurriculumAdd([]);
         return;
       }
 
@@ -258,6 +267,7 @@ export default function TeacherPreassignmentManagement({
 
         if (itemIds.length === 0) {
           setCurriculumAdd([]);
+          setInitialCurriculumAdd([]);
           return;
         }
 
@@ -285,12 +295,14 @@ export default function TeacherPreassignmentManagement({
           validItems,
         );
         setCurriculumAdd(validItems);
+        setInitialCurriculumAdd(validItems);
       } else {
         console.warn(
           "No template record found or fetch failed for:",
           preassignmentName,
         );
         setCurriculumAdd([]);
+        setInitialCurriculumAdd([]);
       }
       setConstraintsLoading(false);
     }
@@ -449,6 +461,19 @@ export default function TeacherPreassignmentManagement({
     }
   };
 
+  // Close Config Modal
+  function closeConfigModal() {
+    setOpenConfigModal(false);
+    setCurriculaSearch("");
+    setIsSubmittingConfig(false); // Reset submit state so it's ready when reopened
+  }
+
+  // Close Add Modal
+  function closeAddModal() {
+    setOpenAddModal(false);
+    setIsSubmittingAddPreAssignment(false); // Reset submit state so it's ready when reopened
+  }
+
   // Function that loads teacher preassignments using fetchTeacherPreassignments()
   async function loadTeacherData(teacher_id: string, teacherName: string) {
     setSelectedTeacherID(teacher_id);
@@ -476,19 +501,33 @@ export default function TeacherPreassignmentManagement({
     setCurriculumAdd((prev) => [...prev, input]);
   };
 
-  // Close Config Modal
-  function closeConfigModal() {
-    setOpenConfigModal(false);
-    setCurriculaSearch("");
-  }
-
   // Handle Opening Config Modal
   function handleOpenConfigModal() {
+    // Reset/Sync initial reference state on open if needed
+    setInitialCurriculumAdd([...curriculumAdd]);
+    setIsSubmittingConfig(false);
     setOpenConfigModal(true);
   }
 
-  /** CRUD MODAL FUNCTIONS **/
+  // Check if curriculum list has changed
+  const hasChanges = () => {
+    if (curriculumAdd.length !== initialCurriculumAdd.length) return true;
+    const currentIds = new Set(curriculumAdd.map((c) => c.curriculum_id));
+    const initialIds = new Set(
+      initialCurriculumAdd.map((c) => c.curriculum_id),
+    );
+    if (currentIds.size !== initialIds.size) return true;
+    for (const id of currentIds) {
+      if (!initialIds.has(id)) return true;
+    }
+    return false;
+  };
+
+  /** MODAL CRUD FUNCTIONS **/
   async function updateConfig() {
+    if (isSubmittingConfig || !hasChanges()) return;
+
+    setIsSubmittingConfig(true);
     const curriculumIds = curriculumAdd.map((item) => item.curriculum_id);
 
     const res = await updateTeacherPreassignmentConfig(
@@ -498,6 +537,7 @@ export default function TeacherPreassignmentManagement({
 
     if (res.success) {
       triggerToast("Pre-assignment config updated successfully!", "success");
+      setInitialCurriculumAdd([...curriculumAdd]);
       setOpenConfigModal(false);
       void loadData();
     } else {
@@ -505,8 +545,8 @@ export default function TeacherPreassignmentManagement({
         res.error || "Failed to update pre-assignments config.",
         "error",
       );
+      setIsSubmittingConfig(false); // Re-enable if failed so user can try again if they want
     }
-    closeConfigModal();
   }
 
   return (
@@ -632,11 +672,33 @@ export default function TeacherPreassignmentManagement({
                 </TableHeadCell>
                 <TableHeadCell>Employment</TableHeadCell>
                 <TableHeadCell>Status</TableHeadCell>
-                <TableHeadCell className="text-center">
-                  Subjects Count
+                <TableHeadCell
+                  className="cursor-pointer text-blue-500 select-none"
+                  onClick={() => handleSorting("subjects_count")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Subjects Count</span>
+                    {sortBy === "subjects_count" &&
+                      (sortDir === "ASC" ? (
+                        <FaSortUp className="h-4 w-4" />
+                      ) : (
+                        <FaSortDown className="h-4 w-4" />
+                      ))}
+                  </div>
                 </TableHeadCell>
-                <TableHeadCell className="text-center">
-                  Total Load
+                <TableHeadCell
+                  className="cursor-pointer text-blue-500 select-none"
+                  onClick={() => handleSorting("total_load")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Total Load</span>
+                    {sortBy === "total_load" &&
+                      (sortDir === "ASC" ? (
+                        <FaSortUp className="h-4 w-4" />
+                      ) : (
+                        <FaSortDown className="h-4 w-4" />
+                      ))}
+                  </div>
                 </TableHeadCell>
               </TableRow>
             </TableHead>
@@ -770,36 +832,17 @@ export default function TeacherPreassignmentManagement({
 
       {/* Right Sidebar */}
       <div className={"h-[calc(100vh-8rem)] w-full max-w-md"}>
-        <div className={"mb-4 flex items-start justify-between"}>
+        <div className={"flex items-start justify-between"}>
           <div>
             <Tooltip
               content={"Filters to only show subjects from selected curricula"}
               placement={"bottom"}
             >
-              <b className={"flex items-center gap-1 font-extrabold"}>
+              <b className={"flex items-center gap-1 text-xl font-extrabold"}>
                 Curriculum Constraints
                 <HiQuestionMarkCircle color={"gray"} />
               </b>
             </Tooltip>
-            <div className={"mt-2 flex w-full overflow-x-auto"}>
-              {constraintsLoading
-                ? "Constraints Loading..."
-                : curriculumAdd.length > 0
-                  ? curriculumAdd.map((item, index) => {
-                      return (
-                        <Badge
-                          key={item.curriculum_id}
-                          className={"items-center"}
-                          color={"gray"}
-                        >
-                          <span className={"inline-flex items-center gap-1.5"}>
-                            {item.curriculum_version}
-                          </span>
-                        </Badge>
-                      );
-                    })
-                  : "No Curriculumn Constraints set"}
-            </div>
           </div>
 
           <Tooltip
@@ -812,6 +855,30 @@ export default function TeacherPreassignmentManagement({
               onClick={handleOpenConfigModal}
             />
           </Tooltip>
+        </div>
+
+        <div
+          className={
+            "mt-2 mb-4 flex max-h-12 scrollbar-thumb-gray-400 scrollbar-track-transparent gap-1.5 overflow-x-auto"
+          }
+        >
+          {constraintsLoading
+            ? "Constraints Loading..."
+            : curriculumAdd.length > 0
+              ? curriculumAdd.map((item, index) => {
+                  return (
+                    <Badge
+                      key={item.curriculum_id}
+                      className={"min-w-22 items-center justify-center"}
+                      color={"gray"}
+                    >
+                      <span className={"inline-flex items-center"}>
+                        {item.curriculum_version}
+                      </span>
+                    </Badge>
+                  );
+                })
+              : "No Curriculumn Constraints set"}
         </div>
 
         <div
@@ -856,7 +923,10 @@ export default function TeacherPreassignmentManagement({
                           {selectedTeacher?.email}
                         </p>
                       </div>
-                      <Button className={"font-semibold"}>
+                      <Button
+                        className={"font-semibold"}
+                        onClick={() => setOpenAddModal(true)}
+                      >
                         <HiPlus className={"mr-2"} />
                         Subject
                       </Button>
@@ -982,15 +1052,17 @@ export default function TeacherPreassignmentManagement({
         </ModalHeader>
         <ModalBody>
           <div className={"flex"}>
-            <div className={"w-full"}>
+            <div className={"w-[80%]"}>
               <div className="mb-1 text-gray-500 dark:text-gray-300">
                 <span>It is recommended to add </span>
                 <span className="inline-block align-baseline">
                   <Tooltip
-                    style={isDarkMode? "dark":"light"}
+                    style={isDarkMode ? "dark" : "light"}
                     content={
                       <>
-                        <div>4 Curriula per program (tertiary: 1st to 4th year),</div>
+                        <div>
+                          4 Curriula per program (tertiary: 1st to 4th year),
+                        </div>
                         <div>2 per strand (shs: grd 11 & 12)</div>
                       </>
                     }
@@ -1072,17 +1144,38 @@ export default function TeacherPreassignmentManagement({
                 </div>
               </div>
             </div>
-            <div className={"ml-3 border-l border-gray-500 pl-2"}>
-              <span className={"mx-2 text-center dark:text-white"}>
+
+            <div className={"ml-3 w-[20%] border-l border-gray-500 pl-2"}>
+              <div
+                className={
+                  "mx-2 text-center text-cyan-300 drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,1)]"
+                }
+              >
                 Programs
-              </span>
-              <div className={"overflow-y-auto"}>
+              </div>
+              <div
+                className={
+                  "mx-2 text-center text-yellow-300 drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,1)]"
+                }
+              >
+                & Strands
+              </div>
+
+              <div
+                className={
+                  "max-h-56 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto"
+                }
+              >
                 {programs.map((item) => {
                   return (
                     <Badge
-                      className={"my-1 justify-center"}
-                      color={"gray"}
+                      color={
+                        item.year_level.toLowerCase() === "tertiary"
+                          ? "info"
+                          : "warning"
+                      }
                       key={item.program_code}
+                      className={"my-1 justify-center border border-gray-400"}
                     >
                       {item.program_code}
                     </Badge>
@@ -1093,7 +1186,13 @@ export default function TeacherPreassignmentManagement({
           </div>
         </ModalBody>
         <ModalFooter className={"flex"}>
-          <Button onClick={() => updateConfig()}>Save</Button>
+          <Button
+            onClick={() => updateConfig()}
+            disabled={!hasChanges() || isSubmittingConfig}
+          >
+            {isSubmittingConfig ? <Spinner size="sm" className="mr-2" /> : null}
+            Save
+          </Button>
           <Button color={"alternative"} onClick={() => closeConfigModal()}>
             Cancel
           </Button>
@@ -1102,9 +1201,19 @@ export default function TeacherPreassignmentManagement({
 
       {/** ADD MODAL **/}
       <Modal show={openAddModal}>
-        <ModalHeader></ModalHeader>
+        <ModalHeader>Add Subject Pre-Assignment</ModalHeader>
         <ModalBody></ModalBody>
-        <ModalFooter></ModalFooter>
+        <ModalFooter className={"flex"}>
+          <Button>
+            {isSubmittingAddPreAssignment ? (
+              <Spinner size="sm" className="mr-2" />
+            ) : null}
+            Save
+          </Button>
+          <Button color={"alternative"} onClick={() => closeAddModal()}>
+            Cancel
+          </Button>
+        </ModalFooter>
       </Modal>
     </div>
   );
