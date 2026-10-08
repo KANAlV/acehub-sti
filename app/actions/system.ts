@@ -1,5 +1,6 @@
 "use server";
 import sql from "@/lib/database";
+import { cookies } from "next/headers";
 
 /**************
  * CURRICULUM *
@@ -570,6 +571,27 @@ export interface SubjectRecord {
   year_term: string | null;
 }
 
+/* SEARCH SUBJECTS WITH CURRICULUM ARRAY FILTER (LIMIT 10) */
+export async function searchSubjectsWithCurriculumFilter(
+  searchQuery: string,
+  curricula: string[]
+) {
+  try {
+    const data = await sql<SubjectRecord[]>`
+      SELECT * FROM subjects_search_with_curriculum_filter(
+        ${searchQuery},
+        ${curricula}
+                    );
+    `;
+
+    return { success: true, data };
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to search subjects.";
+    return { success: false, error: errorMessage, data: [] };
+  }
+}
+
 /* READ - FETCH SUBJECTS */
 export async function fetchSubjects(
   search: string | null = null,
@@ -577,7 +599,7 @@ export async function fetchSubjects(
   sortBy: string = "course_code",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -612,7 +634,7 @@ export async function fetchDistinctCourseNames(
   search: string | null = null,
   sortDir: string = "ASC",
   limit: number = 0, // Default to 0 to fetch all distinct course names
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -643,7 +665,7 @@ export async function fetchDistinctCourseNames(
 /* READ - FETCH SUBJECTS COUNT */
 export async function fetchSubjectsCount(
   search: string | null = null,
-  programCode: string | null = null
+  programCode: string | null = null,
 ) {
   try {
     const [result] = await sql<{ subjects_count: number }[]>`
@@ -668,10 +690,7 @@ export async function fetchSubjectsCount(
 }
 
 /* CREATE - CREATE SUBJECT */
-export async function createSubject(
-    actor: string,
-    input: SubjectInput
-) {
+export async function createSubject(actor: string, input: SubjectInput) {
   try {
     const [result] = await sql<{ subjects_create: string }[]>`
       SELECT subjects_create(
@@ -687,9 +706,9 @@ export async function createSubject(
     `;
 
     await createLog(
-        actor,
-        "create_subject",
-        `course_code: '${input.course_code}', course_name: '${input.course_name}'`
+      actor,
+      "create_subject",
+      `course_code: '${input.course_code}', course_name: '${input.course_name}'`,
     );
 
     return {
@@ -707,9 +726,9 @@ export async function createSubject(
 
 /* UPDATE - UPDATE SUBJECT */
 export async function updateSubject(
-    actor: string,
-    subjectId: string,
-    input: Partial<SubjectInput>
+  actor: string,
+  subjectId: string,
+  input: Partial<SubjectInput>,
 ) {
   try {
     await sql`
@@ -726,11 +745,7 @@ export async function updateSubject(
              );
     `;
 
-    await createLog(
-        actor,
-        "update_subject",
-        `subject_id: '${subjectId}'`
-    );
+    await createLog(actor, "update_subject", `subject_id: '${subjectId}'`);
 
     return {
       success: true,
@@ -745,20 +760,13 @@ export async function updateSubject(
 }
 
 /* DELETE - DELETE SUBJECT */
-export async function deleteSubject(
-    actor: string,
-    subjectId: string
-) {
+export async function deleteSubject(actor: string, subjectId: string) {
   try {
     await sql`
       SELECT subjects_delete(${subjectId});
     `;
 
-    await createLog(
-        actor,
-        "delete_subject",
-        `subject_id: '${subjectId}'`
-    );
+    await createLog(actor, "delete_subject", `subject_id: '${subjectId}'`);
 
     return {
       success: true,
@@ -794,7 +802,7 @@ export async function fetchSubjectsAQClusters(
   sortBy: string = "course_name",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -819,7 +827,9 @@ export async function fetchSubjectsAQClusters(
     console.error("Failed to fetch subjects with AQ and clusters:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch subjects with AQ and clusters.",
+      error:
+        (error as Error).message ||
+        "Failed to fetch subjects with AQ and clusters.",
       data: [],
     };
   }
@@ -829,7 +839,7 @@ export async function fetchSubjectsAQClusters(
 export async function fetchSubjectsAQClustersCount(
   search: string | null = null,
   programCode: string | null = null,
-  aqFilter: string = "ALL"
+  aqFilter: string = "ALL",
 ) {
   try {
     const [result] = await sql<{ subjects_count_aq_clusters: number }[]>`
@@ -860,7 +870,7 @@ export async function fetchSubjectsAQClustersCount(
 /* COUNT - FETCH SUBJECTS WITH NO AQ COUNT */
 export async function fetchSubjectsCountNoAQ(
   search: string | null = null,
-  programCode: string | null = null
+  programCode: string | null = null,
 ) {
   try {
     const [result] = await sql<{ subjects_count_no_aq: number }[]>`
@@ -875,10 +885,7 @@ export async function fetchSubjectsCountNoAQ(
       count: result?.subjects_count_no_aq ?? 0,
     };
   } catch (error) {
-    console.error(
-      "Failed to fetch count for subjects with no AQ:",
-      error,
-    );
+    console.error("Failed to fetch count for subjects with no AQ:", error);
     return {
       success: false,
       error: (error as Error).message || "Failed to count subjects with no AQ.",
@@ -1151,12 +1158,18 @@ export async function createPreassignmentTemplate(preassignmentName: string) {
     await sql`
       SELECT preassignment_template_create(${preassignmentName});
     `;
+    await createLog(
+      "",
+      "create_pre-assignment",
+      `pre-assignment_name: ${preassignmentName}`,
+    );
     return { success: true };
   } catch (error) {
     console.error("Failed to create preassignment template:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to create preassignment template.",
+      error:
+        (error as Error).message || "Failed to create preassignment template.",
     };
   }
 }
@@ -1171,18 +1184,18 @@ export async function fetchCurriculumById(curriculumId: string) {
     return { success: true, data: data[0] || null };
   } catch (error: unknown) {
     const errorMessage =
-        error instanceof Error ? error.message : "Failed to fetch curriculum.";
+      error instanceof Error ? error.message : "Failed to fetch curriculum.";
     return { success: false, error: errorMessage, data: null };
   }
 }
 
 /* READ */
 export async function fetchPreassignmentTemplates(
-    search: string | null = null,
-    sortBy: string = "preassignment_name",
-    sortDir: string = "ASC",
-    limit: number = 10,
-    page: number = 1
+  search: string | null = null,
+  sortBy: string = "preassignment_name",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -1205,7 +1218,8 @@ export async function fetchPreassignmentTemplates(
     console.error("Failed to fetch preassignment templates:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch preassignment templates.",
+      error:
+        (error as Error).message || "Failed to fetch preassignment templates.",
       data: [],
     };
   }
@@ -1217,18 +1231,27 @@ export async function deletePreassignmentTemplate(preassignmentName: string) {
     await sql`
       SELECT preassignment_template_delete(${preassignmentName});
     `;
+
+    await createLog(
+      "",
+      "delete_pre-assignment",
+      `pre-assignment_name: ${preassignmentName}`,
+    );
     return { success: true };
   } catch (error) {
     console.error("Failed to delete preassignment template:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to delete preassignment template.",
+      error:
+        (error as Error).message || "Failed to delete preassignment template.",
     };
   }
 }
 
 /* COUNT */
-export async function fetchPreassignmentTemplatesCount(search: string | null = null) {
+export async function fetchPreassignmentTemplatesCount(
+  search: string | null = null,
+) {
   try {
     const [result] = await sql<{ preassignment_template_count: number }[]>`
       SELECT preassignment_template_count(${search || null});
@@ -1242,7 +1265,8 @@ export async function fetchPreassignmentTemplatesCount(search: string | null = n
     console.error("Failed to fetch preassignment template count:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to count preassignment templates.",
+      error:
+        (error as Error).message || "Failed to count preassignment templates.",
       count: 0,
     };
   }
@@ -1293,7 +1317,7 @@ export async function fetchTeachersWithPreassignment(
   sortBy: string = "surname",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -1327,7 +1351,7 @@ export async function fetchTeachersCountWithPreassignment(
   preassignmentName: string | null = null,
   search: string | null = null,
   status: string = "All Active & On Leave",
-  department: string = "All Departments"
+  department: string = "All Departments",
 ) {
   try {
     const [result] = await sql<{ teachers_count_with_preassignment: number }[]>`
@@ -1339,7 +1363,10 @@ export async function fetchTeachersCountWithPreassignment(
       );
     `;
 
-    return { success: true, count: result?.teachers_count_with_preassignment ?? 0 };
+    return {
+      success: true,
+      count: result?.teachers_count_with_preassignment ?? 0,
+    };
   } catch (error) {
     console.error("Failed to count teachers with preassignment:", error);
     return {
@@ -1355,7 +1382,7 @@ export async function createTeacherPreassignment(
   preassignmentName: string,
   teacherId: string,
   subjectId: string,
-  mergeLecLab: boolean = false
+  mergeLecLab: boolean = false,
 ) {
   try {
     await sql`
@@ -1366,12 +1393,19 @@ export async function createTeacherPreassignment(
         ${mergeLecLab}
       );
     `;
+
+    await createLog(
+      "",
+      "create_teacher_pre-assignment",
+      `pre-assignment_name: ${preassignmentName}, teacher_id: ${teacherId}, subject_id: ${subjectId}, merge_lec_lab: ${mergeLecLab}`,
+    );
     return { success: true };
   } catch (error) {
     console.error("Failed to create teacher preassignment:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to create teacher preassignment.",
+      error:
+        (error as Error).message || "Failed to create teacher preassignment.",
     };
   }
 }
@@ -1379,7 +1413,7 @@ export async function createTeacherPreassignment(
 /* READ */
 export async function fetchTeacherPreassignments(
   teacherId: string,
-  preassignmentName?: string | null
+  preassignmentName?: string | null,
 ) {
   try {
     const data = await sql<TeacherPreassignmentRecord[]>`
@@ -1398,7 +1432,9 @@ export async function fetchTeacherPreassignments(
     return { success: true, data };
   } catch (error: unknown) {
     const errorMessage =
-      error instanceof Error ? error.message : "Failed to fetch preassignments.";
+      error instanceof Error
+        ? error.message
+        : "Failed to fetch preassignments.";
     return { success: false, error: errorMessage, data: [] };
   }
 }
@@ -1409,7 +1445,7 @@ export async function updateTeacherPreassignment(
   preassignmentName: string,
   teacherId: string,
   subjectId: string,
-  mergeLecLab: boolean
+  mergeLecLab: boolean,
 ) {
   try {
     await sql`
@@ -1421,28 +1457,45 @@ export async function updateTeacherPreassignment(
         ${mergeLecLab}
       );
     `;
+
+    await createLog(
+      "",
+      "update_teacher_pre-assignment",
+      `pre-assignment_id: ${preassignmentId}, pre-assignment_name: ${preassignmentName}`,
+    );
     return { success: true };
   } catch (error) {
     console.error("Failed to update teacher preassignment:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to update teacher preassignment.",
+      error:
+        (error as Error).message || "Failed to update teacher preassignment.",
     };
   }
 }
 
 /* UPDATE CONFIG */
-export async function updateTeacherPreassignmentConfig(preassignment_name: string, config: string[]) {
+export async function updateTeacherPreassignmentConfig(
+  preassignment_name: string,
+  config: string[],
+) {
   try {
     await sql`
       SELECT preassignment_template_update_config(${preassignment_name}, ${config});
     `;
+
+    await createLog(
+        "",
+        "update_pre-assignment_constraints",
+        `pre-assignment_name: ${preassignment_name}, constraints: ${config}`
+    );
     return { success: true };
   } catch (error) {
     console.error("Failed to update preassignment config:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to update preassignment config.",
+      error:
+        (error as Error).message || "Failed to update preassignment config.",
     };
   }
 }
@@ -1453,12 +1506,19 @@ export async function deleteTeacherPreassignment(preassignmentId: string) {
     await sql`
       SELECT teacher_preassignment_delete(${preassignmentId});
     `;
+
+    await createLog(
+        "",
+        "delete_teacher_preassignment",
+        `pre-assignment_id: ${preassignmentId}`
+    );
     return { success: true };
   } catch (error) {
     console.error("Failed to delete teacher preassignment:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to delete teacher preassignment.",
+      error:
+        (error as Error).message || "Failed to delete teacher preassignment.",
     };
   }
 }
@@ -1467,7 +1527,7 @@ export async function deleteTeacherPreassignment(preassignmentId: string) {
 export async function fetchTeacherPreassignmentsCount(
   preassignmentName: string | null = null,
   department: string = "ALL",
-  search: string | null = null
+  search: string | null = null,
 ) {
   try {
     const [result] = await sql<{ teacher_preassignment_count: number }[]>`
@@ -1486,7 +1546,8 @@ export async function fetchTeacherPreassignmentsCount(
     console.error("Failed to fetch teacher preassignment count:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to count teacher preassignments.",
+      error:
+        (error as Error).message || "Failed to count teacher preassignments.",
       count: 0,
     };
   }
@@ -1498,12 +1559,7 @@ export async function fetchTeacherPreassignmentsCount(
 
 // Define a type for safe JSON payloads
 export type JSONValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JSONValue[]
-  | { [key: string]: JSONValue };
+  string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 
 export interface AQRecord {
   aq_id: string;
@@ -1533,7 +1589,7 @@ export async function fetchTeachersWithAq(
   sortBy: string = "surname",
   sortDir: string = "ASC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -1565,7 +1621,7 @@ export async function fetchTeachersWithAq(
 export async function fetchTeachersWithAqCount(
   search: string | null = null,
   status: string = "All Active & On Leave",
-  department: string = "All Departments"
+  department: string = "All Departments",
 ) {
   try {
     const [result] = await sql<{ teachers_with_aq_count: number }[]>`
@@ -1592,7 +1648,7 @@ export async function createTeacherAQ(
   pscsId: string,
   aq: string,
   contents: Record<string, JSONValue> = {},
-  approved: string = "Pending"
+  approved: string = "Pending",
 ) {
   try {
     const [result] = await sql<{ teacher_aq_create: string }[]>`
@@ -1603,6 +1659,12 @@ export async function createTeacherAQ(
                ${approved}
              );
     `;
+
+    await createLog(
+      "",
+      "create_teacher_aq",
+      `pscs_id: ${pscsId}, aq: ${aq}, contents: ${contents}, status: ${approved}`,
+    );
     return { success: true, aq_id: result?.teacher_aq_create };
   } catch (error) {
     console.error("Failed to create teacher AQ record:", error);
@@ -1621,7 +1683,7 @@ export async function fetchTeacherAQRecords(
   sortBy: string = "created_at",
   sortDir: string = "DESC",
   limit: number = 10,
-  page: number = 1
+  page: number = 1,
 ) {
   try {
     const offset = limit > 0 ? (page - 1) * limit : 0;
@@ -1655,7 +1717,7 @@ export async function updateTeacherAQ(
   pscsId: string,
   aq: string,
   contents: Record<string, JSONValue>,
-  approved: string
+  approved: string,
 ) {
   try {
     await sql`
@@ -1667,6 +1729,11 @@ export async function updateTeacherAQ(
                ${approved}
              );
     `;
+    await createLog(
+      "",
+      "update_teacher_aq",
+      `pscs_id: ${pscsId}, aq: ${aq}, status: ${approved}`,
+    );
     return { success: true };
   } catch (error) {
     console.error("Failed to update teacher AQ record:", error);
@@ -1683,6 +1750,12 @@ export async function deleteTeacherAQ(aqId: string) {
     await sql`
       SELECT teacher_aq_delete(${aqId});
     `;
+
+    await createLog(
+        "",
+        "delete_teacher_aq",
+        `teacher_aq_id: ${aqId}`
+    );
     return { success: true };
   } catch (error) {
     console.error("Failed to delete teacher AQ record:", error);
@@ -1697,7 +1770,7 @@ export async function deleteTeacherAQ(aqId: string) {
 export async function fetchTeacherAQCount(
   search: string | null = null,
   pscsId: string | null = null,
-  approved: string | null = null
+  approved: string | null = null,
 ) {
   try {
     const [result] = await sql<{ teacher_aq_count: number }[]>`
@@ -2151,7 +2224,11 @@ export async function updateFcce(
              );
     `;
 
-    await createLog(actor, "update_fcce", `fcce_id: '${fcceId}'`);
+    await createLog(
+        actor,
+        "update_fcce",
+        `fcce_id: '${fcceId}'`
+    );
 
     return { success: true };
   } catch (error) {
@@ -3575,9 +3652,13 @@ export async function createLog(
   details?: string | null,
 ): Promise<void> {
   try {
+    const cookieStore = await cookies();
+    const cookie = await cookieStore.get("user_email");
+    const userEmail = cookie?.value || "system";
+
     await sql`
       SELECT logs_create(
-        get_user_id_by_email(${activeAccount}),
+        get_user_id_by_email(${userEmail}),
         ${action},
         ${details ?? null}
       );

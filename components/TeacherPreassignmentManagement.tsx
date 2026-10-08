@@ -60,9 +60,16 @@ import {
   fetchCurriculumById,
   fetchPrograms,
   ProgramRecord,
+  searchSubjectsWithCurriculumFilter,
+  SubjectRecord,
 } from "@/app/actions/system";
 import { DepartmentRecord } from "@/components/teachers/TeachersManagement";
-import { HiBookOpen, HiCog6Tooth, HiQuestionMarkCircle } from "react-icons/hi2";
+import {
+  HiBookOpen,
+  HiChevronLeft,
+  HiCog6Tooth,
+  HiQuestionMarkCircle,
+} from "react-icons/hi2";
 
 /* FETCH BY ID / CURRICULUM FORMAT */
 export interface CurriculumRecord {
@@ -135,6 +142,16 @@ export default function TeacherPreassignmentManagement({
   >([]);
   const [isPreassignmentLoading, setIsPreassignmentLoading] =
     useState<boolean>(false);
+
+  // --- Add Modal Subject Search States ---
+  const [subjectSearchQuery, setSubjectSearchQuery] = useState("");
+  const [debouncedSubjectSearch, setDebouncedSubjectSearch] = useState("");
+  const [subjectSearchResults, setSubjectSearchResults] = useState<
+    SubjectRecord[]
+  >([]);
+  const [isSearchingSubjects, setIsSearchingSubjects] = useState(false);
+  const [selectedSubjectToAssign, setSelectedSubjectToAssign] =
+    useState<SubjectRecord | null>(null);
 
   // --- Config Consts ---
   const [curriculumAdd, setCurriculumAdd] = useState<CurriculumRecord[]>([]);
@@ -216,6 +233,51 @@ export default function TeacherPreassignmentManagement({
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
+  // Debounce Subject Search Input inside Add Modal
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSubjectSearch(subjectSearchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [subjectSearchQuery]);
+
+  // Execute Subject Search using curriculum filter when query changes
+  useEffect(() => {
+    async function performSubjectSearch() {
+      console.log("Search triggered. Query:", debouncedSubjectSearch);
+      console.log("Current curriculum IDs:", curriculumAdd.map((c) => c.curriculum_id));
+
+      if (!debouncedSubjectSearch || debouncedSubjectSearch.trim().length < 2) {
+        console.log("Query too short, skipping search.");
+        setSubjectSearchResults([]);
+        return;
+      }
+
+      setIsSearchingSubjects(true);
+      const curriculumIds = curriculumAdd.map((c) => c.curriculum_id);
+
+      try {
+        const res = await searchSubjectsWithCurriculumFilter(
+          debouncedSubjectSearch,
+          curriculumIds,
+        );
+        console.log("Search response received:", res);
+        if (res.success && res.data) {
+          setSubjectSearchResults(res.data);
+        } else {
+          setSubjectSearchResults([]);
+        }
+      } catch (err) {
+        console.error("Error searching subjects catch block:", err);
+        setSubjectSearchResults([]);
+      } finally {
+        setIsSearchingSubjects(false);
+      }
+    }
+
+    void performSubjectSearch();
+  }, [debouncedSubjectSearch, curriculumAdd]);
+
   // Load Configuration Data
   const loadConfig = useCallback(async () => {
     const res = await fetchFacultyLoadConfig();
@@ -234,9 +296,7 @@ export default function TeacherPreassignmentManagement({
         return;
       }
 
-      console.log("Fetching template config for:", preassignmentName);
       const fetchData = await fetchPreassignmentTemplates(preassignmentName);
-      console.log("Template fetch result:", fetchData);
 
       if (fetchData.success && fetchData.data && fetchData.data.length > 0) {
         const templateRecord = fetchData.data[0];
@@ -263,8 +323,6 @@ export default function TeacherPreassignmentManagement({
             [];
         }
 
-        console.log("Extracted curriculum IDs from template config:", itemIds);
-
         if (itemIds.length === 0) {
           setCurriculumAdd([]);
           setInitialCurriculumAdd([]);
@@ -277,7 +335,6 @@ export default function TeacherPreassignmentManagement({
             if (res.success && res.data) {
               return res.data;
             }
-            console.warn(`Curriculum not found for ID: ${id}`, res);
             return null;
           } catch (error) {
             console.error(`Failed to load curriculum for ID ${id}:`, error);
@@ -290,17 +347,9 @@ export default function TeacherPreassignmentManagement({
           (item): item is CurriculumRecord => item !== null,
         );
 
-        console.log(
-          "Successfully loaded curriculum items for modal/badges:",
-          validItems,
-        );
         setCurriculumAdd(validItems);
         setInitialCurriculumAdd(validItems);
       } else {
-        console.warn(
-          "No template record found or fetch failed for:",
-          preassignmentName,
-        );
         setCurriculumAdd([]);
         setInitialCurriculumAdd([]);
       }
@@ -465,13 +514,16 @@ export default function TeacherPreassignmentManagement({
   function closeConfigModal() {
     setOpenConfigModal(false);
     setCurriculaSearch("");
-    setIsSubmittingConfig(false); // Reset submit state so it's ready when reopened
+    setIsSubmittingConfig(false);
   }
 
   // Close Add Modal
   function closeAddModal() {
     setOpenAddModal(false);
-    setIsSubmittingAddPreAssignment(false); // Reset submit state so it's ready when reopened
+    setSubjectSearchQuery("");
+    setSubjectSearchResults([]);
+    setSelectedSubjectToAssign(null);
+    setIsSubmittingAddPreAssignment(false);
   }
 
   // Function that loads teacher preassignments using fetchTeacherPreassignments()
@@ -503,7 +555,6 @@ export default function TeacherPreassignmentManagement({
 
   // Handle Opening Config Modal
   function handleOpenConfigModal() {
-    // Reset/Sync initial reference state on open if needed
     setInitialCurriculumAdd([...curriculumAdd]);
     setIsSubmittingConfig(false);
     setOpenConfigModal(true);
@@ -523,7 +574,7 @@ export default function TeacherPreassignmentManagement({
     return false;
   };
 
-  /** MODAL CRUD FUNCTIONS **/
+  /* MODAL CRUD FUNCTIONS */
   async function updateConfig() {
     if (isSubmittingConfig || !hasChanges()) return;
 
@@ -545,13 +596,14 @@ export default function TeacherPreassignmentManagement({
         res.error || "Failed to update pre-assignments config.",
         "error",
       );
-      setIsSubmittingConfig(false); // Re-enable if failed so user can try again if they want
+      setIsSubmittingConfig(false);
     }
   }
 
   return (
-    <div className={"flex"}>
-      <div className="space-y-4 p-4">
+    <div className={"flex w-full max-w-full overflow-x-hidden"}>
+      {/* Main Div */}
+      <div className="min-w-0 flex-1 space-y-4 p-4">
         {/* Page Header & Actions Bar */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -677,7 +729,7 @@ export default function TeacherPreassignmentManagement({
                   onClick={() => handleSorting("subjects_count")}
                 >
                   <div className="flex items-center gap-1">
-                    <span>Subjects Count</span>
+                    <span>Subjects Assigned</span>
                     {sortBy === "subjects_count" &&
                       (sortDir === "ASC" ? (
                         <FaSortUp className="h-4 w-4" />
@@ -830,19 +882,37 @@ export default function TeacherPreassignmentManagement({
         )}
       </div>
 
-      {/* Right Sidebar */}
-      <div className={"h-[calc(100vh-8rem)] w-full max-w-md"}>
+      {/* Right Div */}
+      <div
+        className={`fixed inset-0 top-17 bottom-0 left-14 z-10 h-[calc(100vh-64px)] bg-white p-4 transition-all sm:static sm:z-0 sm:h-[calc(100vh-8rem)] sm:max-w-md sm:p-0 dark:bg-gray-900 ${
+          !selectedTeacherID ? "hidden sm:block" : "block"
+        }`}
+      >
         <div className={"flex items-start justify-between"}>
-          <div>
-            <Tooltip
-              content={"Filters to only show subjects from selected curricula"}
-              placement={"bottom"}
-            >
-              <b className={"flex items-center gap-1 text-xl font-extrabold"}>
-                Curriculum Constraints
-                <HiQuestionMarkCircle color={"gray"} />
-              </b>
-            </Tooltip>
+          <div className={"flex gap-4"}>
+            <div>
+              <Tooltip placement={"bottom"} content={"Close"}>
+                <Button
+                  color={"alternative"}
+                  onClick={() => setSelectedTeacherID("")}
+                >
+                  <HiChevronLeft color={"gray"} />
+                </Button>
+              </Tooltip>
+            </div>
+            <div>
+              <Tooltip
+                content={
+                  "Filters to only show subjects from selected curricula"
+                }
+                placement={"bottom"}
+              >
+                <b className={"flex items-center gap-1 text-xl font-extrabold"}>
+                  Curriculum Constraints
+                  <HiQuestionMarkCircle color={"gray"} />
+                </b>
+              </Tooltip>
+            </div>
           </div>
 
           <Tooltip
@@ -859,7 +929,7 @@ export default function TeacherPreassignmentManagement({
 
         <div
           className={
-            "mt-2 mb-4 flex max-h-12 scrollbar-thumb-gray-400 scrollbar-track-transparent gap-1.5 overflow-x-auto"
+            "mt-2 mb-4 flex max-h-12 scrollbar-thumb-gray-400 scrollbar-track-transparent gap-1.5 overflow-x-auto pb-2"
           }
         >
           {constraintsLoading
@@ -881,12 +951,12 @@ export default function TeacherPreassignmentManagement({
               : "No Curriculumn Constraints set"}
         </div>
 
+        {/* Right Sidebar */}
         <div
           className={
             "overflow-y-auto rounded-2xl border border-gray-500/20 p-4"
           }
         >
-          {/* Content loaded below the header/HiCog6Tooth */}
           <div>
             {!selectedTeacherID ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -912,27 +982,19 @@ export default function TeacherPreassignmentManagement({
                 return (
                   <>
                     {/* Overview Card / Grid matching table metrics */}
-                    <div className={"flex items-start justify-between"}>
-                      <div>
-                        <h5 className="m-0 text-lg font-bold tracking-tight text-gray-900 dark:text-white">
-                          {!selectedTeacherID
-                            ? "Select A Teacher to assign Subjects"
-                            : selectedTeacherName}
-                        </h5>
-                        <p className={"mb-3 text-gray-500 dark:text-gray-400"}>
-                          {selectedTeacher?.email}
-                        </p>
-                      </div>
-                      <Button
-                        className={"font-semibold"}
-                        onClick={() => setOpenAddModal(true)}
-                      >
-                        <HiPlus className={"mr-2"} />
-                        Subject
-                      </Button>
+                    <div>
+                      <h5 className="m-0 text-lg font-bold tracking-tight text-gray-900 dark:text-white">
+                        {!selectedTeacherID
+                          ? "Select A Teacher to assign Subjects"
+                          : selectedTeacherName}
+                      </h5>
+                      <p className={"mb-3 text-gray-500 dark:text-gray-400"}>
+                        {selectedTeacher?.email}
+                      </p>
                     </div>
 
                     <div className={"my-4 flex w-full justify-center gap-8"}>
+                      {/* Prep Meter */}
                       <div className={"flex w-40 justify-center"}>
                         <div>
                           <div>Prep</div>
@@ -969,6 +1031,8 @@ export default function TeacherPreassignmentManagement({
                           }
                         />
                       </div>
+
+                      {/* Load Meter */}
                       <div className={"flex w-40 justify-center"}>
                         <div>
                           <div>Load</div>
@@ -1004,6 +1068,14 @@ export default function TeacherPreassignmentManagement({
                         />
                       </div>
                     </div>
+
+                    <Button
+                      className={"w-full font-semibold"}
+                      onClick={() => setOpenAddModal(true)}
+                    >
+                      <HiPlus className={"mr-2"} />
+                      Subject
+                    </Button>
 
                     {teacherPreassignments.length === 0 ? (
                       <p className="pt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -1041,7 +1113,7 @@ export default function TeacherPreassignmentManagement({
         </div>
       </div>
 
-      {/** CONFIG MODAL **/}
+      {/* CONFIG MODAL */}
       <Modal show={openConfigModal}>
         <ModalHeader>
           <div>Set Subject Constraints</div>
@@ -1199,12 +1271,78 @@ export default function TeacherPreassignmentManagement({
         </ModalFooter>
       </Modal>
 
-      {/** ADD MODAL **/}
-      <Modal show={openAddModal}>
+      {/* ADD MODAL */}
+      <Modal show={openAddModal} onClose={closeAddModal}>
         <ModalHeader>Add Subject Pre-Assignment</ModalHeader>
-        <ModalBody></ModalBody>
+        <ModalBody>
+          <div className="space-y-4">
+            <div>
+              <Label>Teacher</Label>
+              <div className={"font-semibold text-gray-900 dark:text-white"}>
+                {selectedTeacherName}
+              </div>
+            </div>
+
+            <div>
+              <Label>Search Subject (Filtered by Curriculum Constraints)</Label>
+              <TextInput
+                value={subjectSearchQuery}
+                placeholder={"Type course code or name..."}
+                onChange={(e) => setSubjectSearchQuery(e.target.value)}
+                icon={HiSearch}
+              />
+              {isSearchingSubjects && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
+                  <Spinner size="sm" />
+                  <span>Searching subjects...</span>
+                </div>
+              )}
+              <div className="mt-1 max-h-48 overflow-y-auto">
+                {subjectSearchResults.map((subj) => {
+                  const isSelected =
+                    selectedSubjectToAssign?.subject_id === subj.subject_id;
+                  return (
+                    <div
+                      key={subj.subject_id}
+                      onClick={() => setSelectedSubjectToAssign(subj)}
+                      className={`my-1 cursor-pointer rounded p-2 text-sm transition-colors ${
+                        isSelected
+                          ? "bg-blue-600 text-white"
+                          : "bg-black/10 hover:bg-black/20 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
+                      }`}
+                    >
+                      <div className="font-semibold">{subj.course_name}</div>
+                      <div className="text-xs opacity-80">
+                        Code: {subj.course_code} | Units: {subj.lecture_units}{" "}
+                        Lec / {subj.lab_units} Lab{" "}
+                        {subj.year_term ? `| Term: ${subj.year_term}` : ""}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {selectedSubjectToAssign && (
+              <div className="rounded-lg border border-blue-500 bg-blue-50 p-3 dark:bg-blue-950/40">
+                <div className="text-xs font-semibold text-blue-800 dark:text-blue-300">
+                  Selected Subject for Assignment:
+                </div>
+                <div className="text-sm font-bold text-gray-900 dark:text-white">
+                  {selectedSubjectToAssign.course_name} (
+                  {selectedSubjectToAssign.course_code})
+                </div>
+              </div>
+            )}
+          </div>
+        </ModalBody>
         <ModalFooter className={"flex"}>
-          <Button>
+          <Button
+            disabled={!selectedSubjectToAssign || isSubmittingAddPreAssignment}
+            onClick={() => {
+              // Implement your save subject preassignment call here
+            }}
+          >
             {isSubmittingAddPreAssignment ? (
               <Spinner size="sm" className="mr-2" />
             ) : null}

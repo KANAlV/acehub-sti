@@ -83,7 +83,7 @@ export function NavigationBar({ account }: SidebarFunctionProps) {
       fluid
       rounded
       className={
-        "border-b border-gray-200 shadow-md shadow-gray-400/30 dark:border-gray-700 dark:bg-gray-800"
+        " dark:bg-gray-800"
       }
     >
       <NavbarBrand
@@ -120,16 +120,22 @@ export function NavigationBar({ account }: SidebarFunctionProps) {
           )}
         >
           <DropdownHeader>
-            <span className="block text-sm font-semibold">{account?.name || "User"}</span>
+            <span className="block text-sm font-semibold">
+              {account?.name || "User"}
+            </span>
             <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
               {account?.username || "No email"}
             </span>
           </DropdownHeader>
           <DropdownItem onClick={toggleMode}>
             {mode === "light" ? (
-              <HiSun className={`mr-2 h-5 w-5 text-gray-500 dark:text-gray-400`} />
+              <HiSun
+                className={`mr-2 h-5 w-5 text-gray-500 dark:text-gray-400`}
+              />
             ) : (
-              <HiMoon className={`mr-2 h-5 w-5 text-gray-500 dark:text-gray-400`} />
+              <HiMoon
+                className={`mr-2 h-5 w-5 text-gray-500 dark:text-gray-400`}
+              />
             )}
             Toggle Dark Mode
           </DropdownItem>

@@ -109,6 +109,7 @@ export default function SubjectsManagement() {
   const [openAddModal, setOpenAddModal] = useState<boolean>(false);
   const [openEditModal, setOpenEditModal] = useState<boolean>(false);
   const [openDeleteModal, setOpenDeleteModal] = useState<boolean>(false);
+  const [openAddConfirmation, setOpenAddConfirmation] = useState(false);
 
   // --- Target Record ---
   const [selectedSubject, setSelectedSubject] = useState<SubjectRecord | null>(
@@ -473,6 +474,7 @@ export default function SubjectsManagement() {
 
   const handleCloseModals = () => {
     setOpenAddModal(false);
+    setOpenAddConfirmation(false);
     setOpenEditModal(false);
     setOpenDeleteModal(false);
     setSelectedSubject(null);
@@ -692,7 +694,7 @@ export default function SubjectsManagement() {
             </div>
 
             <Button
-              className="whitespace-nowrap w-full sm:w-auto"
+              className="w-full whitespace-nowrap sm:w-auto"
               onClick={() => {
                 setFormData(initialFormState);
                 setSelectedYear("");
@@ -1123,12 +1125,49 @@ export default function SubjectsManagement() {
         </ModalBody>
         <ModalFooter>
           <Button
-            onClick={handleCreateSubject}
+            onClick={() => setOpenAddConfirmation(true)}
             disabled={isFormInvalid || isPending}
           >
             Create Subject
           </Button>
           <Button color="alternative" onClick={handleCloseModals}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* --- MODAL: ADD CONFIRMATION --- */}
+      <Modal show={openAddConfirmation}>
+        <ModalHeader>Confirm Add Subject</ModalHeader>
+        <ModalBody className={"dark: dark:text-white"}>
+          Are you sure these details are correct? Please verify them carefully,
+          as this is your final opportunity to make changes.
+          <div className={"flex gap-8"}>
+            <div className={"my-3"}>
+              <Label className={"text-gray-400"}>Course Code</Label>
+              <div className={"font-bold dark:text-white"}>
+                {formData.course_code}
+              </div>
+            </div>
+            <div className={"my-3"}>
+              <Label className={"text-gray-400"}>Course Name</Label>
+              <div className={"font-bold dark:text-white"}>
+                {formData.course_code}
+              </div>
+            </div>
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            onClick={handleCreateSubject}
+            disabled={isFormInvalid || isPending}
+          >
+            Create Subject
+          </Button>
+          <Button
+            color="alternative"
+            onClick={() => setOpenAddConfirmation(false)}
+          >
             Cancel
           </Button>
         </ModalFooter>
@@ -1141,43 +1180,21 @@ export default function SubjectsManagement() {
           <div className="flex flex-col gap-4">
             {/* Course Details with Limit Indicators */}
             <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="course_code">Course Code *</Label>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {(formData.course_code || "").length}/10
-                </span>
+              <div className="items-center justify-between">
+                <Label htmlFor="course_code">Course Code</Label>
               </div>
-              <TextInput
-                id="course_code"
-                placeholder="e.g. CS101"
-                value={formData.course_code || ""}
-                onChange={handleInputChange}
-                color={courseCodeError ? "failure" : "gray"}
-                maxLength={10}
-              />
-              {courseCodeError && (
-                <HelperText color="failure">{courseCodeError}</HelperText>
-              )}
+              <div className={"font-semibold dark:text-white"}>
+                {formData.course_code || ""}
+              </div>
             </div>
 
             <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="course_name">Course Name *</Label>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {(formData.course_name || "").length}/200
-                </span>
+              <div className="items-center justify-between">
+                <Label htmlFor="course_name">Course Name</Label>
               </div>
-              <TextInput
-                id="course_name"
-                placeholder="e.g. Intro to Computing"
-                value={formData.course_name || ""}
-                onChange={handleInputChange}
-                color={courseNameError ? "failure" : "gray"}
-                maxLength={200}
-              />
-              {courseNameError && (
-                <HelperText color="failure">{courseNameError}</HelperText>
-              )}
+              <div className={"font-semibold dark:text-white"}>
+                {formData.course_name || ""}
+              </div>
             </div>
 
             {/* Year Level (*) & Term (Required if 1st-4th Year) */}

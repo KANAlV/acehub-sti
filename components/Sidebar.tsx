@@ -154,7 +154,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       )}
 
       <Sidebar
-        className={`fixed top-17 bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent border-r border-gray-200 bg-gray-200 shadow-lg shadow-gray-400/60 transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
+        className={`fixed top-17 bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
         aria-label="Sidebar"
       >
         {/* Navigation Items (Stretches to fill remaining vertical space) */}

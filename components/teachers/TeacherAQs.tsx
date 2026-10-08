@@ -376,10 +376,7 @@ export default function TeacherAQs() {
 
         await loadData(currentPage, employmentFilter);
 
-        setIsAddAQOpen(false);
-        setSelectedAQOption("");
-        setAqSearchQuery("");
-        setIsAQLocked(false);
+        closeAqAddModal();
       } else {
         setAqSubmitError(res?.error || "Failed to add Academic Qualification.");
       }
@@ -408,6 +405,13 @@ export default function TeacherAQs() {
   });
 
   const totalPages = Math.ceil(teachersCount / limit) || 1;
+
+  function closeAqAddModal() {
+    setIsAddAQOpen(false);
+    setSelectedAQOption("");
+    setAqSearchQuery("");
+    setIsAQLocked(false);
+  }
 
   return (
     <div className="space-y-6">
@@ -494,13 +498,6 @@ export default function TeacherAQs() {
                     <option value="Part-Time">Part-Time</option>
                   </Select>
                 </div>
-
-                <Button
-                  color="gray"
-                  onClick={() => void loadData(1, employmentFilter)}
-                >
-                  <HiRefresh className="h-4 w-4" />
-                </Button>
               </div>
             </div>
 
@@ -714,13 +711,16 @@ export default function TeacherAQs() {
                     {selectedTeacher.email}
                   </p>
                 </div>
-                <Button
-                  color="gray"
-                  size="xs"
-                  onClick={() => setSelectedTeacher(null)}
-                >
-                  <HiX className="h-4 w-4" />
-                </Button>
+
+                <Tooltip content={"Close"}>
+                  <Button
+                    color="red"
+                    size="xs"
+                    onClick={() => setSelectedTeacher(null)}
+                  >
+                    <HiX className="h-4 w-4" />
+                  </Button>
+                </Tooltip>
               </div>
 
               <div className="space-y-4 pt-2">
@@ -896,11 +896,12 @@ export default function TeacherAQs() {
               <div className="mb-2 block">
                 <Label htmlFor="teacher-name-modal">Selected Teacher</Label>
               </div>
-              <TextInput
-                id="teacher-name-modal"
-                value={`${selectedTeacher?.full_name || ""} (${selectedTeacher?.department || "No Department"})`}
-                disabled
-              />
+              <span className={"text-md font-bold"}>
+                {selectedTeacher?.full_name || ""}
+                <span className={"ml-2 text-gray-400"}>
+                  ({selectedTeacher?.department || "No Department"})
+                </span>
+              </span>
             </div>
 
             {/* Search & Lock Academic Qualification */}
@@ -979,10 +980,8 @@ export default function TeacherAQs() {
                 value={initialStatus}
                 onChange={(e) => setInitialStatus(e.target.value)}
               >
-                <option value="Pending">Pending</option>
                 <option value="Approved">Approved</option>
                 <option value="Request">Requested</option>
-                <option value="Denied">Denied</option>
               </Select>
             </div>
 
@@ -1008,7 +1007,7 @@ export default function TeacherAQs() {
               "Submit AQ"
             )}
           </Button>
-          <Button color="gray" onClick={() => setIsAddAQOpen(false)}>
+          <Button color="gray" onClick={() => closeAqAddModal()}>
             Cancel
           </Button>
         </ModalFooter>

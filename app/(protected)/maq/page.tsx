@@ -18,7 +18,7 @@ export default function MaqPage() {
 
   return (
     <div className="m-8">
-      <h1 className="text-xl font-bold mb-4">Teachers</h1>
+      <h1 className="text-xl font-bold mb-4">MAQ</h1>
 
       <Tabs
         variant="underline"
