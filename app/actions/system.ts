@@ -1281,6 +1281,8 @@ export interface TeacherPreassignmentRecord {
   preassignment_name: string;
   teacher_id: string;
   subject_id: string;
+  lecture_units: number;
+  lab_units: number;
   merge_lec_lab: boolean;
   subject_name?: string;
   department?: string;

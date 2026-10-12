@@ -30,6 +30,9 @@ import {
   Tooltip,
   Badge,
   Label,
+  Checkbox,
+  Dropdown,
+  DropdownItem,
   useThemeMode,
 } from "flowbite-react";
 import {
@@ -39,6 +42,7 @@ import {
   HiExclamation,
   HiClock,
   HiPlus,
+  HiDotsVertical,
 } from "react-icons/hi";
 import { FaSortUp, FaSortDown } from "react-icons/fa";
 import { useMsal } from "@azure/msal-react";
@@ -62,6 +66,9 @@ import {
   ProgramRecord,
   searchSubjectsWithCurriculumFilter,
   SubjectRecord,
+  createTeacherPreassignment,
+  updateTeacherPreassignment,
+  deleteTeacherPreassignment,
 } from "@/app/actions/system";
 import { DepartmentRecord } from "@/components/teachers/TeachersManagement";
 import {
@@ -132,7 +139,11 @@ export default function TeacherPreassignmentManagement({
   // --- Modal States ---
   const [openConfigModal, setOpenConfigModal] = useState(false);
   const [openAddModal, setOpenAddModal] = useState(false);
-  const [openRemoveModal, setOpenRemoveModal] = useState(false);
+  const [openWarningModal, setOpenWarningModal] = useState(false);
+  const [openDeleteModal, setOpenDeleteModal] = useState(false);
+  const [subjectToDelete, setSubjectToDelete] =
+    useState<TeacherPreassignmentRecord | null>(null);
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
 
   // --- Form & Preassignment State ---
   const [selectedTeacherID, setSelectedTeacherID] = useState("");
@@ -143,7 +154,7 @@ export default function TeacherPreassignmentManagement({
   const [isPreassignmentLoading, setIsPreassignmentLoading] =
     useState<boolean>(false);
 
-  // --- Add Modal Subject Search States ---
+  // --- Add Modal Subject Search & Merge States ---
   const [subjectSearchQuery, setSubjectSearchQuery] = useState("");
   const [debouncedSubjectSearch, setDebouncedSubjectSearch] = useState("");
   const [subjectSearchResults, setSubjectSearchResults] = useState<
@@ -152,6 +163,7 @@ export default function TeacherPreassignmentManagement({
   const [isSearchingSubjects, setIsSearchingSubjects] = useState(false);
   const [selectedSubjectToAssign, setSelectedSubjectToAssign] =
     useState<SubjectRecord | null>(null);
+  const [mergeLecLab, setMergeLecLab] = useState<boolean>(false);
 
   // --- Config Consts ---
   const [curriculumAdd, setCurriculumAdd] = useState<CurriculumRecord[]>([]);
@@ -244,24 +256,19 @@ export default function TeacherPreassignmentManagement({
   // Execute Subject Search using curriculum filter when query changes
   useEffect(() => {
     async function performSubjectSearch() {
-      console.log("Search triggered. Query:", debouncedSubjectSearch);
-      console.log("Current curriculum IDs:", curriculumAdd.map((c) => c.curriculum_id));
-
       if (!debouncedSubjectSearch || debouncedSubjectSearch.trim().length < 2) {
-        console.log("Query too short, skipping search.");
         setSubjectSearchResults([]);
         return;
       }
 
       setIsSearchingSubjects(true);
-      const curriculumIds = curriculumAdd.map((c) => c.curriculum_id);
+      const curriculumVers = curriculumAdd.map((c) => c.curriculum_version);
 
       try {
         const res = await searchSubjectsWithCurriculumFilter(
           debouncedSubjectSearch,
-          curriculumIds,
+          curriculumVers,
         );
-        console.log("Search response received:", res);
         if (res.success && res.data) {
           setSubjectSearchResults(res.data);
         } else {
@@ -486,26 +493,36 @@ export default function TeacherPreassignmentManagement({
     }
   };
 
-  // Helper to map employment type to config limits keys
+  // Helper to map employment type to config limits keys (facultyLoadLimit + overload_max)
   const getLimitsForTeacher = (employmentType: string) => {
     const normalized = employmentType?.toLowerCase() || "";
+    const overloadMaxConfig = Number(config?.overload_max ?? 0);
+
     if (
       normalized.includes("part-time full load") ||
       normalized.includes("part_time_full_load")
     ) {
+      const facultyLoadLimit = Number(
+        config?.faculty_load?.part_time_full_load ?? 0,
+      );
       return {
-        prepLimit: config?.prep_limits?.part_time_full_load ?? 0,
-        facultyLoadLimit: config?.faculty_load?.part_time_full_load ?? 0,
+        prepLimit: Number(config?.prep_limits?.part_time_full_load ?? 0),
+        facultyLoadLimit,
+        overloadMax: facultyLoadLimit + overloadMaxConfig,
       };
     } else if (normalized.includes("part")) {
+      const facultyLoadLimit = Number(config?.faculty_load?.part_time ?? 0);
       return {
-        prepLimit: config?.prep_limits?.part_time ?? 0,
-        facultyLoadLimit: config?.faculty_load?.part_time ?? 0,
+        prepLimit: Number(config?.prep_limits?.part_time ?? 0),
+        facultyLoadLimit,
+        overloadMax: facultyLoadLimit + overloadMaxConfig,
       };
     } else {
+      const facultyLoadLimit = Number(config?.faculty_load?.full_time ?? 0);
       return {
-        prepLimit: config?.prep_limits?.full_time ?? 0,
-        facultyLoadLimit: config?.faculty_load?.full_time ?? 0,
+        prepLimit: Number(config?.prep_limits?.full_time ?? 0),
+        facultyLoadLimit,
+        overloadMax: facultyLoadLimit + overloadMaxConfig,
       };
     }
   };
@@ -523,6 +540,7 @@ export default function TeacherPreassignmentManagement({
     setSubjectSearchQuery("");
     setSubjectSearchResults([]);
     setSelectedSubjectToAssign(null);
+    setMergeLecLab(false);
     setIsSubmittingAddPreAssignment(false);
   }
 
@@ -599,6 +617,115 @@ export default function TeacherPreassignmentManagement({
       setIsSubmittingConfig(false);
     }
   }
+
+  // Actual submission handler
+  const executeAddPreAssignment = async () => {
+    if (!selectedTeacherID || !selectedSubjectToAssign) return;
+
+    setIsSubmittingAddPreAssignment(true);
+
+    const res = await createTeacherPreassignment(
+      preassignmentName,
+      selectedTeacherID,
+      selectedSubjectToAssign.subject_id,
+      mergeLecLab,
+    );
+
+    if (res.success) {
+      triggerToast("Subject pre-assigned successfully!", "success");
+      setOpenWarningModal(false);
+      closeAddModal();
+      void loadData();
+      void loadTeacherData(selectedTeacherID, selectedTeacherName);
+    } else {
+      triggerToast(
+        res.error || "Failed to create teacher preassignment.",
+        "error",
+      );
+    }
+
+    setIsSubmittingAddPreAssignment(false);
+  };
+
+  // Handle checking limits and triggering warning modal or saving directly
+  const handlePreAssignmentSaveClick = () => {
+    if (!selectedSubjectToAssign) return;
+
+    const selectedTeacher = teachers.find(
+      (t) => t.teacher_id === selectedTeacherID,
+    );
+    if (!selectedTeacher) {
+      void executeAddPreAssignment();
+      return;
+    }
+
+    const { prepLimit, facultyLoadLimit, overloadMax } = getLimitsForTeacher(
+      selectedTeacher.employment_type,
+    );
+
+    const newSubjectsCount = Number(selectedTeacher.subjects_count || 0) + 1;
+    const subjectUnits = mergeLecLab
+      ? Math.max(
+          Number(selectedSubjectToAssign.lecture_units || 0),
+          Number(selectedSubjectToAssign.lab_units || 0),
+        )
+      : Number(selectedSubjectToAssign.lecture_units || 0) +
+        Number(selectedSubjectToAssign.lab_units || 0);
+    const newTotalLoad = Number(selectedTeacher.total_load || 0) + subjectUnits;
+
+    // Block only if absolute overloadMax hard limit is exceeded
+    if (newTotalLoad > overloadMax) {
+      return;
+    }
+
+    // Trigger warning modal if prep limit or standard faculty load limit is exceeded
+    if (newSubjectsCount > prepLimit || newTotalLoad > facultyLoadLimit) {
+      setOpenWarningModal(true);
+    } else {
+      void executeAddPreAssignment();
+    }
+  };
+
+  // Toggle Merge Lec/Lab handler
+  const handleToggleMerge = async (item: TeacherPreassignmentRecord) => {
+    const newMergeState = !item.merge_lec_lab;
+    const res = await updateTeacherPreassignment(
+      item.preassignment_id,
+      preassignmentName,
+      selectedTeacherID,
+      item.subject_id,
+      newMergeState,
+    );
+
+    if (res.success) {
+      triggerToast("Preassignment updated successfully!", "success");
+      void loadData();
+      void loadTeacherData(selectedTeacherID, selectedTeacherName);
+    } else {
+      triggerToast(res.error || "Failed to update preassignment.", "error");
+    }
+  };
+
+  // Delete/Remove handler
+  const executeDeletePreassignment = async () => {
+    if (!subjectToDelete) return;
+    setIsSubmittingDelete(true);
+
+    const res = await deleteTeacherPreassignment(
+      subjectToDelete.preassignment_id,
+    );
+
+    if (res.success) {
+      triggerToast("Preassignment removed successfully!", "success");
+      setOpenDeleteModal(false);
+      setSubjectToDelete(null);
+      void loadData();
+      void loadTeacherData(selectedTeacherID, selectedTeacherName);
+    } else {
+      triggerToast(res.error || "Failed to remove preassignment.", "error");
+    }
+    setIsSubmittingDelete(false);
+  };
 
   return (
     <div className={"flex w-full max-w-full overflow-x-hidden"}>
@@ -824,11 +951,42 @@ export default function TeacherPreassignmentManagement({
                           {item.status}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center font-semibold text-gray-900 dark:text-white">
-                        {item.subjects_count} / {prepLimit}
+                      <TableCell
+                        className={`text-center font-semibold ${
+                          parseFloat(
+                            Number(item.subjects_count || 0).toFixed(2),
+                          ) > parseFloat(Number(prepLimit || 0).toFixed(2))
+                            ? "text-red-500"
+                            : parseFloat(
+                                  Number(item.subjects_count || 0).toFixed(2),
+                                ) <
+                                parseFloat(Number(prepLimit || 0).toFixed(2))
+                              ? "text-green-500"
+                              : "text-yellow-500 dark:text-yellow-300"
+                        }`}
+                      >
+                        {parseFloat(
+                          Number(item.subjects_count || 0).toFixed(2),
+                        )}{" "}
+                        / {parseFloat(Number(prepLimit || 0).toFixed(2))}
                       </TableCell>
-                      <TableCell className="text-center font-semibold text-gray-900 dark:text-white">
-                        {item.total_load} / {facultyLoadLimit}
+                      <TableCell
+                        className={`text-center font-semibold ${
+                          parseFloat(Number(item.total_load || 0).toFixed(2)) >
+                          parseFloat(Number(facultyLoadLimit || 0).toFixed(2))
+                            ? "text-red-500"
+                            : parseFloat(
+                                  Number(item.total_load || 0).toFixed(2),
+                                ) <
+                                parseFloat(
+                                  Number(facultyLoadLimit || 0).toFixed(2),
+                                )
+                              ? "text-green-500"
+                              : "text-yellow-500 dark:text-yellow-300"
+                        }`}
+                      >
+                        {parseFloat(Number(item.total_load || 0).toFixed(2))} /{" "}
+                        {parseFloat(Number(facultyLoadLimit || 0).toFixed(2))}
                       </TableCell>
                     </TableRow>
                   );
@@ -890,7 +1048,7 @@ export default function TeacherPreassignmentManagement({
       >
         <div className={"flex items-start justify-between"}>
           <div className={"flex gap-4"}>
-            <div>
+            <div className={"block sm:hidden"}>
               <Tooltip placement={"bottom"} content={"Close"}>
                 <Button
                   color={"alternative"}
@@ -900,7 +1058,7 @@ export default function TeacherPreassignmentManagement({
                 </Button>
               </Tooltip>
             </div>
-            <div>
+            <div className={"cursor-help"}>
               <Tooltip
                 content={
                   "Filters to only show subjects from selected curricula"
@@ -979,6 +1137,13 @@ export default function TeacherPreassignmentManagement({
                   ? getLimitsForTeacher(selectedTeacher.employment_type)
                   : { prepLimit: 0, facultyLoadLimit: 0 };
 
+                const teacherSubjectsCount = Number(
+                  selectedTeacher?.subjects_count || 0,
+                );
+                const teacherTotalLoad = Number(
+                  selectedTeacher?.total_load || 0,
+                );
+
                 return (
                   <>
                     {/* Overview Card / Grid matching table metrics */}
@@ -993,27 +1158,41 @@ export default function TeacherPreassignmentManagement({
                       </p>
                     </div>
 
-                    <div className={"my-4 flex w-full justify-center gap-8"}>
+                    <div
+                      className={
+                        "my-4 flex w-full justify-center gap-4 sm:gap-8"
+                      }
+                    >
                       {/* Prep Meter */}
                       <div className={"flex w-40 justify-center"}>
-                        <div>
-                          <div>Prep</div>
-                          <div
-                            className={`text-2xl ${
-                              selectedTeacher &&
-                              (selectedTeacher.subjects_count < prepLimit
-                                ? "text-green-500"
-                                : selectedTeacher.subjects_count > prepLimit
-                                  ? "text-red-500"
-                                  : "text-yellow-400")
-                            }`}
-                          >
-                            {selectedTeacher
-                              ? selectedTeacher.subjects_count
-                              : 0}{" "}
-                            / {prepLimit}
+                        <Tooltip
+                          content={`${
+                            selectedTeacher &&
+                            (teacherSubjectsCount < prepLimit
+                              ? "Underloaded"
+                              : teacherSubjectsCount > prepLimit
+                                ? "Overloaded"
+                                : "At Capacity")
+                          }`}
+                          style={isDarkMode ? "dark" : "light"}
+                        >
+                          <div className={"cursor-help"}>
+                            <div>Prep</div>
+                            <div
+                              className={`text-sm sm:text-xl ${
+                                selectedTeacher &&
+                                (teacherSubjectsCount < prepLimit
+                                  ? "text-green-500"
+                                  : teacherSubjectsCount > prepLimit
+                                    ? "text-red-500"
+                                    : "text-yellow-400")
+                              }`}
+                            >
+                              {parseFloat(teacherSubjectsCount.toFixed(2))} /{" "}
+                              {parseFloat(prepLimit.toFixed(2))}
+                            </div>
                           </div>
-                        </div>
+                        </Tooltip>
                         <div
                           className={
                             "ml-2 border-l border-black pr-2 dark:border-white"
@@ -1022,34 +1201,45 @@ export default function TeacherPreassignmentManagement({
                         <HiBookOpen
                           className={"h-full w-auto"}
                           color={
-                            selectedTeacher &&
-                            (selectedTeacher.subjects_count < prepLimit
+                            teacherSubjectsCount < prepLimit
                               ? "green"
-                              : selectedTeacher.subjects_count > prepLimit
+                              : teacherSubjectsCount > prepLimit
                                 ? "red"
-                                : "yellow")
+                                : "yellow"
                           }
                         />
                       </div>
 
                       {/* Load Meter */}
                       <div className={"flex w-40 justify-center"}>
-                        <div>
-                          <div>Load</div>
-                          <div
-                            className={`text-2xl ${
-                              selectedTeacher &&
-                              (selectedTeacher.total_load < facultyLoadLimit
-                                ? "text-green-500"
-                                : selectedTeacher.total_load > facultyLoadLimit
-                                  ? "text-red-500"
-                                  : "text-yellow-400")
-                            }`}
-                          >
-                            {selectedTeacher ? selectedTeacher.total_load : 0} /{" "}
-                            {facultyLoadLimit}
+                        <Tooltip
+                          content={`${
+                            selectedTeacher &&
+                            (teacherTotalLoad < facultyLoadLimit
+                              ? "Underloaded"
+                              : teacherTotalLoad > facultyLoadLimit
+                                ? "Overloaded"
+                                : "At Capacity")
+                          }`}
+                          style={isDarkMode ? "dark" : "light"}
+                        >
+                          <div className={"cursor-help"}>
+                            <div>Load</div>
+                            <div
+                              className={`text-sm sm:text-xl ${
+                                selectedTeacher &&
+                                (teacherTotalLoad < facultyLoadLimit
+                                  ? "text-green-500"
+                                  : teacherTotalLoad > facultyLoadLimit
+                                    ? "text-red-500"
+                                    : "text-yellow-400")
+                              }`}
+                            >
+                              {parseFloat(teacherTotalLoad.toFixed(2))} /{" "}
+                              {parseFloat(facultyLoadLimit.toFixed(2))}
+                            </div>
                           </div>
-                        </div>
+                        </Tooltip>
                         <div
                           className={
                             "ml-2 border-l border-black pr-2 dark:border-white"
@@ -1058,12 +1248,11 @@ export default function TeacherPreassignmentManagement({
                         <HiClock
                           className={"h-full w-auto"}
                           color={
-                            selectedTeacher &&
-                            (selectedTeacher.subjects_count < prepLimit
+                            teacherTotalLoad < facultyLoadLimit
                               ? "green"
-                              : selectedTeacher.subjects_count > prepLimit
+                              : teacherTotalLoad > facultyLoadLimit
                                 ? "red"
-                                : "yellow")
+                                : "yellow"
                           }
                         />
                       </div>
@@ -1082,7 +1271,7 @@ export default function TeacherPreassignmentManagement({
                         No pre-assignments found for this teacher.
                       </p>
                     ) : (
-                      <div className="space-y-3 pt-2">
+                      <div className="h-96 space-y-3 overflow-y-auto pt-2">
                         {teacherPreassignments.map((item, idx) => (
                           <div
                             key={item.preassignment_id || idx}
@@ -1092,14 +1281,49 @@ export default function TeacherPreassignmentManagement({
                               <span className="text-sm font-semibold text-gray-900 dark:text-white">
                                 {item.subject_name || item.subject_id}
                               </span>
-                              {item.merge_lec_lab && (
-                                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-                                  Merged Lec/Lab
-                                </span>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {item.merge_lec_lab && (
+                                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+                                    Merged Lec/Lab
+                                  </span>
+                                )}
+                                <Dropdown
+                                  label=""
+                                  dismissOnClick={true}
+                                  renderTrigger={() => (
+                                    <button className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                                      <HiDotsVertical className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                >
+                                  <DropdownItem
+                                    onClick={() => handleToggleMerge(item)}
+                                  >
+                                    {item.merge_lec_lab
+                                      ? "Unmerge Lec/Lab"
+                                      : "Toggle Merge Lec/Lab"}
+                                  </DropdownItem>
+                                  <DropdownItem
+                                    className="text-red-600 dark:text-red-400"
+                                    onClick={() => {
+                                      setSubjectToDelete(item);
+                                      setOpenDeleteModal(true);
+                                    }}
+                                  >
+                                    Remove Subject
+                                  </DropdownItem>
+                                </Dropdown>
+                              </div>
                             </div>
                             <span className="text-xs text-gray-500 dark:text-gray-400">
-                              Department: {item.department || "N/A"}
+                              Department: {item.department || "N/A"} | Lec:{" "}
+                              {parseFloat(
+                                Number(item.lecture_units || 0).toFixed(2),
+                              )}{" "}
+                              | Lab:{" "}
+                              {parseFloat(
+                                Number(item.lab_units || 0).toFixed(2),
+                              )}
                             </span>
                           </div>
                         ))}
@@ -1125,28 +1349,25 @@ export default function TeacherPreassignmentManagement({
         <ModalBody>
           <div className={"flex"}>
             <div className={"w-[80%]"}>
-              <div className="mb-1 text-gray-500 dark:text-gray-300">
-                <span>It is recommended to add </span>
-                <span className="inline-block align-baseline">
-                  <Tooltip
-                    style={isDarkMode ? "dark" : "light"}
-                    content={
-                      <>
-                        <div>
-                          4 Curriula per program (tertiary: 1st to 4th year),
-                        </div>
-                        <div>2 per strand (shs: grd 11 & 12)</div>
-                      </>
-                    }
-                  >
-                    <b className={"font-bold text-blue-500"}>
-                      [{reccomendedConstraints}]
-                    </b>
-                  </Tooltip>
-                </span>
-                <span>
-                  {" "}
-                  Curricula, for each corresponding programs/strands.
+              <div className="mb-2 text-sm text-gray-600 dark:text-gray-300">
+                <span>Recommended benchmark: </span>
+                <Tooltip
+                  style={isDarkMode ? "dark" : "light"}
+                  content={
+                    <div className="space-y-1">
+                      <div>
+                        • 4 curricula per tertiary program (1st–4th year)
+                      </div>
+                      <div>• 2 curricula per SHS strand (Grades 11 & 12)</div>
+                    </div>
+                  }
+                >
+                  <span className="cursor-help font-bold text-blue-600 underline decoration-dotted underline-offset-4 dark:text-blue-400">
+                    {reccomendedConstraints} total curricula
+                  </span>
+                </Tooltip>
+                <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                  Based on all active programs and strands.
                 </span>
               </div>
 
@@ -1220,14 +1441,14 @@ export default function TeacherPreassignmentManagement({
             <div className={"ml-3 w-[20%] border-l border-gray-500 pl-2"}>
               <div
                 className={
-                  "mx-2 text-center text-cyan-300 drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,1)]"
+                  "mx-2 text-center font-semibold text-cyan-700 dark:text-cyan-300"
                 }
               >
                 Programs
               </div>
               <div
                 className={
-                  "mx-2 text-center text-yellow-300 drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,1)]"
+                  "mx-2 text-center font-semibold text-yellow-700 dark:text-yellow-300"
                 }
               >
                 & Strands
@@ -1298,57 +1519,412 @@ export default function TeacherPreassignmentManagement({
                 </div>
               )}
               <div className="mt-1 max-h-48 overflow-y-auto">
-                {subjectSearchResults.map((subj) => {
-                  const isSelected =
-                    selectedSubjectToAssign?.subject_id === subj.subject_id;
-                  return (
-                    <div
-                      key={subj.subject_id}
-                      onClick={() => setSelectedSubjectToAssign(subj)}
-                      className={`my-1 cursor-pointer rounded p-2 text-sm transition-colors ${
-                        isSelected
-                          ? "bg-blue-600 text-white"
-                          : "bg-black/10 hover:bg-black/20 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
-                      }`}
-                    >
-                      <div className="font-semibold">{subj.course_name}</div>
-                      <div className="text-xs opacity-80">
-                        Code: {subj.course_code} | Units: {subj.lecture_units}{" "}
-                        Lec / {subj.lab_units} Lab{" "}
-                        {subj.year_term ? `| Term: ${subj.year_term}` : ""}
+                {subjectSearchResults
+                  .filter(
+                    (subj) =>
+                      !teacherPreassignments.some(
+                        (p) => p.subject_id === subj.subject_id,
+                      ),
+                  )
+                  .map((subj) => {
+                    const isSelected =
+                      selectedSubjectToAssign?.subject_id === subj.subject_id;
+                    return (
+                      <div
+                        key={subj.subject_id}
+                        onClick={() => setSelectedSubjectToAssign(subj)}
+                        className={`my-1.5 cursor-pointer rounded-lg border p-3 text-sm transition-all ${
+                          isSelected
+                            ? "border-blue-500 bg-blue-600 text-white shadow-sm"
+                            : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="leading-snug font-semibold dark:text-white">
+                            {subj.course_name}
+                          </span>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                              isSelected
+                                ? "bg-blue-700 text-blue-100"
+                                : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                            }`}
+                          >
+                            {subj.curriculum}
+                          </span>
+                        </div>
+                        <div
+                          className={`mt-1.5 flex flex-wrap items-center gap-2 text-xs ${
+                            isSelected
+                              ? "text-blue-100"
+                              : "text-gray-500 dark:text-gray-400"
+                          }`}
+                        >
+                          <span className="font-mono font-medium">
+                            {subj.course_code}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            {subj.lecture_units} Lec / {subj.lab_units} Lab
+                            Units
+                          </span>
+                          {subj.year_term && (
+                            <>
+                              <span>•</span>
+                              <span>{subj.year_term}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             </div>
 
             {selectedSubjectToAssign && (
-              <div className="rounded-lg border border-blue-500 bg-blue-50 p-3 dark:bg-blue-950/40">
-                <div className="text-xs font-semibold text-blue-800 dark:text-blue-300">
-                  Selected Subject for Assignment:
+              <>
+                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/30">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold tracking-wide text-blue-700 uppercase dark:text-blue-400">
+                      Selected Subject for Assignment
+                    </span>
+                    <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-300 dark:text-white">
+                      {selectedSubjectToAssign.curriculum}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-sm font-bold text-gray-900 dark:text-white">
+                    {selectedSubjectToAssign.course_name}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                    <span className="font-mono font-medium">
+                      {selectedSubjectToAssign.course_code}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      {selectedSubjectToAssign.lecture_units} Lec /{" "}
+                      {selectedSubjectToAssign.lab_units} Lab Units
+                    </span>
+                    {selectedSubjectToAssign.year_term && (
+                      <>
+                        <span>•</span>
+                        <span>{selectedSubjectToAssign.year_term}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="text-sm font-bold text-gray-900 dark:text-white">
-                  {selectedSubjectToAssign.course_name} (
-                  {selectedSubjectToAssign.course_code})
+
+                {/* Merge Lec/Lab Checkbox */}
+                <div className="flex items-center gap-2 pt-1">
+                  <Checkbox
+                    id="merge-lec-lab"
+                    checked={mergeLecLab}
+                    onChange={(e) => setMergeLecLab(e.target.checked)}
+                  />
+                  <Label
+                    htmlFor="merge-lec-lab"
+                    className="cursor-pointer text-sm font-medium"
+                  >
+                    Merge Lecture and Laboratory Units
+                  </Label>
                 </div>
-              </div>
+
+                {/* Projected Load & Subject Indicators inside Add Modal */}
+                {(() => {
+                  const selectedTeacher = teachers.find(
+                    (t) => t.teacher_id === selectedTeacherID,
+                  );
+                  if (!selectedTeacher) return null;
+                  const { prepLimit, facultyLoadLimit, overloadMax } =
+                    getLimitsForTeacher(selectedTeacher.employment_type);
+
+                  const newSubjectsCount =
+                    Number(selectedTeacher.subjects_count || 0) + 1;
+                  const subjectUnits = mergeLecLab
+                    ? Math.max(
+                        Number(selectedSubjectToAssign.lecture_units || 0),
+                        Number(selectedSubjectToAssign.lab_units || 0),
+                      )
+                    : Number(selectedSubjectToAssign.lecture_units || 0) +
+                      Number(selectedSubjectToAssign.lab_units || 0);
+                  const newTotalLoad =
+                    Number(selectedTeacher.total_load || 0) + subjectUnits;
+
+                  const isPrepExceeded = newSubjectsCount > prepLimit;
+                  const isLoadExceeded = newTotalLoad > facultyLoadLimit;
+                  const isHardLimitExceeded = newTotalLoad > overloadMax;
+
+                  return (
+                    <div className="space-y-2">
+                      <div className="my-2 flex w-full justify-center gap-6 rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
+                        <div className={"flex items-center justify-center"}>
+                          <div>
+                            <div className="text-xs text-gray-500">
+                              Proj. Prep
+                            </div>
+                            <div
+                              className={`text-lg font-bold ${
+                                isPrepExceeded
+                                  ? "text-red-500"
+                                  : "text-green-500"
+                              }`}
+                            >
+                              {parseFloat(Number(newSubjectsCount).toFixed(2))}{" "}
+                              / {parseFloat(Number(prepLimit).toFixed(2))}
+                            </div>
+                          </div>
+                          <div className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-600">
+                            <HiBookOpen
+                              className={`h-7 w-7 ${
+                                isPrepExceeded
+                                  ? "text-red-500"
+                                  : "text-green-500"
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        <div className={"flex items-center justify-center"}>
+                          <div>
+                            <div className="text-xs text-gray-500">
+                              Proj. Load
+                            </div>
+                            <div
+                              className={`text-lg font-bold ${
+                                isHardLimitExceeded
+                                  ? "font-extrabold text-red-600"
+                                  : isLoadExceeded
+                                    ? "text-red-500"
+                                    : "text-green-500"
+                              }`}
+                            >
+                              {parseFloat(Number(newTotalLoad).toFixed(2))} /{" "}
+                              {parseFloat(Number(facultyLoadLimit).toFixed(2))}
+                            </div>
+                          </div>
+                          <div className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-600">
+                            <HiClock
+                              className={`h-7 w-7 ${
+                                isHardLimitExceeded || isLoadExceeded
+                                  ? "text-red-500"
+                                  : "text-green-500"
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {isHardLimitExceeded && (
+                        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+                          <div className="flex items-center gap-1.5 font-semibold">
+                            <HiExclamation className="h-5 w-5 shrink-0" />
+                            <span>Hard Limit Exceeded</span>
+                          </div>
+                          <p className="mt-1 text-xs">
+                            Total load (
+                            {parseFloat(Number(newTotalLoad).toFixed(2))})
+                            exceeds the absolute maximum overload limit (
+                            {parseFloat(Number(overloadMax).toFixed(2))}). You
+                            cannot proceed with this assignment.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
             )}
           </div>
         </ModalBody>
         <ModalFooter className={"flex"}>
+          {(() => {
+            const selectedTeacher = teachers.find(
+              (t) => t.teacher_id === selectedTeacherID,
+            );
+            const overloadMax = selectedTeacher
+              ? getLimitsForTeacher(selectedTeacher.employment_type).overloadMax
+              : 0;
+            const subjectUnits = selectedSubjectToAssign
+              ? mergeLecLab
+                ? Math.max(
+                    Number(selectedSubjectToAssign.lecture_units || 0),
+                    Number(selectedSubjectToAssign.lab_units || 0),
+                  )
+                : Number(selectedSubjectToAssign.lecture_units || 0) +
+                  Number(selectedSubjectToAssign.lab_units || 0)
+              : 0;
+            const newTotalLoad =
+              Number(selectedTeacher?.total_load || 0) + subjectUnits;
+            const isHardLimitExceeded = newTotalLoad > overloadMax;
+
+            return (
+              <Button
+                disabled={
+                  !selectedSubjectToAssign ||
+                  isSubmittingAddPreAssignment ||
+                  isHardLimitExceeded
+                }
+                onClick={handlePreAssignmentSaveClick}
+              >
+                {isSubmittingAddPreAssignment ? (
+                  <Spinner size="sm" className="mr-2" />
+                ) : null}
+                Save
+              </Button>
+            );
+          })()}
+          <Button color={"alternative"} onClick={() => closeAddModal()}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* OVER-LIMIT WARNING CONFIRMATION MODAL */}
+      <Modal
+        show={openWarningModal}
+        onClose={() => setOpenWarningModal(false)}
+        size="md"
+      >
+        <ModalHeader className="border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-yellow-500">
+            <HiExclamation className="h-6 w-6" />
+            <span className="font-bold text-gray-900 dark:text-white">
+              Limit Exceeded Warning
+            </span>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Assigning this subject will cause <b>{selectedTeacherName}</b> to
+              exceed their allowed maximum prep count or total load limit. Do
+              you still want to proceed?
+            </p>
+
+            {(() => {
+              const selectedTeacher = teachers.find(
+                (t) => t.teacher_id === selectedTeacherID,
+              );
+              if (!selectedTeacher) return null;
+              const { prepLimit, facultyLoadLimit } = getLimitsForTeacher(
+                selectedTeacher.employment_type,
+              );
+
+              const newSubjectsCount =
+                Number(selectedTeacher.subjects_count || 0) + 1;
+              const subjectUnits = mergeLecLab
+                ? Math.max(
+                    Number(selectedSubjectToAssign?.lecture_units || 0),
+                    Number(selectedSubjectToAssign?.lab_units || 0),
+                  )
+                : Number(selectedSubjectToAssign?.lecture_units || 0) +
+                  Number(selectedSubjectToAssign?.lab_units || 0);
+              const newTotalLoad =
+                Number(selectedTeacher.total_load || 0) + subjectUnits;
+
+              return (
+                <div className="my-4 flex w-full justify-center gap-6 rounded-lg bg-gray-50 p-4 dark:bg-gray-800">
+                  <div className={"flex items-center justify-center"}>
+                    <div>
+                      <div className="text-xs text-gray-500">Proj. Prep</div>
+                      <div
+                        className={`text-xl font-bold ${
+                          parseFloat(Number(newSubjectsCount).toFixed(2)) >
+                          parseFloat(Number(prepLimit).toFixed(2))
+                            ? "text-red-500"
+                            : "text-green-500"
+                        }`}
+                      >
+                        {parseFloat(Number(newSubjectsCount).toFixed(2))} /{" "}
+                        {parseFloat(Number(prepLimit).toFixed(2))}
+                      </div>
+                    </div>
+                    <div className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-600">
+                      <HiBookOpen className={"h-8 w-8 text-red-500"} />
+                    </div>
+                  </div>
+
+                  <div className={"flex items-center justify-center"}>
+                    <div>
+                      <div className="text-xs text-gray-500">Proj. Load</div>
+                      <div
+                        className={`text-xl font-bold ${
+                          parseFloat(Number(newTotalLoad).toFixed(2)) >
+                          parseFloat(Number(facultyLoadLimit).toFixed(2))
+                            ? "text-red-500"
+                            : "text-green-500"
+                        }`}
+                      >
+                        {parseFloat(Number(newTotalLoad).toFixed(2))} /{" "}
+                        {parseFloat(Number(facultyLoadLimit).toFixed(2))}
+                      </div>
+                    </div>
+                    <div className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-600">
+                      <HiClock className={"h-8 w-8 text-red-500"} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </ModalBody>
+        <ModalFooter className="flex justify-end gap-2">
           <Button
-            disabled={!selectedSubjectToAssign || isSubmittingAddPreAssignment}
-            onClick={() => {
-              // Implement your save subject preassignment call here
-            }}
+            color="red"
+            onClick={executeAddPreAssignment}
+            disabled={isSubmittingAddPreAssignment}
           >
             {isSubmittingAddPreAssignment ? (
               <Spinner size="sm" className="mr-2" />
             ) : null}
-            Save
+            Proceed Anyway
           </Button>
-          <Button color={"alternative"} onClick={() => closeAddModal()}>
+          <Button
+            color="gray"
+            onClick={() => setOpenWarningModal(false)}
+            disabled={isSubmittingAddPreAssignment}
+          >
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* REMOVE SUBJECT CONFIRMATION MODAL */}
+      <Modal
+        show={openDeleteModal}
+        onClose={() => setOpenDeleteModal(false)}
+        size="md"
+      >
+        <ModalHeader className="border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-red-500">
+            <HiExclamation className="h-6 w-6" />
+            <span className="font-bold text-gray-900 dark:text-white">
+              Confirm Subject Removal
+            </span>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Are you sure you want to remove{" "}
+            <b>
+              {subjectToDelete?.subject_name || subjectToDelete?.subject_id}
+            </b>{" "}
+            from <b>{selectedTeacherName}</b>?
+          </p>
+        </ModalBody>
+        <ModalFooter className="flex justify-end gap-2">
+          <Button
+            color="red"
+            onClick={executeDeletePreassignment}
+            disabled={isSubmittingDelete}
+          >
+            {isSubmittingDelete ? <Spinner size="sm" className="mr-2" /> : null}
+            Confirm Removal
+          </Button>
+          <Button
+            color="gray"
+            onClick={() => setOpenDeleteModal(false)}
+            disabled={isSubmittingDelete}
+          >
             Cancel
           </Button>
         </ModalFooter>

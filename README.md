@@ -53,7 +53,7 @@ Follow these steps to set up and run the project locally.
 
 ### Prerequisites
 Make sure you have the following installed on your machine:
-* [Node.js](https://nodejs.org/) (v18 or higher recommended)
+* [Node.js](https://nodejs.org/) (v20 or higher recommended)
 * [Git](https://git-scm.com/)
 
 # Installation

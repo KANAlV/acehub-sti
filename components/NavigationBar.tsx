@@ -81,7 +81,6 @@ export function NavigationBar({ account }: SidebarFunctionProps) {
   return (
     <Navbar
       fluid
-      rounded
       className={
         " dark:bg-gray-800"
       }
