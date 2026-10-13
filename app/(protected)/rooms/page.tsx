@@ -632,14 +632,14 @@ export default function RoomsManagement() {
               </div>
 
               <div>
-                <Label htmlFor="floor_level">Floor Level (1 - 30) *</Label>
+                <Label htmlFor="floor_level">Floor Level (1 - 10) *</Label>
                 <Select
                     id="floor_level"
                     value={addFloorLevel}
                     onChange={(e) => setAddFloorLevel(e.target.value)}
                     className="[&_select]:max-h-40 [&_select]:overflow-y-auto"
                 >
-                  {Array.from({ length: 15 }, (_, i) => i + 1).map((floor) => (
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((floor) => (
                       <option key={floor} value={String(floor)}>
                         Floor {floor}
                       </option>

@@ -26,7 +26,6 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
-  Card,
   Tooltip,
   Badge,
   Label,
@@ -46,8 +45,6 @@ import {
 } from "react-icons/hi";
 import { FaSortUp, FaSortDown } from "react-icons/fa";
 import { useMsal } from "@azure/msal-react";
-
-// Import fetch actions and types from system actions
 import {
   fetchTeachersWithPreassignment,
   fetchTeachersCountWithPreassignment,
@@ -58,7 +55,6 @@ import {
   updateTeacherPreassignmentConfig,
   TeacherPreassignmentRecord,
   fetchCurricula,
-  PreassignmentTemplateRecord,
   fetchPreassignmentTemplates,
   fetchTeacherPreassignments,
   fetchCurriculumById,
@@ -69,6 +65,12 @@ import {
   createTeacherPreassignment,
   updateTeacherPreassignment,
   deleteTeacherPreassignment,
+  TeacherPreferences,
+  fetchSubjectsAQClusters,
+  SubjectAQClusterRecord,
+  AQRecord,
+  fetchTeacherAQRecords,
+  getTeachersWithoutPreassignmentCount, deletePreassignmentTemplate,
 } from "@/app/actions/system";
 import { DepartmentRecord } from "@/components/teachers/TeachersManagement";
 import {
@@ -77,6 +79,7 @@ import {
   HiCog6Tooth,
   HiQuestionMarkCircle,
 } from "react-icons/hi2";
+import { useRouter } from "next/navigation";
 
 /* FETCH BY ID / CURRICULUM FORMAT */
 export interface CurriculumRecord {
@@ -89,26 +92,35 @@ interface TeacherPreassignmentManagementProps {
   preassignmentName: string;
 }
 
+interface DisplayWarningProps {
+  count: number;
+  dm: boolean;
+}
+
+export const DEFAULT_PREFERENCES: TeacherPreferences = {
+  preferred_subjects: [],
+  preferred_times: [],
+  preferred_rooms: [],
+};
+
 export default function TeacherPreassignmentManagement({
   preassignmentName = "",
 }: TeacherPreassignmentManagementProps) {
+  const router = useRouter();
+
   // --- Dark Mode ---
   const { computedMode } = useThemeMode();
   const isDarkMode = computedMode === "dark";
 
-  // --- MSAL Auth State for Actor/Logging if needed ---
-  const { instance, accounts } = useMsal();
-  const activeAccount = instance.getActiveAccount() || accounts[0];
-
   // --- Data State ---
   const [config, setConfig] = useState<Configuration | null>(null);
   const [programs, setPrograms] = useState<ProgramRecord[]>([]);
+  const [unassignedCount, setUnassignedCount] = useState(0);
   const [teachers, setTeachers] = useState<TeacherPreassignmentSummaryRecord[]>(
     [],
   );
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [constraintsLoading, setConstraintsLoading] = useState(true);
-  const [isPending, startTransition] = useTransition();
 
   // --- Program/Strand Math Count Holder ---
   const [reccomendedConstraints, setReccomendedConstraints] = useState(0);
@@ -140,10 +152,14 @@ export default function TeacherPreassignmentManagement({
   const [openConfigModal, setOpenConfigModal] = useState(false);
   const [openAddModal, setOpenAddModal] = useState(false);
   const [openWarningModal, setOpenWarningModal] = useState(false);
+  const [openAQWarningModal, setOpenAQWarningModal] = useState(false);
   const [openDeleteModal, setOpenDeleteModal] = useState(false);
+  const [openTemplateDeleteModal, setOpenTemplateDeleteModal] =
+    useState(false);
   const [subjectToDelete, setSubjectToDelete] =
     useState<TeacherPreassignmentRecord | null>(null);
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+  const [isDeletingTemplate, setIsDeletingTemplate] = useState(false);
 
   // --- Form & Preassignment State ---
   const [selectedTeacherID, setSelectedTeacherID] = useState("");
@@ -156,7 +172,7 @@ export default function TeacherPreassignmentManagement({
 
   // --- Add Modal Subject Search & Merge States ---
   const [subjectSearchQuery, setSubjectSearchQuery] = useState("");
-  const [debouncedSubjectSearch, setDebouncedSubjectSearch] = useState("");
+  const [addSubjectSearch, setAddSubjectSearch] = useState("");
   const [subjectSearchResults, setSubjectSearchResults] = useState<
     SubjectRecord[]
   >([]);
@@ -164,6 +180,14 @@ export default function TeacherPreassignmentManagement({
   const [selectedSubjectToAssign, setSelectedSubjectToAssign] =
     useState<SubjectRecord | null>(null);
   const [mergeLecLab, setMergeLecLab] = useState<boolean>(false);
+
+  // --- Subject AQ Clusters State ---
+  const [subjectAQClusters, setSubjectAQClusters] = useState<
+    SubjectAQClusterRecord[]
+  >([]);
+  const [TeacherAQ, setTeacherAQ] = useState<AQRecord[]>([]);
+  const [isTeacherAQLoading, setIsTeacherAQLoading] = useState<boolean>(false);
+  const [isAQLoading, setIsAQLoading] = useState<boolean>(false);
 
   // --- Config Consts ---
   const [curriculumAdd, setCurriculumAdd] = useState<CurriculumRecord[]>([]);
@@ -248,7 +272,7 @@ export default function TeacherPreassignmentManagement({
   // Debounce Subject Search Input inside Add Modal
   useEffect(() => {
     const handler = setTimeout(() => {
-      setDebouncedSubjectSearch(subjectSearchQuery);
+      setAddSubjectSearch(subjectSearchQuery);
     }, 300);
     return () => clearTimeout(handler);
   }, [subjectSearchQuery]);
@@ -256,7 +280,7 @@ export default function TeacherPreassignmentManagement({
   // Execute Subject Search using curriculum filter when query changes
   useEffect(() => {
     async function performSubjectSearch() {
-      if (!debouncedSubjectSearch || debouncedSubjectSearch.trim().length < 2) {
+      if (!addSubjectSearch || addSubjectSearch.trim().length < 2) {
         setSubjectSearchResults([]);
         return;
       }
@@ -266,7 +290,7 @@ export default function TeacherPreassignmentManagement({
 
       try {
         const res = await searchSubjectsWithCurriculumFilter(
-          debouncedSubjectSearch,
+          addSubjectSearch,
           curriculumVers,
         );
         if (res.success && res.data) {
@@ -283,7 +307,36 @@ export default function TeacherPreassignmentManagement({
     }
 
     void performSubjectSearch();
-  }, [debouncedSubjectSearch, curriculumAdd]);
+  }, [addSubjectSearch, curriculumAdd]);
+
+  // Fetch Subject AQ Clusters when selectedSubjectToAssign changes
+  useEffect(() => {
+    async function getSubjectAQ() {
+      if (!selectedSubjectToAssign) {
+        setSubjectAQClusters([]);
+        return;
+      }
+
+      setIsAQLoading(true);
+      try {
+        const queryTerm1 = selectedSubjectToAssign.course_name;
+        const queryTerm2 = selectedSubjectToAssign.program_code;
+        const res = await fetchSubjectsAQClusters(queryTerm1, queryTerm2);
+        if (res.success && res.data) {
+          setSubjectAQClusters(res.data);
+        } else {
+          setSubjectAQClusters([]);
+        }
+      } catch (err) {
+        console.error("Error fetching subject AQ clusters:", err);
+        setSubjectAQClusters([]);
+      } finally {
+        setIsAQLoading(false);
+      }
+    }
+
+    void getSubjectAQ();
+  }, [selectedSubjectToAssign]);
 
   // Load Configuration Data
   const loadConfig = useCallback(async () => {
@@ -370,8 +423,9 @@ export default function TeacherPreassignmentManagement({
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setTeachers([]);
+    setUnassignedCount(0);
 
-    const [resData, countRes, resProgram] = await Promise.all([
+    const [resData, countRes, resProgram, countUnassignedRes] = await Promise.all([
       fetchTeachersWithPreassignment(
         preassignmentName,
         debouncedSearch,
@@ -389,6 +443,7 @@ export default function TeacherPreassignmentManagement({
         departmentFilter,
       ),
       fetchPrograms(null, "all", "program_code", "ASC", 0),
+      getTeachersWithoutPreassignmentCount(preassignmentName),
       loadConfig(),
     ]);
 
@@ -422,6 +477,15 @@ export default function TeacherPreassignmentManagement({
       triggerToast(
         resProgram.error || "Failed to fetch Strand/Programs.",
         "error",
+      );
+    }
+
+    if (countUnassignedRes.success) {
+      setUnassignedCount(countUnassignedRes.count);
+    } else {
+      triggerToast(
+          countUnassignedRes.error || "Failed to fetch unassigned teachers count with pre-assignment metrics.",
+          "error",
       );
     }
 
@@ -527,6 +591,115 @@ export default function TeacherPreassignmentManagement({
     }
   };
 
+  // Helper to calculate subject load matching the database function (incorporating student scaling)
+  const calculateSubjectLoad = (
+    subject: SubjectRecord | TeacherPreassignmentRecord,
+  ) => {
+    const isMerged =
+      "merge_lec_lab" in subject ? Boolean(subject.merge_lec_lab) : false;
+    const lectureUnits = Number(subject.lecture_units || 0);
+    const labUnits = Number(subject.lab_units || 0);
+
+    const baseUnits = isMerged
+      ? Math.max(lectureUnits, labUnits)
+      : lectureUnits + labUnits;
+
+    const yearTerm = "year_term" in subject ? subject.year_term : undefined;
+    const yearMatch = yearTerm?.match(/(11|12|[1-4])/);
+    const yrKey = yearMatch ? yearMatch[1] : "1";
+
+    const progCodeRaw =
+      "program_code" in subject ? subject.program_code : undefined;
+    const deptRaw = "department" in subject ? subject.department : undefined;
+
+    const progCode =
+      typeof progCodeRaw === "string"
+        ? progCodeRaw.trim().toUpperCase()
+        : typeof deptRaw === "string"
+          ? deptRaw.trim().toUpperCase()
+          : "";
+
+    const prog = programs.find(
+      (p) => p.program_code?.trim().toUpperCase() === progCode,
+    );
+
+    let studentCount = 0;
+    if (prog && prog.students) {
+      try {
+        const studentsObj =
+          typeof prog.students === "string"
+            ? (JSON.parse(prog.students) as Record<string, unknown>)
+            : (prog.students as Record<string, unknown>);
+        studentCount = Number(studentsObj[yrKey] || 0);
+      } catch (e) {
+        studentCount = 0;
+      }
+    }
+
+    const maxStudents = Number(config?.max_students ?? 40);
+    const multiplier = Math.max(
+      1,
+      Math.ceil(studentCount / (maxStudents || 1)),
+    );
+
+    return baseUnits * multiplier;
+  };
+
+  // Helper to calculate projected prep count (treating same course_name as a single prep)
+  const calculateProjectedPrepCount = (newSubject: SubjectRecord | null) => {
+    const existingNames = teacherPreassignments.map((p) =>
+      (p.subject_name || "").trim().toLowerCase(),
+    );
+    const uniquePreps = new Set(existingNames);
+    if (newSubject && newSubject.course_name) {
+      uniquePreps.add(newSubject.course_name.trim().toLowerCase());
+    }
+    return uniquePreps.size;
+  };
+
+  // Helper to check if teacher has fully matched AQs for selected subject
+  const checkIsFullyMatched = () => {
+    if (!selectedSubjectToAssign) return true;
+
+    const teacherAQList = TeacherAQ.filter(
+      (t) => t.approved === "Approved",
+    ).map((t) => (t.aq || "").trim().toLowerCase());
+
+    const parseList = (val: unknown): string[] => {
+      if (Array.isArray(val)) return val;
+      if (typeof val === "string") {
+        const cleaned = val.replace(/^\{|\}$/g, "").trim();
+        if (!cleaned || cleaned === "NULL") return [];
+        return (
+          cleaned
+            .match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)
+            ?.map((s) => s.replace(/^"|"$/g, "")) ||
+          cleaned.split(",").map((s) => s.trim())
+        );
+      }
+      return [];
+    };
+
+    let hasAnyAQ = false;
+    let allMatched = true;
+
+    if (subjectAQClusters.length > 0) {
+      subjectAQClusters.forEach((row) => {
+        const aqs = parseList(row.aq_list);
+        if (aqs.length > 0) {
+          hasAnyAQ = true;
+          aqs.forEach((aq) => {
+            if (!teacherAQList.includes(aq.trim().toLowerCase())) {
+              allMatched = false;
+            }
+          });
+        }
+      });
+    }
+
+    return hasAnyAQ && allMatched;
+  };
+
   // Close Config Modal
   function closeConfigModal() {
     setOpenConfigModal(false);
@@ -540,6 +713,7 @@ export default function TeacherPreassignmentManagement({
     setSubjectSearchQuery("");
     setSubjectSearchResults([]);
     setSelectedSubjectToAssign(null);
+    setSubjectAQClusters([]);
     setMergeLecLab(false);
     setIsSubmittingAddPreAssignment(false);
   }
@@ -561,6 +735,24 @@ export default function TeacherPreassignmentManagement({
       );
     }
     setIsPreassignmentLoading(false);
+  }
+
+  async function fetchSelectedTeacherAQ(pscs_id: string) {
+    setIsTeacherAQLoading(true);
+    setTeacherAQ([]);
+    const AQRes = await fetchTeacherAQRecords(
+      null,
+      pscs_id,
+      "Approved",
+      "created_at",
+      "DESC",
+    );
+    if (AQRes.success && AQRes.data) {
+      setTeacherAQ(AQRes.data);
+    } else {
+      triggerToast(AQRes.error || "Failed to load teacher AQ(s).", "error");
+    }
+    setIsTeacherAQLoading(false);
   }
 
   const totalPages = Math.ceil(totalCount / maxRow) || 1;
@@ -634,6 +826,7 @@ export default function TeacherPreassignmentManagement({
     if (res.success) {
       triggerToast("Subject pre-assigned successfully!", "success");
       setOpenWarningModal(false);
+      setOpenAQWarningModal(false);
       closeAddModal();
       void loadData();
       void loadTeacherData(selectedTeacherID, selectedTeacherName);
@@ -651,6 +844,13 @@ export default function TeacherPreassignmentManagement({
   const handlePreAssignmentSaveClick = () => {
     if (!selectedSubjectToAssign) return;
 
+    // First check if AQ requirements are fully met
+    const isFullyMatched = checkIsFullyMatched();
+    if (!isFullyMatched) {
+      setOpenAQWarningModal(true);
+      return;
+    }
+
     const selectedTeacher = teachers.find(
       (t) => t.teacher_id === selectedTeacherID,
     );
@@ -663,14 +863,10 @@ export default function TeacherPreassignmentManagement({
       selectedTeacher.employment_type,
     );
 
-    const newSubjectsCount = Number(selectedTeacher.subjects_count || 0) + 1;
-    const subjectUnits = mergeLecLab
-      ? Math.max(
-          Number(selectedSubjectToAssign.lecture_units || 0),
-          Number(selectedSubjectToAssign.lab_units || 0),
-        )
-      : Number(selectedSubjectToAssign.lecture_units || 0) +
-        Number(selectedSubjectToAssign.lab_units || 0);
+    const newSubjectsCount = calculateProjectedPrepCount(
+      selectedSubjectToAssign,
+    );
+    const subjectUnits = calculateSubjectLoad(selectedSubjectToAssign);
     const newTotalLoad = Number(selectedTeacher.total_load || 0) + subjectUnits;
 
     // Block only if absolute overloadMax hard limit is exceeded
@@ -716,23 +912,42 @@ export default function TeacherPreassignmentManagement({
     );
 
     if (res.success) {
-      triggerToast("Preassignment removed successfully!", "success");
+      triggerToast("Pre-assignment removed successfully!", "success");
       setOpenDeleteModal(false);
       setSubjectToDelete(null);
       void loadData();
       void loadTeacherData(selectedTeacherID, selectedTeacherName);
     } else {
-      triggerToast(res.error || "Failed to remove preassignment.", "error");
+      triggerToast(res.error || "Failed to remove pre-assignment.", "error");
     }
     setIsSubmittingDelete(false);
   };
 
+  // --- Delete Template Handler ---
+  const executeDeleteTemplate = async () => {
+    setIsDeletingTemplate(true);
+
+    try {
+      const res = await deletePreassignmentTemplate(preassignmentName);
+      if (res.success) {
+        triggerToast("Template deleted successfully!", "success");
+        router.push("/teachers");
+      }
+      setOpenTemplateDeleteModal(false);
+    } catch (err) {
+      console.error("Error deleting template:", err);
+      triggerToast("Failed to delete template.", "error");
+    } finally {
+      setIsDeletingTemplate(false);
+    }
+  };
+
   return (
-    <div className={"flex w-full max-w-full overflow-x-hidden"}>
+    <div className={"flex w-full max-w-full scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-hidden"}>
       {/* Main Div */}
       <div className="min-w-0 flex-1 space-y-4 p-4">
         {/* Page Header & Actions Bar */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-4 items-start">
           <div>
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">
               Teachers Pre-assignment Summary
@@ -750,55 +965,83 @@ export default function TeacherPreassignmentManagement({
               )}
             </p>
           </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            {/* Search Input */}
-            <div className="w-full sm:w-64">
-              <TextInput
-                id="search-teachers"
-                type="text"
-                placeholder="Search teachers..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                icon={HiSearch}
-              />
-            </div>
-
-            {/* Status Filter */}
-            <div className="w-full sm:w-48">
-              <Select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
+          <div className={"mt-2"}>
+            <Dropdown
+                label=""
+                dismissOnClick={true}
+                renderTrigger={() => (
+                    <button className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                      <HiDotsVertical className="h-4 w-4" />
+                    </button>
+                )}
+            >
+              <DropdownItem
+                  className="text-red-600 dark:text-red-400"
+                  onClick={() => {
+                    setOpenTemplateDeleteModal(true);
+                  }}
               >
-                <option value="All Active & On Leave">
-                  All Active & On Leave
+                Remove Subject
+              </DropdownItem>
+            </Dropdown>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className={"sm:hidden"}>
+            <DisplayWarning count={unassignedCount} dm={isDarkMode} />
+          </div>
+
+          {/* Search Input */}
+          <div className="w-full sm:w-64">
+            <TextInput
+              id="search-teachers"
+              type="text"
+              placeholder="Search teachers..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              icon={HiSearch}
+            />
+          </div>
+
+          {/* Status Filter */}
+          <div className="w-full sm:w-48">
+            <Select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+            >
+              <option value="All Active & On Leave">
+                All Active & On Leave
+              </option>
+              <option value="Active">Active</option>
+              <option value="On Leave">On Leave</option>
+              <option value="Inactive">Inactive</option>
+            </Select>
+          </div>
+
+          {/* Department Filter */}
+          <div className="w-full sm:w-48">
+            <Select
+              value={departmentFilter}
+              onChange={(e) => {
+                setDepartmentFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+            >
+              <option value="All Departments">All Departments</option>
+              {allDepartments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
                 </option>
-                <option value="Active">Active</option>
-                <option value="On Leave">On Leave</option>
-                <option value="Inactive">Inactive</option>
-              </Select>
-            </div>
+              ))}
+            </Select>
+          </div>
 
-            {/* Department Filter */}
-            <div className="w-full sm:w-48">
-              <Select
-                value={departmentFilter}
-                onChange={(e) => {
-                  setDepartmentFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-              >
-                <option value="All Departments">All Departments</option>
-                {allDepartments.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
-                  </option>
-                ))}
-              </Select>
-            </div>
+          <div className={"hidden sm:block"}>
+            <DisplayWarning count={unassignedCount} dm={isDarkMode} />
           </div>
         </div>
 
@@ -919,9 +1162,10 @@ export default function TeacherPreassignmentManagement({
                     <TableRow
                       key={`teacher-${item.teacher_id || index}`}
                       className="cursor-pointer bg-white dark:border-gray-700 dark:bg-gray-800"
-                      onClick={() =>
-                        loadTeacherData(item.teacher_id, teacherFullName)
-                      }
+                      onClick={() => {
+                        loadTeacherData(item.teacher_id, teacherFullName);
+                        fetchSelectedTeacherAQ(item.pscs_id);
+                      }}
                     >
                       <TableCell className="font-medium text-gray-900 dark:text-white">
                         <div className="flex flex-col">
@@ -952,7 +1196,7 @@ export default function TeacherPreassignmentManagement({
                         </span>
                       </TableCell>
                       <TableCell
-                        className={`text-center font-semibold ${
+                        className={`font-semibold ${
                           parseFloat(
                             Number(item.subjects_count || 0).toFixed(2),
                           ) > parseFloat(Number(prepLimit || 0).toFixed(2))
@@ -971,7 +1215,7 @@ export default function TeacherPreassignmentManagement({
                         / {parseFloat(Number(prepLimit || 0).toFixed(2))}
                       </TableCell>
                       <TableCell
-                        className={`text-center font-semibold ${
+                        className={`font-semibold ${
                           parseFloat(Number(item.total_load || 0).toFixed(2)) >
                           parseFloat(Number(facultyLoadLimit || 0).toFixed(2))
                             ? "text-red-500"
@@ -1046,18 +1290,19 @@ export default function TeacherPreassignmentManagement({
           !selectedTeacherID ? "hidden sm:block" : "block"
         }`}
       >
-        <div className={"flex items-start justify-between"}>
-          <div className={"flex gap-4"}>
-            <div className={"block sm:hidden"}>
-              <Tooltip placement={"bottom"} content={"Close"}>
-                <Button
-                  color={"alternative"}
-                  onClick={() => setSelectedTeacherID("")}
-                >
-                  <HiChevronLeft color={"gray"} />
-                </Button>
-              </Tooltip>
-            </div>
+        <div className={"flex items-center justify-between gap-2"}>
+          <div className={"block pt-0.5 sm:hidden"}>
+            <Tooltip placement={"bottom"} content={"Close"}>
+              <Button
+                color={"alternative"}
+                onClick={() => setSelectedTeacherID("")}
+                size="sm"
+              >
+                <HiChevronLeft className="h-4 w-4" color={"gray"} />
+              </Button>
+            </Tooltip>
+          </div>
+          <div className={"flex items-start gap-3"}>
             <div className={"cursor-help"}>
               <Tooltip
                 content={
@@ -1065,10 +1310,17 @@ export default function TeacherPreassignmentManagement({
                 }
                 placement={"bottom"}
               >
-                <b className={"flex items-center gap-1 text-xl font-extrabold"}>
-                  Curriculum Constraints
-                  <HiQuestionMarkCircle color={"gray"} />
-                </b>
+                <div
+                  className={
+                    "text-base leading-tight font-extrabold text-gray-900 sm:text-xl dark:text-white"
+                  }
+                >
+                  Curriculum{" "}
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                    Constraints
+                    <HiQuestionMarkCircle className="h-5 w-5 shrink-0 text-gray-500" />
+                  </span>
+                </div>
               </Tooltip>
             </div>
           </div>
@@ -1079,7 +1331,7 @@ export default function TeacherPreassignmentManagement({
             content={"Set Constraints for Selecting Subjects"}
           >
             <HiCog6Tooth
-              className="h-8 w-8 cursor-pointer text-gray-500"
+              className="h-7 w-7 shrink-0 cursor-pointer text-gray-500 hover:text-gray-700 sm:h-8 sm:w-8 dark:hover:text-gray-300"
               onClick={handleOpenConfigModal}
             />
           </Tooltip>
@@ -1093,7 +1345,7 @@ export default function TeacherPreassignmentManagement({
           {constraintsLoading
             ? "Constraints Loading..."
             : curriculumAdd.length > 0
-              ? curriculumAdd.map((item, index) => {
+              ? curriculumAdd.map((item) => {
                   return (
                     <Badge
                       key={item.curriculum_id}
@@ -1106,7 +1358,7 @@ export default function TeacherPreassignmentManagement({
                     </Badge>
                   );
                 })
-              : "No Curriculumn Constraints set"}
+              : "No Curriculum Constraints set"}
         </div>
 
         {/* Right Sidebar */}
@@ -1258,6 +1510,15 @@ export default function TeacherPreassignmentManagement({
                       </div>
                     </div>
 
+                    <div
+                      className={
+                        "mt-4 w-full border-t border-black p-2 text-gray-400 dark:border-white"
+                      }
+                    >
+                      Displayed loads are calculated dynamically based on
+                      current student enrollment records.
+                    </div>
+
                     <Button
                       className={"w-full font-semibold"}
                       onClick={() => setOpenAddModal(true)}
@@ -1272,61 +1533,70 @@ export default function TeacherPreassignmentManagement({
                       </p>
                     ) : (
                       <div className="h-96 space-y-3 overflow-y-auto pt-2">
-                        {teacherPreassignments.map((item, idx) => (
-                          <div
-                            key={item.preassignment_id || idx}
-                            className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-600 dark:bg-gray-700/50"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                                {item.subject_name || item.subject_id}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                {item.merge_lec_lab && (
-                                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-                                    Merged Lec/Lab
+                        {teacherPreassignments.map((item, idx) => {
+                          const assignedUnits = calculateSubjectLoad(item);
+                          return (
+                            <div
+                              key={item.preassignment_id || idx}
+                              className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-600 dark:bg-gray-700/50"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                  <span className="inline-flex shrink-0 items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                    {parseFloat(assignedUnits.toFixed(2))} units
                                   </span>
-                                )}
-                                <Dropdown
-                                  label=""
-                                  dismissOnClick={true}
-                                  renderTrigger={() => (
-                                    <button className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                                      <HiDotsVertical className="h-4 w-4" />
-                                    </button>
+                                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                                    {item.subject_name || item.subject_id}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {item.merge_lec_lab && (
+                                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+                                      Merged Lec/Lab
+                                    </span>
                                   )}
-                                >
-                                  <DropdownItem
-                                    onClick={() => handleToggleMerge(item)}
+                                  <Dropdown
+                                    label=""
+                                    dismissOnClick={true}
+                                    renderTrigger={() => (
+                                      <button className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                                        <HiDotsVertical className="h-4 w-4" />
+                                      </button>
+                                    )}
                                   >
-                                    {item.merge_lec_lab
-                                      ? "Unmerge Lec/Lab"
-                                      : "Toggle Merge Lec/Lab"}
-                                  </DropdownItem>
-                                  <DropdownItem
-                                    className="text-red-600 dark:text-red-400"
-                                    onClick={() => {
-                                      setSubjectToDelete(item);
-                                      setOpenDeleteModal(true);
-                                    }}
-                                  >
-                                    Remove Subject
-                                  </DropdownItem>
-                                </Dropdown>
+                                    <DropdownItem
+                                      onClick={() => handleToggleMerge(item)}
+                                    >
+                                      {item.merge_lec_lab
+                                        ? "Unmerge Lec/Lab"
+                                        : "Toggle Merge Lec/Lab"}
+                                    </DropdownItem>
+                                    <DropdownItem
+                                      className="text-red-600 dark:text-red-400"
+                                      onClick={() => {
+                                        setSubjectToDelete(item);
+                                        setOpenDeleteModal(true);
+                                      }}
+                                    >
+                                      Remove Subject
+                                    </DropdownItem>
+                                  </Dropdown>
+                                </div>
                               </div>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {item.department || "N/A"} {item.year_term} |
+                                Lec:{" "}
+                                {parseFloat(
+                                  Number(item.lecture_units || 0).toFixed(2),
+                                )}{" "}
+                                | Lab:{" "}
+                                {parseFloat(
+                                  Number(item.lab_units || 0).toFixed(2),
+                                )}
+                              </span>
                             </div>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              Department: {item.department || "N/A"} | Lec:{" "}
-                              {parseFloat(
-                                Number(item.lecture_units || 0).toFixed(2),
-                              )}{" "}
-                              | Lab:{" "}
-                              {parseFloat(
-                                Number(item.lab_units || 0).toFixed(2),
-                              )}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </>
@@ -1401,13 +1671,20 @@ export default function TeacherPreassignmentManagement({
                     })}
                 </div>
               </div>
-              <h3 className={"py-3 dark:text-white"}>Added Curriculum</h3>
+
+              <div className={"flex"}>
+                <h3 className={"py-3 dark:text-white"}>Added Curriculum</h3>
+                <span className={"font-extrabold"}>
+                  [{curriculumAdd.length}]
+                </span>
+              </div>
+
               <div
                 className={"min-h-24 rounded-xl border border-gray-500/50 p-2"}
               >
                 <div className={"flex flex-wrap gap-2"}>
                   {curriculumAdd.length > 0 &&
-                    curriculumAdd.map((item, index) => {
+                    curriculumAdd.map((item) => {
                       return (
                         <Badge
                           key={item.curriculum_id}
@@ -1492,6 +1769,46 @@ export default function TeacherPreassignmentManagement({
         </ModalFooter>
       </Modal>
 
+      {/* DELETE TEMPLATE MODAL */}
+      <Modal
+          show={openTemplateDeleteModal}
+          onClose={() => setOpenTemplateDeleteModal(false)}
+          size="md"
+      >
+        <ModalHeader className="border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-red-500">
+            <HiExclamation className="h-6 w-6" />
+            <span className="font-bold text-gray-900 dark:text-white">
+              Confirm Template Deletion
+            </span>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Are you sure you want to delete template{" "}
+            <b>{preassignmentName || "this template"}</b>? This action cannot be
+            undone and will redirect you to the teachers page.
+          </p>
+        </ModalBody>
+        <ModalFooter className="flex justify-end gap-2">
+          <Button
+              color="red"
+              onClick={executeDeleteTemplate}
+              disabled={isDeletingTemplate}
+          >
+            {isDeletingTemplate ? <Spinner size="sm" className="mr-2" /> : null}
+            Confirm Deletion
+          </Button>
+          <Button
+              color="gray"
+              onClick={() => setOpenTemplateDeleteModal(false)}
+              disabled={isDeletingTemplate}
+          >
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+
       {/* ADD MODAL */}
       <Modal show={openAddModal} onClose={closeAddModal}>
         <ModalHeader>Add Subject Pre-Assignment</ModalHeader>
@@ -1501,6 +1818,24 @@ export default function TeacherPreassignmentManagement({
               <Label>Teacher</Label>
               <div className={"font-semibold text-gray-900 dark:text-white"}>
                 {selectedTeacherName}
+              </div>
+            </div>
+
+            <div>
+              <Label>Academic Qualifications:</Label>
+              <div className={`flex w-full gap-2 overflow-x-auto`}>
+                {isTeacherAQLoading ? (
+                  <span className={`dark:text-white`}>
+                    Teacher AQ Loading...
+                  </span>
+                ) : (
+                  TeacherAQ.map(
+                    (taq) =>
+                      taq.approved === "Approved" && (
+                        <Badge key={taq.aq}>{taq.aq}</Badge>
+                      ),
+                  )
+                )}
               </div>
             </div>
 
@@ -1637,21 +1972,59 @@ export default function TeacherPreassignmentManagement({
                   const { prepLimit, facultyLoadLimit, overloadMax } =
                     getLimitsForTeacher(selectedTeacher.employment_type);
 
-                  const newSubjectsCount =
-                    Number(selectedTeacher.subjects_count || 0) + 1;
-                  const subjectUnits = mergeLecLab
-                    ? Math.max(
-                        Number(selectedSubjectToAssign.lecture_units || 0),
-                        Number(selectedSubjectToAssign.lab_units || 0),
-                      )
-                    : Number(selectedSubjectToAssign.lecture_units || 0) +
-                      Number(selectedSubjectToAssign.lab_units || 0);
+                  const newSubjectsCount = calculateProjectedPrepCount(
+                    selectedSubjectToAssign,
+                  );
+                  const subjectUnits = calculateSubjectLoad(
+                    selectedSubjectToAssign,
+                  );
                   const newTotalLoad =
                     Number(selectedTeacher.total_load || 0) + subjectUnits;
 
                   const isPrepExceeded = newSubjectsCount > prepLimit;
                   const isLoadExceeded = newTotalLoad > facultyLoadLimit;
                   const isHardLimitExceeded = newTotalLoad > overloadMax;
+
+                  // Compute whether all AQs match the teacher's approved AQs
+                  const teacherAQList = TeacherAQ.filter(
+                    (t) => t.approved === "Approved",
+                  ).map((t) => (t.aq || "").trim().toLowerCase());
+
+                  const parseList = (val: unknown): string[] => {
+                    if (Array.isArray(val)) return val;
+                    if (typeof val === "string") {
+                      const cleaned = val.replace(/^\{|\}$/g, "").trim();
+                      if (!cleaned || cleaned === "NULL") return [];
+                      return (
+                        cleaned
+                          .match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)
+                          ?.map((s) => s.replace(/^"|"$/g, "")) ||
+                        cleaned.split(",").map((s) => s.trim())
+                      );
+                    }
+                    return [];
+                  };
+
+                  let hasAnyAQ = false;
+                  let allMatched = true;
+
+                  if (subjectAQClusters.length > 0) {
+                    subjectAQClusters.forEach((row) => {
+                      const aqs = parseList(row.aq_list);
+                      if (aqs.length > 0) {
+                        hasAnyAQ = true;
+                        aqs.forEach((aq) => {
+                          if (
+                            !teacherAQList.includes(aq.trim().toLowerCase())
+                          ) {
+                            allMatched = false;
+                          }
+                        });
+                      }
+                    });
+                  }
+
+                  const isFullyMatched = hasAnyAQ && allMatched;
 
                   return (
                     <div className="space-y-2">
@@ -1713,6 +2086,103 @@ export default function TeacherPreassignmentManagement({
                         </div>
                       </div>
 
+                      {/* AQ Match Display Section */}
+                      <div
+                        className={`rounded-lg border p-3 shadow-sm transition-all ${
+                          isFullyMatched
+                            ? "border-green-300 bg-green-50/70 text-green-900 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-200"
+                            : "border-red-300 bg-red-50/70 text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"
+                        }`}
+                      >
+                        <div className="mb-2 text-xs font-semibold tracking-wide uppercase">
+                          {isFullyMatched
+                            ? "Qualified to Teach"
+                            : "Missing Required AQ(s)"}
+                        </div>
+                        {isAQLoading ? (
+                          <div className="flex items-center gap-2 text-xs opacity-75">
+                            <Spinner size="sm" />
+                            <span>Loading AQ clusters...</span>
+                          </div>
+                        ) : subjectAQClusters.length > 0 ? (
+                          <div className="flex flex-col gap-2">
+                            {subjectAQClusters.map((row, idx) => {
+                              const clusters = parseList(row.cluster_names);
+                              const aqs = parseList(row.aq_list);
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex flex-col gap-1 text-xs"
+                                >
+                                  <div className="font-semibold">
+                                    {row.course_name} ({row.program_code})
+                                  </div>
+                                  {clusters.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      <span className="opacity-75">
+                                        Cluster:
+                                      </span>
+                                      {clusters.map(
+                                        (c: string, cIdx: number) => (
+                                          <span
+                                            key={cIdx}
+                                            className="font-medium"
+                                          >
+                                            {c}
+                                          </span>
+                                        ),
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1">
+                                      <span className="opacity-75">
+                                        Cluster:
+                                      </span>
+                                      <span className="italic opacity-75">
+                                        No Cluster.
+                                      </span>
+                                    </div>
+                                  )}
+                                  {aqs.length > 0 ? (
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      <span className="opacity-75">
+                                        AQ List:
+                                      </span>
+                                      {aqs.map((aq: string, aqIdx: number) => {
+                                        const isMatched =
+                                          teacherAQList.includes(
+                                            aq.trim().toLowerCase(),
+                                          );
+                                        return (
+                                          <Badge
+                                            key={aqIdx}
+                                            color={isMatched ? "green" : "red"}
+                                            size="sm"
+                                          >
+                                            {aq}
+                                          </Badge>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1">
+                                      <span className="opacity-75">
+                                        AQ List: No AQ.
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-xs italic opacity-75">
+                            No AQ clusters found for this subject.
+                          </span>
+                        )}
+                      </div>
+
                       {isHardLimitExceeded && (
                         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
                           <div className="flex items-center gap-1.5 font-semibold">
@@ -1744,13 +2214,7 @@ export default function TeacherPreassignmentManagement({
               ? getLimitsForTeacher(selectedTeacher.employment_type).overloadMax
               : 0;
             const subjectUnits = selectedSubjectToAssign
-              ? mergeLecLab
-                ? Math.max(
-                    Number(selectedSubjectToAssign.lecture_units || 0),
-                    Number(selectedSubjectToAssign.lab_units || 0),
-                  )
-                : Number(selectedSubjectToAssign.lecture_units || 0) +
-                  Number(selectedSubjectToAssign.lab_units || 0)
+              ? calculateSubjectLoad(selectedSubjectToAssign)
               : 0;
             const newTotalLoad =
               Number(selectedTeacher?.total_load || 0) + subjectUnits;
@@ -1809,15 +2273,12 @@ export default function TeacherPreassignmentManagement({
                 selectedTeacher.employment_type,
               );
 
-              const newSubjectsCount =
-                Number(selectedTeacher.subjects_count || 0) + 1;
-              const subjectUnits = mergeLecLab
-                ? Math.max(
-                    Number(selectedSubjectToAssign?.lecture_units || 0),
-                    Number(selectedSubjectToAssign?.lab_units || 0),
-                  )
-                : Number(selectedSubjectToAssign?.lecture_units || 0) +
-                  Number(selectedSubjectToAssign?.lab_units || 0);
+              const newSubjectsCount = calculateProjectedPrepCount(
+                selectedSubjectToAssign,
+              );
+              const subjectUnits = selectedSubjectToAssign
+                ? calculateSubjectLoad(selectedSubjectToAssign)
+                : 0;
               const newTotalLoad =
                 Number(selectedTeacher.total_load || 0) + subjectUnits;
 
@@ -1888,6 +2349,48 @@ export default function TeacherPreassignmentManagement({
         </ModalFooter>
       </Modal>
 
+      {/* AQ REQUIREMENT UNMET WARNING CONFIRMATION MODAL */}
+      <Modal
+        show={openAQWarningModal}
+        onClose={() => setOpenAQWarningModal(false)}
+        size="md"
+      >
+        <ModalHeader className="border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-yellow-500">
+            <HiExclamation className="h-6 w-6" />
+            <span className="font-bold text-gray-900 dark:text-white">
+              Unmet AQ Warning
+            </span>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            <b>{selectedTeacherName}</b> does not fully meet the required
+            Academic Qualifications (AQ) for this subject. Do you still want to
+            proceed to give this teacher this subject?
+          </p>
+        </ModalBody>
+        <ModalFooter className="flex justify-end gap-2">
+          <Button
+            color="red"
+            onClick={executeAddPreAssignment}
+            disabled={isSubmittingAddPreAssignment}
+          >
+            {isSubmittingAddPreAssignment ? (
+              <Spinner size="sm" className="mr-2" />
+            ) : null}
+            Proceed Anyway
+          </Button>
+          <Button
+            color="alternative"
+            onClick={() => setOpenAQWarningModal(false)}
+            disabled={isSubmittingAddPreAssignment}
+          >
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+
       {/* REMOVE SUBJECT CONFIRMATION MODAL */}
       <Modal
         show={openDeleteModal}
@@ -1931,4 +2434,28 @@ export default function TeacherPreassignmentManagement({
       </Modal>
     </div>
   );
+}
+
+function DisplayWarning({count, dm}: DisplayWarningProps) {
+  return (
+    <>
+      {count > 0 && (
+        <Tooltip
+          placement={"bottom"}
+          className={"hidden sm:block"}
+          style={dm? "dark":"light"}
+          content={`${count} teacher(s) without assigned subjects`}
+        >
+          <Button
+            outline
+            color={"alternative"}
+            className={'gap-2 border-0'}
+          >
+            <HiExclamation className={"h-8 w-8 text-yellow-400"} />
+            <span className={"sm:hidden"}>{count} teacher(s) without assigned subjects</span>
+          </Button>
+        </Tooltip>
+      )}
+    </>
+  )
 }

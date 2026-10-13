@@ -343,11 +343,13 @@ export default function SubjectsManagement() {
     startTransition(async () => {
       const programCodeParam =
         selectedProgramFilter === "ALL" ? null : selectedProgramFilter;
+      const curriculumFetchFilter = "ALL";
 
       const [resData, resCount] = await Promise.all([
         fetchSubjects(
           debouncedSearch,
           programCodeParam,
+          curriculumFetchFilter,
           sortBy,
           sortDir,
           maxRow,

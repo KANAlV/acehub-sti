@@ -896,7 +896,7 @@ export default function TeacherAQs() {
               <div className="mb-2 block">
                 <Label htmlFor="teacher-name-modal">Selected Teacher</Label>
               </div>
-              <span className={"text-md font-bold"}>
+              <span className={"text-md dark:text-white font-bold"}>
                 {selectedTeacher?.full_name || ""}
                 <span className={"ml-2 text-gray-400"}>
                   ({selectedTeacher?.department || "No Department"})

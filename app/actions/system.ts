@@ -574,7 +574,7 @@ export interface SubjectRecord {
 /* SEARCH SUBJECTS WITH CURRICULUM ARRAY FILTER (LIMIT 10) */
 export async function searchSubjectsWithCurriculumFilter(
   searchQuery: string,
-  curricula: string[]
+  curricula: string[],
 ) {
   try {
     const data = await sql<SubjectRecord[]>`
@@ -596,6 +596,7 @@ export async function searchSubjectsWithCurriculumFilter(
 export async function fetchSubjects(
   search: string | null = null,
   programCode: string | null = null,
+  curriculum: string | null = null,
   sortBy: string = "course_code",
   sortDir: string = "ASC",
   limit: number = 10,
@@ -608,11 +609,12 @@ export async function fetchSubjects(
       SELECT * FROM subjects_read(
         ${search || null},
         ${programCode || null},
+        ${curriculum || null},
         ${sortBy},
         ${sortDir},
         ${limit},
         ${offset}
-                    );
+    );
     `;
 
     return {
@@ -969,6 +971,16 @@ export interface TeacherRecord {
   created_at: string;
   updated_at: string;
 }
+export interface TimePreference {
+  day: string;
+  start_time: string;
+  end_time: string;
+}
+export interface TeacherPreferences {
+  preferred_subjects: string[];
+  preferred_times: TimePreference[];
+  preferred_rooms: string[];
+}
 
 // Read Teachers
 export async function fetchTeachers(
@@ -1152,6 +1164,19 @@ export interface CurriculumRecord {
   created_at: string;
 }
 
+/* COUNT W/O ASSIGNEMNT */
+export async function getTeachersWithoutPreassignmentCount(preassignmentName: string) {
+  try {
+    const result = await sql`
+      SELECT teachers_without_preassignment_count(${preassignmentName}) AS count;
+    `;
+    return { success: true, count: result[0]?.count || 0 };
+  } catch (error) {
+    console.error("Failed to fetch teachers without preassignment count:", error);
+    return { success: false, error: (error as Error).message, count: 0 };
+  }
+}
+
 /* CREATE */
 export async function createPreassignmentTemplate(preassignmentName: string) {
   try {
@@ -1286,6 +1311,7 @@ export interface TeacherPreassignmentRecord {
   merge_lec_lab: boolean;
   subject_name?: string;
   department?: string;
+  year_term: string;
 }
 
 export interface TeacherPreassignmentSummaryRecord {
@@ -1487,9 +1513,9 @@ export async function updateTeacherPreassignmentConfig(
     `;
 
     await createLog(
-        "",
-        "update_pre-assignment_constraints",
-        `pre-assignment_name: ${preassignment_name}, constraints: ${config}`
+      "",
+      "update_pre-assignment_constraints",
+      `pre-assignment_name: ${preassignment_name}, constraints: ${config}`,
     );
     return { success: true };
   } catch (error) {
@@ -1510,9 +1536,9 @@ export async function deleteTeacherPreassignment(preassignmentId: string) {
     `;
 
     await createLog(
-        "",
-        "delete_teacher_preassignment",
-        `pre-assignment_id: ${preassignmentId}`
+      "",
+      "delete_teacher_preassignment",
+      `pre-assignment_id: ${preassignmentId}`,
     );
     return { success: true };
   } catch (error) {
@@ -1753,11 +1779,7 @@ export async function deleteTeacherAQ(aqId: string) {
       SELECT teacher_aq_delete(${aqId});
     `;
 
-    await createLog(
-        "",
-        "delete_teacher_aq",
-        `teacher_aq_id: ${aqId}`
-    );
+    await createLog("", "delete_teacher_aq", `teacher_aq_id: ${aqId}`);
     return { success: true };
   } catch (error) {
     console.error("Failed to delete teacher AQ record:", error);
@@ -2226,11 +2248,7 @@ export async function updateFcce(
              );
     `;
 
-    await createLog(
-        actor,
-        "update_fcce",
-        `fcce_id: '${fcceId}'`
-    );
+    await createLog(actor, "update_fcce", `fcce_id: '${fcceId}'`);
 
     return { success: true };
   } catch (error) {

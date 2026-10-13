@@ -154,7 +154,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       )}
 
       <Sidebar
-        className={`fixed top-14 bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
+        className={`fixed top-16 sm:top-14 bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
         aria-label="Sidebar"
       >
         {/* Navigation Items (Stretches to fill remaining vertical space) */}
@@ -383,30 +383,34 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                 </Tooltip>
 
                 <Tooltip content={"Courses"} placement={"right"}>
-                  <Button //Dropdown Courses
-                    outline
-                    color="alternative"
-                    onClick={() => setDropdownCourses(!dropdownCourses)}
-                    className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""} ${permissions?.courses ? "" : "hidden"}`}
+                  <div
+                    className={`${!dropdownCourses && "border-b-1"} border-t-1 border-gray-200 dark:border-gray-700`}
                   >
-                    <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
-                    {!collapsed && (
-                      <div className="ml-2 flex w-full items-center justify-between">
-                        <span>Courses</span>
-                        {dropdownCourses ? (
-                          <HiChevronUp className="h-4 w-4" />
-                        ) : (
-                          <HiChevronDown className="h-4 w-4" />
-                        )}
-                      </div>
-                    )}
-                  </Button>
+                    <Button
+                      outline
+                      color="alternative"
+                      onClick={() => setDropdownCourses(!dropdownCourses)}
+                      className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""} ${permissions?.courses ? "" : "hidden"} `}
+                    >
+                      <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
+                      {!collapsed && (
+                        <div className="ml-2 flex w-full items-center justify-between">
+                          <span>Courses</span>
+                          {dropdownCourses ? (
+                            <HiChevronUp className="h-4 w-4" />
+                          ) : (
+                            <HiChevronDown className="h-4 w-4" />
+                          )}
+                        </div>
+                      )}
+                    </Button>
+                  </div>
                 </Tooltip>
 
                 <div // Dropdown Courses Container
                   className={`flex flex-col ${dropdownCourses ? "block" : "hidden"} ${
                     collapsed
-                      ? "justify-center border-y-1 border-gray-200 dark:border-gray-700"
+                      ? "justify-center border-b-1 border-gray-200 dark:border-gray-700"
                       : "ml-4 justify-start"
                   } `}
                 >

@@ -182,10 +182,26 @@ export default function PreassignmentTemplatesManagement() {
     }
   };
 
-  // Create Submission Handler & Redirect
+  // --- Create Submission Handler & Redirect ---
   const handleCreateSubmit = async () => {
     const trimmedName = newTemplateNameInput.trim();
     if (!trimmedName) return;
+
+    // Check for duplicate template name (case-insensitive)
+    const isDuplicate = templates.some(
+      (t) =>
+        t.preassignment_name.trim().toLowerCase() ===
+        trimmedName.toLowerCase()
+    );
+
+    if (isDuplicate) {
+      triggerToast(
+        "A template with this name already exists. Please choose a different name.",
+        "error"
+      );
+      setOpenCreateModal(false);
+      return;
+    }
 
     startTransition(async () => {
       const res = await createPreassignmentTemplate(trimmedName);
