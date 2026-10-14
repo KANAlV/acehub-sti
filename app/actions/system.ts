@@ -1329,7 +1329,7 @@ export interface TeacherPreassignmentSummaryRecord {
   employment_type: string;
   status: string;
   availability: never;
-  preferences: never;
+  preferences: TeacherPreferences | Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
   subjects_count: number;

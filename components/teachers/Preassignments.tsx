@@ -210,7 +210,7 @@ export default function PreassignmentTemplatesManagement() {
         setOpenCreateModal(false);
         setNewTemplateNameInput("");
         // Redirect 1 layer deep to /template_name
-        router.push(`/teacher_assignment/${encodeURIComponent(trimmedName)}`);
+        router.push(`/teacher_pre-assignments/${encodeURIComponent(trimmedName)}`);
       } else {
         triggerToast(
           res.error || "Failed to create pre-assignment template.",
