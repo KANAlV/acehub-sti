@@ -218,19 +218,28 @@ export default function TeachersManagement() {
 
     if (typeof item.availability === "string") {
       try {
-        avail = JSON.parse(item.availability);
+        const parsed = JSON.parse(item.availability);
+        if (Array.isArray(parsed)) {
+          avail = parsed;
+        } else if (parsed && typeof parsed === "object") {
+          avail = [parsed as AvailabilitySlot];
+        }
       } catch {
         avail = [];
       }
     } else if (Array.isArray(item.availability)) {
       avail = item.availability as AvailabilitySlot[];
+    } else if (item.availability && typeof item.availability === "object") {
+      avail = Array.isArray(item.availability)
+        ? item.availability
+        : [item.availability as unknown as AvailabilitySlot];
     }
 
     if (!isStrictPartTime) {
       return <span>[Mon - Fri] 7:00 AM - 8:00 PM</span>;
     }
 
-    if (avail.length === 0) {
+    if (!Array.isArray(avail) || avail.length === 0) {
       return (
         <span className="font-medium text-yellow-500 dark:text-yellow-400">
           [No Preferred Time]
@@ -242,7 +251,7 @@ export default function TeachersManagement() {
       <div className="flex flex-col gap-0.5">
         {avail.map((slot, idx) => (
           <div key={idx} className="whitespace-nowrap">
-            {slot.day}: {slot.startTime} - {slot.endTime}
+            {slot?.day ?? ""}: {slot?.startTime ?? ""} - {slot?.endTime ?? ""}
           </div>
         ))}
       </div>
@@ -302,11 +311,25 @@ export default function TeachersManagement() {
 
     const selectedDayName =
       DAYS_OF_WEEK.find((d) => d.id === addAvailDay)?.name || "Monday";
+    const formattedStart = formatTime12hr(addAvailStart);
+    const formattedEnd = formatTime12hr(addAvailEnd);
+
+    const isDuplicate = availabilityList.some(
+      (slot) =>
+        slot.day === selectedDayName &&
+        slot.startTime === formattedStart &&
+        slot.endTime === formattedEnd,
+    );
+
+    if (isDuplicate) {
+      setAvailError("This availability slot has already been added.");
+      return;
+    }
 
     const newSlot: AvailabilitySlot = {
       day: selectedDayName,
-      startTime: formatTime12hr(addAvailStart),
-      endTime: formatTime12hr(addAvailEnd),
+      startTime: formattedStart,
+      endTime: formattedEnd,
     };
 
     setAvailabilityList((prev) => [...prev, newSlot]);
@@ -329,11 +352,25 @@ export default function TeachersManagement() {
 
     const selectedDayName =
       DAYS_OF_WEEK.find((d) => d.id === editAvailDay)?.name || "Monday";
+    const formattedStart = formatTime12hr(editAvailStart);
+    const formattedEnd = formatTime12hr(editAvailEnd);
+
+    const isDuplicate = editAvailabilityList.some(
+      (slot) =>
+        slot.day === selectedDayName &&
+        slot.startTime === formattedStart &&
+        slot.endTime === formattedEnd,
+    );
+
+    if (isDuplicate) {
+      setEditAvailError("This availability slot has already been added.");
+      return;
+    }
 
     const newSlot: AvailabilitySlot = {
       day: selectedDayName,
-      startTime: formatTime12hr(editAvailStart),
-      endTime: formatTime12hr(editAvailEnd),
+      startTime: formattedStart,
+      endTime: formattedEnd,
     };
 
     setEditAvailabilityList((prev) => [...prev, newSlot]);
@@ -580,7 +617,8 @@ export default function TeachersManagement() {
         slots = selectedTeacher.availability as AvailabilitySlot[];
       } else if (typeof selectedTeacher.availability === "string") {
         try {
-          slots = JSON.parse(selectedTeacher.availability);
+          const parsed = JSON.parse(selectedTeacher.availability);
+          slots = Array.isArray(parsed) ? parsed : [];
         } catch {
           slots = [];
         }
@@ -673,7 +711,7 @@ export default function TeachersManagement() {
     newEmploymentType === baseEmploymentType &&
     newStatus === baseStatus &&
     JSON.stringify(editAvailabilityList) ===
-      JSON.stringify(baseAvailabilityList);
+    JSON.stringify(baseAvailabilityList);
 
   /** --- Database Integration --- **/
   async function getTeacherCount(
@@ -820,6 +858,15 @@ export default function TeachersManagement() {
   async function handleTeacherUnarchive() {
     if (!selectedUnarchiveTeacher) return;
 
+    let parsedAvailability = selectedUnarchiveTeacher.availability;
+    if (typeof parsedAvailability === "string") {
+      try {
+        parsedAvailability = JSON.parse(parsedAvailability);
+      } catch {
+        parsedAvailability = [];
+      }
+    }
+
     const payload = {
       pscs_id: selectedUnarchiveTeacher.pscs_id,
       email: selectedUnarchiveTeacher.email,
@@ -831,7 +878,7 @@ export default function TeachersManagement() {
       department: selectedUnarchiveTeacher.department || undefined,
       employment_type: selectedUnarchiveTeacher.employment_type,
       status: "Active",
-      availability: selectedUnarchiveTeacher.availability,
+      availability: parsedAvailability,
     };
 
     const response = await updateTeacher(
@@ -1216,9 +1263,9 @@ export default function TeachersManagement() {
                       </span>
                     </TableCell>
 
-                    <TableCell className="max-w-[220px]">
+                    <TableCell className="max-w-55">
                       <div className="relative">
-                        <div className="h-12 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto [mask-image:linear-gradient(to_bottom,black_60%,transparent_100%)] pr-1 pb-4 text-xs text-gray-700 dark:scrollbar-thumb-white dark:text-gray-300">
+                        <div className="h-12 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto mask-[linear-gradient(to_bottom,black_60%,transparent_100%)] pr-1 pb-4 text-xs text-gray-700 dark:scrollbar-thumb-white dark:text-gray-300">
                           {renderAvailability(item)}
                         </div>
                       </div>

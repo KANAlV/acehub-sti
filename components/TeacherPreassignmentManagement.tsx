@@ -91,8 +91,8 @@ interface DisplayWarningProps {
 }
 
 export default function TeacherPreassignmentManagement({
-                                                         preassignmentName = "",
-                                                       }: TeacherPreassignmentManagementProps) {
+  preassignmentName = "",
+}: TeacherPreassignmentManagementProps) {
   const router = useRouter();
 
   // --- Dark Mode ---
@@ -140,7 +140,8 @@ export default function TeacherPreassignmentManagement({
   const [openAddModal, setOpenAddModal] = useState(false);
   const [openWarningModal, setOpenWarningModal] = useState(false);
   const [openAQWarningModal, setOpenAQWarningModal] = useState(false);
-  const [openNoAQAssignedWarningModal, setOpenNoAQAssignedWarningModal] = useState(false);
+  const [openNoAQAssignedWarningModal, setOpenNoAQAssignedWarningModal] =
+    useState(false);
   const [openDeleteModal, setOpenDeleteModal] = useState(false);
   const [openTemplateDeleteModal, setOpenTemplateDeleteModal] = useState(false);
   const [subjectToDelete, setSubjectToDelete] =
@@ -473,7 +474,7 @@ export default function TeacherPreassignmentManagement({
     } else {
       triggerToast(
         countUnassignedRes.error ||
-        "Failed to fetch unassigned teachers count with pre-assignment metrics.",
+          "Failed to fetch unassigned teachers count with pre-assignment metrics.",
         "error",
       );
     }
@@ -1236,9 +1237,9 @@ export default function TeacherPreassignmentManagement({
                           ) > parseFloat(Number(prepLimit || 0).toFixed(2))
                             ? "text-red-500"
                             : parseFloat(
-                              Number(item.subjects_count || 0).toFixed(2),
-                            ) <
-                            parseFloat(Number(prepLimit || 0).toFixed(2))
+                                  Number(item.subjects_count || 0).toFixed(2),
+                                ) <
+                                parseFloat(Number(prepLimit || 0).toFixed(2))
                               ? "text-green-500"
                               : "text-yellow-500 dark:text-yellow-300"
                         }`}
@@ -1254,11 +1255,11 @@ export default function TeacherPreassignmentManagement({
                           parseFloat(Number(facultyLoadLimit || 0).toFixed(2))
                             ? "text-red-500"
                             : parseFloat(
-                              Number(item.total_load || 0).toFixed(2),
-                            ) <
-                            parseFloat(
-                              Number(facultyLoadLimit || 0).toFixed(2),
-                            )
+                                  Number(item.total_load || 0).toFixed(2),
+                                ) <
+                                parseFloat(
+                                  Number(facultyLoadLimit || 0).toFixed(2),
+                                )
                               ? "text-green-500"
                               : "text-yellow-500 dark:text-yellow-300"
                         }`}
@@ -1380,18 +1381,18 @@ export default function TeacherPreassignmentManagement({
             ? "Constraints Loading..."
             : curriculumAdd.length > 0
               ? curriculumAdd.map((item) => {
-                return (
-                  <Badge
-                    key={item.curriculum_id}
-                    className={"min-w-22 items-center justify-center"}
-                    color={"gray"}
-                  >
+                  return (
+                    <Badge
+                      key={item.curriculum_id}
+                      className={"min-w-22 items-center justify-center"}
+                      color={"gray"}
+                    >
                       <span className={"inline-flex items-center"}>
                         {item.curriculum_version}
                       </span>
-                  </Badge>
-                );
-              })
+                    </Badge>
+                  );
+                })
               : "No Curriculum Constraints set"}
         </div>
 
@@ -1861,19 +1862,26 @@ export default function TeacherPreassignmentManagement({
               <div className="flex w-full gap-2 overflow-x-auto pt-1">
                 {(() => {
                   const teacherObj = teachers.find(
-                    (t) => t.teacher_id === selectedTeacherID
+                    (t) => t.teacher_id === selectedTeacherID,
                   );
                   const prefsRaw = teacherObj?.preferences;
 
                   // Debug what is coming from the database
-                  console.log("RAW TEACHER PREFERENCES:", prefsRaw, typeof prefsRaw);
+                  console.log(
+                    "RAW TEACHER PREFERENCES:",
+                    prefsRaw,
+                    typeof prefsRaw,
+                  );
 
                   let prefSubjects: string[] = [];
 
                   if (prefsRaw) {
                     try {
                       // 1. If it's a string, parse it into an object
-                      let parsed = typeof prefsRaw === "string" ? JSON.parse(prefsRaw) : prefsRaw;
+                      let parsed =
+                        typeof prefsRaw === "string"
+                          ? JSON.parse(prefsRaw)
+                          : prefsRaw;
 
                       // 2. Handle double-stringified JSON if applicable
                       if (typeof parsed === "string") {
@@ -2146,16 +2154,23 @@ export default function TeacherPreassignmentManagement({
                         const hasNoAQsAssigned =
                           subjectAQClusters.length === 0 ||
                           subjectAQClusters.every((row) => {
-                            const clusterNames = aqCompute.parseList(row.cluster_names);
+                            const clusterNames = aqCompute.parseList(
+                              row.cluster_names,
+                            );
                             const aqs = aqCompute.parseList(row.aq_list);
-                            return clusterNames.length === 0 && aqs.length === 0;
+                            return (
+                              clusterNames.length === 0 && aqs.length === 0
+                            );
                           });
 
                         let isNoAQRequired = false;
                         if (!hasNoAQsAssigned) {
                           isNoAQRequired = subjectAQClusters.every((row) => {
                             const aqs = aqCompute.parseList(row.aq_list);
-                            return aqs.length === 1 && aqs[0].toUpperCase() === "NULL";
+                            return (
+                              aqs.length === 1 &&
+                              aqs[0].toUpperCase() === "NULL"
+                            );
                           });
                         }
 
@@ -2166,7 +2181,9 @@ export default function TeacherPreassignmentManagement({
                             : "border-red-300 bg-red-50/70 text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200";
 
                         return (
-                          <div className={`rounded-lg border p-3 shadow-sm transition-all ${cardColorClass}`}>
+                          <div
+                            className={`rounded-lg border p-3 shadow-sm transition-all ${cardColorClass}`}
+                          >
                             <div className="mb-2 text-xs font-semibold tracking-wide uppercase">
                               {hasNoAQsAssigned
                                 ? "No AQs Assigned to Subject"
@@ -2189,10 +2206,15 @@ export default function TeacherPreassignmentManagement({
                               <div className="flex flex-col gap-2">
                                 {subjectAQClusters.map((row, idx) => {
                                   const aqs = aqCompute.parseList(row.aq_list);
-                                  const isNullRow = aqs.length === 1 && aqs[0].toUpperCase() === "NULL";
+                                  const isNullRow =
+                                    aqs.length === 1 &&
+                                    aqs[0].toUpperCase() === "NULL";
 
                                   return (
-                                    <div key={idx} className="flex flex-col gap-1 text-xs">
+                                    <div
+                                      key={idx}
+                                      className="flex flex-col gap-1 text-xs"
+                                    >
                                       <div className="font-semibold">
                                         {row.course_name} ({row.program_code})
                                       </div>
@@ -2202,24 +2224,33 @@ export default function TeacherPreassignmentManagement({
                                         </span>
                                       ) : aqs.length > 0 ? (
                                         <div className="flex flex-wrap items-center gap-1">
-                                          <span className="opacity-75">AQ List:</span>
-                                          {aqs.map((aq: string, aqIdx: number) => {
-                                            const isMatched = aqCompute.teacherAQList.includes(
-                                              aq.trim().toLowerCase(),
-                                            );
-                                            return (
-                                              <Badge
-                                                key={aqIdx}
-                                                color={isMatched ? "green" : "red"}
-                                                size="sm"
-                                              >
-                                                {aq}
-                                              </Badge>
-                                            );
-                                          })}
+                                          <span className="opacity-75">
+                                            AQ List:
+                                          </span>
+                                          {aqs.map(
+                                            (aq: string, aqIdx: number) => {
+                                              const isMatched =
+                                                aqCompute.teacherAQList.includes(
+                                                  aq.trim().toLowerCase(),
+                                                );
+                                              return (
+                                                <Badge
+                                                  key={aqIdx}
+                                                  color={
+                                                    isMatched ? "green" : "red"
+                                                  }
+                                                  size="sm"
+                                                >
+                                                  {aq}
+                                                </Badge>
+                                              );
+                                            },
+                                          )}
                                         </div>
                                       ) : (
-                                        <span className="opacity-75">AQ List: No AQ.</span>
+                                        <span className="opacity-75">
+                                          AQ List: No AQ.
+                                        </span>
                                       )}
                                     </div>
                                   );
@@ -2458,7 +2489,10 @@ export default function TeacherPreassignmentManagement({
         </ModalHeader>
         <ModalBody>
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            This subject has <b>no Academic Qualifications (AQs) assigned</b> to it in the system. Are you sure you want to assign <b>{selectedSubjectToAssign?.course_name}</b> to <b>{selectedTeacherName}</b>?
+            This subject has <b>no Academic Qualifications (AQs) assigned</b> to
+            it in the system. Are you sure you want to assign{" "}
+            <b>{selectedSubjectToAssign?.course_name}</b> to{" "}
+            <b>{selectedTeacherName}</b>?
           </p>
         </ModalBody>
         <ModalFooter className="flex justify-end gap-2">

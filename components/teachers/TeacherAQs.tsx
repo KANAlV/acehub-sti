@@ -431,7 +431,9 @@ export default function TeacherAQs() {
                 <HiExclamation className="h-5 w-5" />
               )}
             </div>
+
             <div className="ml-3 text-sm font-normal">{toastMessage}</div>
+
             <button
               type="button"
               className="-mx-1.5 -my-1.5 ml-auto inline-flex h-8 w-8 rounded-lg bg-white p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900 focus:ring-2 focus:ring-gray-300 dark:bg-gray-800 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-white"
@@ -457,25 +459,15 @@ export default function TeacherAQs() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
             Teacher Academic Qualifications
           </h1>
+
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Review and manage teacher credentials, handle approvals or
             rejections, and request updates.
           </p>
 
-          <Card className={"mt-4"}>
+          <div className={"mt-2"}>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex w-full flex-wrap items-center gap-3">
-                <div className="relative w-full sm:w-64">
-                  <TextInput
-                    id="searchTeacher"
-                    type="text"
-                    placeholder="Search teachers..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    icon={HiSearch}
-                  />
-                </div>
-
                 <div className="w-full shrink-0 sm:w-56">
                   <Select
                     id="employment-filter"
@@ -498,10 +490,21 @@ export default function TeacherAQs() {
                     <option value="Part-Time">Part-Time</option>
                   </Select>
                 </div>
+
+                <div className="relative w-full sm:w-64">
+                  <TextInput
+                    id="searchTeacher"
+                    type="text"
+                    placeholder="Search teachers..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    icon={HiSearch}
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="mt-2 overflow-x-auto">
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Spinner size="xl" />
@@ -684,10 +687,7 @@ export default function TeacherAQs() {
               )}
             </div>
 
-            <div className="flex items-center justify-between pt-4">
-              <span className="text-sm text-gray-500">
-                Showing {filteredTeachers.length} of {teachersCount} Teachers
-              </span>
+            <div className="flex items-center justify-center pt-4">
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
@@ -695,13 +695,13 @@ export default function TeacherAQs() {
                 showIcons
               />
             </div>
-          </Card>
+          </div>
         </div>
 
         {/* Side Panel Inspector */}
         {selectedTeacher && (
-          <div className="lg:col-span-5">
-            <Card className="sticky top-6">
+          <div className="fixed inset-0 top-17 bottom-0 left-14 z-10 h-[calc(100vh-64px)] bg-white p-4 transition-all sm:static sm:z-0 sm:h-[calc(100vh-8rem)] sm:p-0 sm:col-span-5 dark:bg-gray-900">
+            <Card className="sticky top-2 ">
               <div className="flex items-start justify-between border-b pb-4 dark:border-gray-700">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
