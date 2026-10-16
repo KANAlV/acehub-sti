@@ -64,6 +64,8 @@ import {
   fetchTeacherAQRecords,
   getTeachersWithoutPreassignmentCount,
   deletePreassignmentTemplate,
+  FcceRecord,
+  fetchFcce,
 } from "@/app/actions/system";
 import { DepartmentRecord } from "@/components/teachers/TeachersManagement";
 import {
@@ -139,7 +141,10 @@ export default function TeacherPreassignmentManagement({
   const [openConfigModal, setOpenConfigModal] = useState(false);
   const [openAddModal, setOpenAddModal] = useState(false);
   const [openWarningModal, setOpenWarningModal] = useState(false);
-  const [openAQWarningModal, setOpenAQWarningModal] = useState(false);
+  const [
+    openUnmetRequirementsWarningModal,
+    setOpenUnmetRequirementsWarningModal,
+  ] = useState(false);
   const [openNoAQAssignedWarningModal, setOpenNoAQAssignedWarningModal] =
     useState(false);
   const [openDeleteModal, setOpenDeleteModal] = useState(false);
@@ -168,6 +173,10 @@ export default function TeacherPreassignmentManagement({
   const [selectedSubjectToAssign, setSelectedSubjectToAssign] =
     useState<SubjectRecord | null>(null);
   const [mergeLecLab, setMergeLecLab] = useState<boolean>(false);
+
+  // --- Add Modal FCCE States ---
+  const [teacherFcce, setTeacherFcce] = useState<FcceRecord[]>([]);
+  const [selectedAySem, setSelectedAySem] = useState<string>("");
 
   // --- Subject AQ Clusters State ---
   const [subjectAQClusters, setSubjectAQClusters] = useState<
@@ -705,7 +714,6 @@ export default function TeacherPreassignmentManagement({
         return clusterNames.length === 0 && aqs.length === 0;
       });
 
-    // If no AQs are assigned, it's not strictly "matched", so we can return false to trigger the check flow
     if (hasNoAQsAssigned) return false;
 
     const isNoAQRequired = subjectAQClusters.every((row) => {
@@ -713,9 +721,36 @@ export default function TeacherPreassignmentManagement({
       return aqs.length === 1 && aqs[0].toUpperCase() === "NULL";
     });
 
-    // No AQ Required passes validation normally
     return isNoAQRequired || aqCompute.isFullyMatched;
   };
+
+  // --- FCCE Match Status Helper ---
+  const getFCCEMatchStatus = useCallback(() => {
+    if (!selectedSubjectToAssign) {
+      return { hasRecord: false, passed: false };
+    }
+
+    const selectedCourseName = (selectedSubjectToAssign.course_name || "")
+      .trim()
+      .toLowerCase();
+
+    const matchingFcce = teacherFcce.find((f) => {
+      const courseMatch =
+        (f.course_name || "").trim().toLowerCase() === selectedCourseName;
+      if (!courseMatch) return false;
+      if (selectedAySem && f.ay_sem !== selectedAySem) return false;
+      return true;
+    });
+
+    if (!matchingFcce) {
+      return { hasRecord: false, passed: false };
+    }
+
+    return {
+      hasRecord: true,
+      passed: Boolean(matchingFcce.pass),
+    };
+  }, [selectedSubjectToAssign, teacherFcce, selectedAySem]);
 
   // Close Config Modal
   function closeConfigModal() {
@@ -731,6 +766,7 @@ export default function TeacherPreassignmentManagement({
     setSubjectSearchResults([]);
     setSelectedSubjectToAssign(null);
     setSubjectAQClusters([]);
+    setSelectedAySem("");
     setMergeLecLab(false);
     setIsSubmittingAddPreAssignment(false);
   }
@@ -770,6 +806,23 @@ export default function TeacherPreassignmentManagement({
       triggerToast(AQRes.error || "Failed to load teacher AQ(s).", "error");
     }
     setIsTeacherAQLoading(false);
+  }
+
+  async function fetchTeacherFcce(pscs_id: string) {
+    setTeacherFcce([]);
+    setSelectedAySem("");
+    const FCCERes = await fetchFcce(pscs_id);
+    if (FCCERes.success && FCCERes.data) {
+      setTeacherFcce(FCCERes.data);
+      const availableAySems = Array.from(
+        new Set(FCCERes.data.map((f: FcceRecord) => f.ay_sem).filter(Boolean)),
+      );
+      if (availableAySems.length > 0) {
+        setSelectedAySem(availableAySems[0] as string);
+      }
+    } else {
+      triggerToast(FCCERes.error || "Failed to load teacher FCCE(s).", "error");
+    }
   }
 
   const totalPages = Math.ceil(totalCount / maxRow) || 1;
@@ -843,7 +896,7 @@ export default function TeacherPreassignmentManagement({
     if (res.success) {
       triggerToast("Subject pre-assigned successfully!", "success");
       setOpenWarningModal(false);
-      setOpenAQWarningModal(false);
+      setOpenUnmetRequirementsWarningModal(false);
       setOpenNoAQAssignedWarningModal(false);
       closeAddModal();
       void loadData();
@@ -877,10 +930,13 @@ export default function TeacherPreassignmentManagement({
       return;
     }
 
-    // Check if regular AQ requirements are fully met
+    // Check if regular AQ requirements are fully met or FCCE is unmet/failed
     const isFullyMatched = checkIsFullyMatched();
-    if (!isFullyMatched) {
-      setOpenAQWarningModal(true);
+    const fcceStatus = getFCCEMatchStatus();
+    const isFcceMet = fcceStatus.hasRecord && fcceStatus.passed;
+
+    if (!isFullyMatched || !isFcceMet) {
+      setOpenUnmetRequirementsWarningModal(true);
       return;
     }
 
@@ -1200,6 +1256,7 @@ export default function TeacherPreassignmentManagement({
                       onClick={() => {
                         void loadTeacherData(item.teacher_id, teacherFullName);
                         void fetchSelectedTeacherAQ(item.pscs_id);
+                        void fetchTeacherFcce(item.pscs_id);
                       }}
                     >
                       <TableCell className="font-medium text-gray-900 dark:text-white">
@@ -1866,30 +1923,20 @@ export default function TeacherPreassignmentManagement({
                   );
                   const prefsRaw = teacherObj?.preferences;
 
-                  // Debug what is coming from the database
-                  console.log(
-                    "RAW TEACHER PREFERENCES:",
-                    prefsRaw,
-                    typeof prefsRaw,
-                  );
-
                   let prefSubjects: string[] = [];
 
                   if (prefsRaw) {
                     try {
-                      // 1. If it's a string, parse it into an object
                       let parsed =
                         typeof prefsRaw === "string"
                           ? JSON.parse(prefsRaw)
                           : prefsRaw;
 
-                      // 2. Handle double-stringified JSON if applicable
                       if (typeof parsed === "string") {
                         parsed = JSON.parse(parsed);
                       }
 
                       if (parsed && typeof parsed === "object") {
-                        // Check for standard or alternative key casing (e.g. preferred_subjects or PreferredSubjects)
                         const subjectsArr =
                           parsed.preferred_subjects ||
                           parsed.PreferredSubjects ||
@@ -1940,6 +1987,25 @@ export default function TeacherPreassignmentManagement({
               </div>
             </div>
 
+            {/* AY_SEM Filter Dropdown for FCCE evaluation */}
+            <div>
+              <Label htmlFor="ay-sem-select">Academic Year / Semester</Label>
+              <Select
+                id="ay-sem-select"
+                value={selectedAySem}
+                onChange={(e) => setSelectedAySem(e.target.value)}
+              >
+                <option value="">All Academic Years / Semesters</option>
+                {Array.from(
+                  new Set(teacherFcce.map((f) => f.ay_sem).filter(Boolean)),
+                ).map((ay) => (
+                  <option key={ay} value={ay as string}>
+                    {ay}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
             <div>
               <Label>Search Subject (Filtered by Curriculum Constraints)</Label>
               <TextInput
@@ -1968,7 +2034,10 @@ export default function TeacherPreassignmentManagement({
                     return (
                       <div
                         key={subj.subject_id}
-                        onClick={() => setSelectedSubjectToAssign(subj)}
+                        onClick={() => {
+                          setSelectedSubjectToAssign(subj);
+                          setSubjectSearchQuery("");
+                        }}
                         className={`my-1.5 cursor-pointer rounded-lg border p-3 text-sm transition-all ${
                           isSelected
                             ? "border-blue-500 bg-blue-600 text-white shadow-sm"
@@ -2088,6 +2157,13 @@ export default function TeacherPreassignmentManagement({
 
                   // Compute whether all AQs match the teacher's approved AQs
                   const aqCompute = getAQMatchStatus();
+                  const fcceStatus = getFCCEMatchStatus();
+
+                  const fcceCardColorClass = !fcceStatus.hasRecord
+                    ? "border-red-300 bg-red-50/70 text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"
+                    : fcceStatus.passed
+                      ? "border-green-300 bg-green-50/70 text-green-900 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-200"
+                      : "border-red-300 bg-red-50/70 text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200";
 
                   return (
                     <div className="space-y-2">
@@ -2147,6 +2223,26 @@ export default function TeacherPreassignmentManagement({
                             />
                           </div>
                         </div>
+                      </div>
+
+                      {/* FCCE Status Display Section */}
+                      <div
+                        className={`rounded-lg border p-3 shadow-sm transition-all ${fcceCardColorClass}`}
+                      >
+                        <div className="mb-1 text-xs font-semibold tracking-wide uppercase">
+                          {!fcceStatus.hasRecord
+                            ? "No FCCE Record Found"
+                            : fcceStatus.passed
+                              ? "FCCE Passed"
+                              : "FCCE Not Passed"}
+                        </div>
+                        <span className="text-xs opacity-75">
+                          {!fcceStatus.hasRecord
+                            ? "The teacher has no FCCE entry matching this course name and academic year/semester."
+                            : fcceStatus.passed
+                              ? "The teacher has successfully passed the FCCE requirement for this course."
+                              : "The teacher has an FCCE entry for this course, but did not pass."}
+                        </span>
                       </div>
 
                       {/* AQ Match Display Section */}
@@ -2431,26 +2527,44 @@ export default function TeacherPreassignmentManagement({
         </ModalFooter>
       </Modal>
 
-      {/* AQ REQUIREMENT UNMET WARNING CONFIRMATION MODAL */}
+      {/* UNMET REQUIREMENTS (AQ & FCCE) WARNING CONFIRMATION MODAL */}
       <Modal
-        show={openAQWarningModal}
-        onClose={() => setOpenAQWarningModal(false)}
+        show={openUnmetRequirementsWarningModal}
+        onClose={() => setOpenUnmetRequirementsWarningModal(false)}
         size="md"
       >
         <ModalHeader className="border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2 text-yellow-500">
             <HiExclamation className="h-6 w-6" />
             <span className="font-bold text-gray-900 dark:text-white">
-              Unmet AQ Warning
+              Unmet Requirements Warning
             </span>
           </div>
         </ModalHeader>
         <ModalBody>
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            <b>{selectedTeacherName}</b> does not fully meet the required
-            Academic Qualifications (AQ) for this subject. Do you still want to
-            proceed to give this teacher this subject?
-          </p>
+          {(() => {
+            const isFullyMatched = checkIsFullyMatched();
+            const fcceStatus = getFCCEMatchStatus();
+            const isFcceMet = fcceStatus.hasRecord && fcceStatus.passed;
+
+            let missingMessage = "";
+            if (!isFullyMatched && !isFcceMet) {
+              missingMessage =
+                "both the required Academic Qualifications (AQ) and the Faculty Course Competency Evaluation (FCCE) requirements";
+            } else if (!isFullyMatched) {
+              missingMessage = "the required Academic Qualifications (AQ)";
+            } else if (!isFcceMet) {
+              missingMessage =
+                "the required Faculty Course Competency Evaluation (FCCE) requirement";
+            }
+
+            return (
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                <b>{selectedTeacherName}</b> does not meet {missingMessage} for
+                this subject. Do you still want to proceed with this assignment?
+              </p>
+            );
+          })()}
         </ModalBody>
         <ModalFooter className="flex justify-end gap-2">
           <Button
@@ -2465,7 +2579,7 @@ export default function TeacherPreassignmentManagement({
           </Button>
           <Button
             color="alternative"
-            onClick={() => setOpenAQWarningModal(false)}
+            onClick={() => setOpenUnmetRequirementsWarningModal(false)}
             disabled={isSubmittingAddPreAssignment}
           >
             Cancel

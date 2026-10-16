@@ -154,7 +154,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
       )}
 
       <Sidebar
-        className={`fixed top-16 sm:top-14 bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent transition-[width] duration-300 ease-in-out md:static md:z-0 md:h-full dark:scrollbar-thumb-gray-600 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
+        className={`fixed top-16 sm:top-14 bottom-0 left-0 z-20 h-[calc(100vh-64px)] scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent transition-[width] duration-300 ease-in-out md:static md:h-full dark:scrollbar-thumb-gray-600 dark:bg-gray-800 dark:text-white [&>div]:flex [&>div]:h-full [&>div]:flex-col ${collapsed ? "w-16" : "w-64"}`}
         aria-label="Sidebar"
       >
         {/* Navigation Items (Stretches to fill remaining vertical space) */}
@@ -192,7 +192,8 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
             </div>
 
             {/* Sidebar Items */}
-            {!collapsed ? (
+            { /** Extended **/
+              !collapsed ? (
               <>
                 <Button
                   outline
@@ -336,7 +337,7 @@ export default function SidebarFunction({ account }: SidebarFunctionProps) {
                 </Button>
               </>
             ) : (
-              /** Collapsed */
+              /** Collapsed **/
               <>
                 <Tooltip content={"Dashboard"} placement={"right"}>
                   <Button

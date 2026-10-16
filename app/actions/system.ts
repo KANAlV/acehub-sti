@@ -2,6 +2,53 @@
 import sql from "@/lib/database";
 import { cookies } from "next/headers";
 
+/*************
+ * SCHEDULES *
+ *************/
+
+// READ
+export async function fetchSchedules(params: {
+  search?: string | null;
+  sortBy?: string;
+  sortDir?: 'ASC' | 'DESC';
+  page?: number;
+  limit?: number;
+}) {
+  const {
+    search = null,
+    sortBy = 'schedule_name',
+    sortDir = 'ASC',
+    page = 1,
+    limit = 10,
+  } = params;
+
+  const offset = limit > 0 ? (page - 1) * limit : 0;
+
+  try {
+    const data = await sql`
+      SELECT * FROM schedules_read(
+        ${search || null},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      )
+    `;
+
+    return {
+      success: true,
+      data: data || [],
+    };
+  } catch (error) {
+    console.error("Failed to fetch schedules:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch schedules.",
+      data: [],
+    };
+  }
+}
+
 /**************
  * CURRICULUM *
  **************/
@@ -3673,7 +3720,7 @@ export async function createLog(
 ): Promise<void> {
   try {
     const cookieStore = await cookies();
-    const cookie = await cookieStore.get("user_email");
+    const cookie = cookieStore.get("user_email");
     const userEmail = cookie?.value || "system";
 
     await sql`
