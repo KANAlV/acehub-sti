@@ -2106,17 +2106,19 @@ export default function TeacherPreassignmentManagement({
 
                 {/* Merge Lec/Lab Checkbox */}
                 <div className="flex items-center gap-2 pt-1">
-                  <Checkbox
-                    id="merge-lec-lab"
-                    checked={mergeLecLab}
-                    onChange={(e) => setMergeLecLab(e.target.checked)}
-                  />
-                  <Label
-                    htmlFor="merge-lec-lab"
-                    className="cursor-pointer text-sm font-medium"
-                  >
-                    Merge Lecture and Laboratory Units
-                  </Label>
+                  <Tooltip content={"Merges discussion and lab schedules to be held in the laboratory."}>
+                    <Checkbox
+                      id="merge-lec-lab"
+                      checked={mergeLecLab}
+                      onChange={(e) => setMergeLecLab(e.target.checked)}
+                    />
+                    <Label
+                      htmlFor="merge-lec-lab"
+                      className="cursor-pointer text-sm font-medium"
+                    >
+                      Merge Lecture and Laboratory Units
+                    </Label>
+                  </Tooltip>
                 </div>
 
                 {/* Projected Load & Subject Indicators inside Add Modal */}
