@@ -320,7 +320,7 @@ export default function PreassignmentTemplatesManagement() {
                   key={`template-${index}`}
                   onClick={() =>
                     router.push(
-                      `/teacher_assignment/${encodeURIComponent(item.preassignment_name.trim())}`,
+                      `/teacher_pre-assignments/${encodeURIComponent(item.preassignment_name.trim())}`,
                     )
                   }
                   className="cursor-pointer bg-white dark:border-gray-700 dark:bg-gray-800"
