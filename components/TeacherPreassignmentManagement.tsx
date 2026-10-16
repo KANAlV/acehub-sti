@@ -488,7 +488,7 @@ export default function TeacherPreassignmentManagement({
       );
     }
 
-    setRecommendedConstraints(programsCount * 4 + strandCount * 2);
+    setRecommendedConstraints(programsCount + strandCount);
     setIsLoading(false);
   }, [
     preassignmentName,
@@ -1713,21 +1713,7 @@ export default function TeacherPreassignmentManagement({
             <div className={"w-[80%]"}>
               <div className="mb-2 text-sm text-gray-600 dark:text-gray-300">
                 <span>Recommended benchmark: </span>
-                <Tooltip
-                  style={isDarkMode ? "dark" : "light"}
-                  content={
-                    <div className="space-y-1">
-                      <div>
-                        • 4 curricula per tertiary program (1st–4th year)
-                      </div>
-                      <div>• 2 curricula per SHS strand (Grades 11 & 12)</div>
-                    </div>
-                  }
-                >
-                  <span className="cursor-help font-bold text-blue-600 underline decoration-dotted underline-offset-4 dark:text-blue-400">
-                    {recommendedConstraints} total curricula
-                  </span>
-                </Tooltip>
+                {recommendedConstraints} total curricula
                 <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
                   Based on all active programs and strands.
                 </span>
@@ -2168,61 +2154,83 @@ export default function TeacherPreassignmentManagement({
                   return (
                     <div className="space-y-2">
                       <div className="my-2 flex w-full justify-center gap-6 rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                        <div className={"flex items-center justify-center"}>
-                          <div>
-                            <div className="text-xs text-gray-500">
-                              Proj. Prep
+                        {/* PROJECTED PREPARATION */}
+                        <Tooltip
+                          content={
+                            <div>
+                              Projected Prep: Estimated workload derived from maximum possible subject assignments post-generation.
                             </div>
-                            <div
-                              className={`text-lg font-bold ${
-                                isPrepExceeded
-                                  ? "text-red-500"
-                                  : "text-green-500"
-                              }`}
-                            >
-                              {parseFloat(Number(newSubjectsCount).toFixed(2))}{" "}
-                              / {parseFloat(Number(prepLimit).toFixed(2))}
-                            </div>
-                          </div>
-                          <div className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-600">
-                            <HiBookOpen
-                              className={`h-7 w-7 ${
-                                isPrepExceeded
-                                  ? "text-red-500"
-                                  : "text-green-500"
-                              }`}
-                            />
-                          </div>
-                        </div>
-
-                        <div className={"flex items-center justify-center"}>
-                          <div>
-                            <div className="text-xs text-gray-500">
-                              Proj. Load
-                            </div>
-                            <div
-                              className={`text-lg font-bold ${
-                                isHardLimitExceeded
-                                  ? "font-extrabold text-red-600"
-                                  : isLoadExceeded
+                          }
+                        >
+                          <div className={"flex items-center justify-center"}>
+                            <div>
+                              <div className="text-xs text-gray-500">
+                                Proj. Prep
+                              </div>
+                              <div
+                                className={`text-lg font-bold ${
+                                  isPrepExceeded
                                     ? "text-red-500"
                                     : "text-green-500"
-                              }`}
-                            >
-                              {parseFloat(Number(newTotalLoad).toFixed(2))} /{" "}
-                              {parseFloat(Number(facultyLoadLimit).toFixed(2))}
+                                }`}
+                              >
+                                {parseFloat(
+                                  Number(newSubjectsCount).toFixed(2),
+                                )}{" "}
+                                / {parseFloat(Number(prepLimit).toFixed(2))}
+                              </div>
+                            </div>
+                            <div className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-600">
+                              <HiBookOpen
+                                className={`h-7 w-7 ${
+                                  isPrepExceeded
+                                    ? "text-red-500"
+                                    : "text-green-500"
+                                }`}
+                              />
                             </div>
                           </div>
-                          <div className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-600">
-                            <HiClock
-                              className={`h-7 w-7 ${
-                                isHardLimitExceeded || isLoadExceeded
-                                  ? "text-red-500"
-                                  : "text-green-500"
-                              }`}
-                            />
+                        </Tooltip>
+
+                        {/* PROJECTED LOAD */}
+                        <Tooltip
+                          content={
+                            <div>
+                              Projected Load: Estimated teaching hours derived from maximum possible subject assignments post-generation.
+                            </div>
+                          }
+                        >
+                          <div className={"flex items-center justify-center"}>
+                            <div>
+                              <div className="text-xs text-gray-500">
+                                Proj. Load
+                              </div>
+                              <div
+                                className={`text-lg font-bold ${
+                                  isHardLimitExceeded
+                                    ? "font-extrabold text-red-600"
+                                    : isLoadExceeded
+                                      ? "text-red-500"
+                                      : "text-green-500"
+                                }`}
+                              >
+                                {parseFloat(Number(newTotalLoad).toFixed(2))} /{" "}
+                                {parseFloat(
+                                  Number(facultyLoadLimit).toFixed(2),
+                                )}
+                              </div>
+                            </div>
+                            <div className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-600">
+                              <HiClock
+                                className={`h-7 w-7 ${
+                                  isHardLimitExceeded || isLoadExceeded
+                                    ? "text-red-500"
+                                    : "text-green-500"
+                                }`}
+                              />
+                            </div>
                           </div>
-                        </div>
+                        </Tooltip>
                       </div>
 
                       {/* FCCE Status Display Section */}
