@@ -1890,7 +1890,7 @@ export default function TeacherPreassignmentManagement({
       {/* ADD MODAL */}
       <Modal show={openAddModal} onClose={closeAddModal}>
         <ModalHeader>Add Subject Pre-Assignment</ModalHeader>
-        <ModalBody>
+        <ModalBody className={"scrollbar-thumb-gray-400 scrollbar-track-transparent"}>
           <div className="space-y-4">
             <div>
               <Label>Teacher</Label>
