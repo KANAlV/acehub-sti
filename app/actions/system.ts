@@ -1,12 +1,25 @@
 "use server";
 import sql from "@/lib/database";
 import { cookies } from "next/headers";
+import { log } from "next/dist/server/typescript/utils";
 
 /*************
  * SCHEDULES *
  *************/
+export interface SubjectRequirementRecord {
+  subject_id: string;
+  curriculum: string | null;
+  program_code: string | null;
+  course_code: string;
+  course_name: string;
+  lecture_units: number;
+  lab_units: number;
+  lab_type: string | null;
+  year_term: string | null;
+  required_aqs: string[];
+}
 
-// READ
+/* READ */
 export async function fetchSchedules(params: {
   search?: string | null;
   sortBy?: string;
@@ -44,6 +57,95 @@ export async function fetchSchedules(params: {
     return {
       success: false,
       error: (error as Error).message || "Failed to fetch schedules.",
+      data: [],
+    };
+  }
+}
+
+/* --- AUTO-GENERATE SCHED FETCH FUNCTIONS --- */
+export interface RoomForGeneration {
+  room_id: string;
+  room_name: string | null;
+  room_type: string | null;
+  floor_level: number | null;
+}
+
+/* Rooms */
+export async function getRoomsForGeneration(): Promise<{
+  success: boolean;
+  data: RoomForGeneration[];
+  error?: string;
+}> {
+  try {
+    const data = await sql`
+      SELECT * FROM get_rooms_for_generation();
+    `;
+
+    return {
+      success: true,
+      data: ((data as unknown) as RoomForGeneration[]) || [],
+    };
+  } catch (error) {
+    console.error('Detailed getRoomsForGeneration Error:', error);
+    return {
+      success: false,
+      data: [],
+      error: (error as Error).message || 'Failed to fetch rooms for generation.',
+    };
+  }
+}
+
+/* Subjects */
+export async function fetchSubjectRequirements(
+  curricula: string[] | null,
+  term: string | null
+): Promise<{ success: boolean; data: SubjectRequirementRecord[]; error?: string }> {
+  try {
+    // Format parameters
+    const formattedCurricula = curricula && curricula.length > 0 ? curricula : null;
+    const formattedTerm = term && term.trim() !== '' ? term : null;
+
+    const data = await sql`
+      SELECT * FROM subject_requirements_read(
+        ${formattedCurricula}::TEXT[],
+        ${formattedTerm}
+      );
+    `;
+
+    return {
+      success: true,
+      data: ((data as unknown) as SubjectRequirementRecord[]) || [],
+    };
+  } catch (error) {
+    console.error('Detailed fetchSubjectRequirements Error:', error);
+    return {
+      success: false,
+      data: [],
+      error: (error as Error).message || 'Failed to fetch subject requirements.',
+    };
+  }
+}
+
+// Teachers
+export async function getTeachersWithAqAndFcce(params: {
+  aySem?: string | null;
+  search?: string | null;
+}) {
+  const { aySem = null, search = null } = params;
+
+  try {
+    const data = await sql`
+      SELECT * FROM teachers_with_aq_and_fcce_read(
+        ${aySem || null},
+        ${search || null}
+      );
+    `;
+    return { success: true, data: data || [] };
+  } catch (error) {
+    console.error("Failed to fetch teachers with AQ and FCCE:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch teacher qualifications.",
       data: [],
     };
   }
@@ -1027,6 +1129,7 @@ export interface TeacherPreferences {
   preferred_subjects: string[];
   preferred_times: TimePreference[];
   preferred_rooms: string[];
+  preferred_year: string[];
 }
 
 // Read Teachers

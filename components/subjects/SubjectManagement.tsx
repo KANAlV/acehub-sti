@@ -953,8 +953,6 @@ export default function SubjectsManagement() {
                   <option value="">Select Term...</option>
                   <option value="Term 1">Term 1</option>
                   <option value="Term 2">Term 2</option>
-                  <option value="Term 3">Term 3</option>
-                  <option value="Term 4">Term 4</option>
                 </Select>
                 {termError && (
                   <HelperText color="failure">{termError}</HelperText>
@@ -1256,8 +1254,6 @@ export default function SubjectsManagement() {
                   <option value="">Select Term...</option>
                   <option value="Term 1">Term 1</option>
                   <option value="Term 2">Term 2</option>
-                  <option value="Term 3">Term 3</option>
-                  <option value="Term 4">Term 4</option>
                 </Select>
                 {termError && (
                   <HelperText color="failure">{termError}</HelperText>
