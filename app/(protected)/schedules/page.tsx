@@ -43,17 +43,21 @@ import {
   startTransition,
 } from "react";
 import { HiChevronRight } from "react-icons/hi2";
+import { useRouter } from "next/navigation";
 import {
   fetchSchedules,
   fetchCurricula,
   fetchPrograms,
   ProgramRecord,
+  saveGeneratedSchedule,
 } from "@/app/actions/system";
 import {
   assignSubjectsToSections,
   SectionSubjectAssignment,
   AssignedSubjectDetail,
   generateProgramSections,
+  generateRoomAndClassSchedules,
+  ScheduleEntry,
 } from "@/app/actions/AutoScheduleGeneration";
 import Image from "next/image";
 
@@ -72,10 +76,11 @@ export interface CurriculumRecord {
 }
 
 export default function ScheduleManagement() {
+  const router = useRouter();
   const [isLoading, setLoading] = useState(true);
 
   // For Debugging Only (Developer-controlled code flag)
-  const testMode = true;
+  const testMode = false;
 
   // --- Table & View Filter State --- //
   const [records, setRecords] = useState<ScheduleRecord[]>([]);
@@ -103,13 +108,27 @@ export default function ScheduleManagement() {
     useState<boolean>(false);
   const [generationProgress, setGenerationProgress] = useState<number>(0);
   const [generationStatusText, setGenerationStatusText] = useState<string>("");
-  const [openLoadingModal, setOpenLoadingModal] = useState<boolean>(false); // NEW: Dedicated loading modal state
+  const [openLoadingModal, setOpenLoadingModal] = useState<boolean>(false); // Dedicated loading modal state
 
-  // --- Testing State: Preview generated data modal (Updated to handle assignments) --- //
+  // --- Testing State: Preview generated data modals --- //
   const [assignedSectionsResult, setAssignedSectionsResult] = useState<
     SectionSubjectAssignment[] | null
   >(null);
+  const [scheduleEntriesResult, setScheduleEntriesResult] = useState<
+    ScheduleEntry[] | null
+  >(null);
+
+  // Independent dropdown selectors + display format control ("timetable" or "table")
+  const [displayFormat, setDisplayFormat] = useState<"timetable" | "table">(
+    "timetable",
+  );
+  const [selectedTimetableSection, setSelectedTimetableSection] =
+    useState<string>("ALL");
+  const [selectedTimetableRoom, setSelectedTimetableRoom] =
+    useState<string>(""); // Default to first/specific room when section is ALL
+
   const [openResultsModal, setOpenResultsModal] = useState<boolean>(false);
+  const [openTimetableModal, setOpenTimetableModal] = useState<boolean>(false);
 
   // --- Form & Validation States --- //
   const [scheduleId, setScheduleId] = useState("");
@@ -288,6 +307,7 @@ export default function ScheduleManagement() {
       curriculumIds,
       selectedTerm,
     );
+    console.log("=== GENERATED SECTIONS RESULT ===", sectionRes);
 
     if (
       !sectionRes.success ||
@@ -304,43 +324,147 @@ export default function ScheduleManagement() {
       return;
     }
 
-    setGenerationProgress(55);
-    setGenerationStatusText(
-      `Generated ${sectionRes.sections.length} sections. Fetching requirements and assigning subjects...`,
-    );
+    setGenerationProgress(50);
 
-    // Step 2: Run subject assignment using the precomputed sections
-    const assignRes = await assignSubjectsToSections(
-      addScheduleName.trim(),
-      curriculumIds,
-      selectedTerm,
-      sectionRes.sections,
-    );
+    let isSuccess = false;
+    let errorMessage = "";
+    let savedScheduleId: string | undefined = undefined;
 
-    setGenerationProgress(100);
-    setGenerationStatusText("Assignment complete!");
-    setIsSubmittingAutoGeneration(false);
-    setOpenLoadingModal(false); // Close loading modal
+    if (autoAssignRoom) {
+      setGenerationStatusText(
+        `Generated ${sectionRes.sections.length} sections. Running room allocation and timetable generation...`,
+      );
 
-    if (assignRes.success) {
-      startTransition(() => {
-        setAssignedSectionsResult(assignRes.assignments);
-        if (testMode) {
-          setOpenResultsModal(true); // Open test results modal only if testMode is true
+      const roomScheduleRes = await generateRoomAndClassSchedules(
+        addScheduleName.trim(),
+        curriculumIds,
+        selectedTerm,
+      );
+      console.log("=== ROOM & CLASS SCHEDULE ENTRIES ===", roomScheduleRes);
+
+      isSuccess = roomScheduleRes.success;
+      errorMessage = roomScheduleRes.error || "";
+
+      if (
+        isSuccess &&
+        !testMode &&
+        roomScheduleRes.scheduleEntries.length > 0
+      ) {
+        setGenerationProgress(80);
+        setGenerationStatusText(
+          "Posting and saving generated schedule to database...",
+        );
+
+        // Helper to convert "HH:MM" to minutes from midnight (Integer)
+        function timeToMinutes(timeStr: string): number {
+          const [hours, minutes] = timeStr.split(":").map(Number);
+          return hours * 60 + minutes;
         }
-      });
-      setToastMessage(
-        "Program sections and subject assignments generated successfully!",
-      );
-      setToastType("success");
-      toastTimer();
-      void getScheduleRecords();
+
+        const savePayload = {
+          scheduleName: addScheduleName.trim(),
+          generationConfig: {
+            description: `Generated for term ${selectedTerm}`,
+          },
+          entries: roomScheduleRes.scheduleEntries.map((entry) => ({
+            subject_id: entry.subjectId || null, // Passes valid UUID or null
+            teacher_id: null, // Passes null instead of "" for UUID
+            room_id: entry.roomId || null, // Passes valid UUID or null
+            section: entry.sectionCode,
+            day: entry.day,
+            start_time: timeToMinutes(entry.startTime), // Converts "07:00" -> 420
+            end_time: timeToMinutes(entry.endTime),
+          })),
+        };
+
+        console.log(
+          "=== SAVE GENERATED SCHEDULE PAYLOAD ===",
+          JSON.stringify(savePayload, null, 2),
+        );
+
+        const saveRes = await saveGeneratedSchedule(savePayload);
+        console.log("=== SAVE GENERATED SCHEDULE RESPONSE ===", saveRes);
+
+        if (saveRes.success) {
+          savedScheduleId = saveRes.scheduleId;
+        } else {
+          isSuccess = false;
+          errorMessage =
+            saveRes.error || "Failed to persist schedule to database.";
+        }
+      }
+
+      setGenerationProgress(100);
+      setGenerationStatusText("Timetable generation complete!");
+      setIsSubmittingAutoGeneration(false);
+      setOpenLoadingModal(false);
+
+      if (isSuccess) {
+        if (!testMode && savedScheduleId) {
+          router.push(`/schedule/${savedScheduleId}`);
+        }
+
+        startTransition(() => {
+          setScheduleEntriesResult(roomScheduleRes.scheduleEntries);
+          setSelectedTimetableSection("ALL");
+          const rooms = Array.from(
+            new Set(roomScheduleRes.scheduleEntries.map((e) => e.roomName)),
+          );
+          setSelectedTimetableRoom(rooms.length > 0 ? rooms[0] : "ALL");
+          if (testMode) {
+            setOpenTimetableModal(true); // Open timetable format results modal
+          }
+        });
+        setToastMessage("Rooms and class schedules generated successfully!");
+        setToastType("success");
+        toastTimer();
+        void getScheduleRecords();
+      } else {
+        setToastMessage(errorMessage || "Failed to generate room schedules.");
+        setToastType("error");
+        setShowToast(true);
+      }
     } else {
-      setToastMessage(
-        assignRes.error || "Failed to assign subjects to sections.",
+      setGenerationStatusText(
+        `Generated ${sectionRes.sections.length} sections. Fetching requirements and assigning subjects...`,
       );
-      setToastType("error");
-      setShowToast(true);
+
+      const assignRes = await assignSubjectsToSections(
+        addScheduleName.trim(),
+        curriculumIds,
+        selectedTerm,
+        sectionRes.sections,
+      );
+      console.log("=== SUBJECT ASSIGNMENT RESULT ===", assignRes);
+
+      isSuccess = assignRes.success;
+      errorMessage = assignRes.error || "";
+
+      setGenerationProgress(100);
+      setGenerationStatusText("Assignment complete!");
+      setIsSubmittingAutoGeneration(false);
+      setOpenLoadingModal(false);
+
+      if (isSuccess) {
+        startTransition(() => {
+          setAssignedSectionsResult(assignRes.assignments);
+          if (testMode) {
+            setOpenResultsModal(true); // Open standard assignments test modal
+          }
+        });
+        setToastMessage(
+          "Program sections and subject assignments generated successfully!",
+        );
+        setToastType("success");
+        toastTimer();
+        void getScheduleRecords();
+      } else {
+        setToastMessage(
+          errorMessage || "Failed to assign subjects to sections.",
+        );
+        setToastType("error");
+        setShowToast(true);
+      }
     }
   }
 
@@ -438,6 +562,67 @@ export default function ScheduleManagement() {
     !addScheduleName.trim() ||
     !!scheduleNameError ||
     curriculumAdd.length === 0;
+
+  // Timetable helper constants & functions
+  const daysOfWeek = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+  const timeSlotsGrid = [
+    "07:00",
+    "07:30",
+    "08:00",
+    "08:30",
+    "09:00",
+    "09:30",
+    "10:00",
+    "10:30",
+    "11:00",
+    "11:30",
+    "12:00",
+    "12:30",
+    "13:00",
+    "13:30",
+    "14:00",
+    "14:30",
+    "15:00",
+    "15:30",
+    "16:00",
+    "16:30",
+    "17:00",
+    "17:30",
+    "18:00",
+    "18:30",
+    "19:00",
+    "19:30",
+    "20:00",
+    "20:30",
+  ];
+
+  // Filtering entries enforcing strict mutual ALL rule: only one dropdown can be "ALL" at a time
+  const filteredTimetableEntries = scheduleEntriesResult
+    ? scheduleEntriesResult.filter((entry) => {
+        const matchesSection =
+          selectedTimetableSection === "ALL" ||
+          entry.sectionCode === selectedTimetableSection;
+        const matchesRoom =
+          selectedTimetableRoom === "ALL" ||
+          entry.roomName === selectedTimetableRoom;
+        return matchesSection && matchesRoom;
+      })
+    : [];
+
+  const availableTimetableSections = scheduleEntriesResult
+    ? Array.from(new Set(scheduleEntriesResult.map((e) => e.sectionCode)))
+    : [];
+
+  const availableTimetableRooms = scheduleEntriesResult
+    ? Array.from(new Set(scheduleEntriesResult.map((e) => e.roomName)))
+    : [];
 
   return (
     <>
@@ -578,6 +763,9 @@ export default function ScheduleManagement() {
                 records.map((item) => (
                   <TableRow
                     key={item.schedule_id}
+                    onClick={() =>
+                      router.push("/schedules/" + item.schedule_name)
+                    }
                     className="cursor-pointer dark:border-gray-700 dark:bg-gray-800"
                   >
                     <TableCell className="font-medium text-gray-900 dark:text-white">
@@ -966,11 +1154,10 @@ export default function ScheduleManagement() {
           <div className="space-y-4 py-4">
             <div className={"flex w-full justify-center"}>
               <Image
-                  src="/acehub-logo.png"
-                  alt="Acehub Logo"
-                  width={64}
-                  height={64}
-                  className="mr-3 ml-1"
+                src="/acehub-logo.png"
+                alt="Acehub Logo"
+                width={64}
+                height={64}
               />
             </div>
 
@@ -991,7 +1178,7 @@ export default function ScheduleManagement() {
         </ModalBody>
       </Modal>
 
-      {/* --- TESTING MODAL: Preview Assigned Sections & Subjects Data (Shown only if testMode is true) --- */}
+      {/* --- TESTING MODAL 1: Preview Standard Assigned Sections & Subjects Data --- */}
       {testMode && (
         <Modal
           show={openResultsModal}
@@ -1016,7 +1203,7 @@ export default function ScheduleManagement() {
                 <code className="font-mono text-cyan-600">
                   assignSubjectsToSections
                 </code>
-                . You can easily remove this modal block before production.
+                .
               </p>
               <div className="max-h-96 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
                 {assignedSectionsResult && assignedSectionsResult.length > 0 ? (
@@ -1088,6 +1275,297 @@ export default function ScheduleManagement() {
           <ModalFooter className="flex justify-end">
             <Button color="gray" onClick={() => setOpenResultsModal(false)}>
               Close Preview
+            </Button>
+          </ModalFooter>
+        </Modal>
+      )}
+
+      {/* --- TESTING MODAL 2: Timetable / Row Table Preview with Independent Section & Room Dropdowns --- */}
+      {testMode && (
+        <Modal
+          show={openTimetableModal}
+          onClose={() => setOpenTimetableModal(false)}
+          size="7xl"
+        >
+          <ModalHeader className="border-b border-gray-200 dark:border-gray-700">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-3">
+                <span className="text-base font-bold text-gray-900 dark:text-white">
+                  Schedule Generation Output Verification
+                </span>
+                <Badge color="purple" size="sm">
+                  {displayFormat === "timetable"
+                    ? "Timetable Grid View"
+                    : "Row Table View"}
+                </Badge>
+              </div>
+              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                Viewing: Section [ {selectedTimetableSection} ] | Room [{" "}
+                {selectedTimetableRoom} ]
+              </span>
+            </div>
+          </ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              {/* Controls bar: Display Format + Section Dropdown + Room Dropdown with Mutual ALL enforcement */}
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                    Format:
+                  </span>
+                  <Select
+                    value={displayFormat}
+                    onChange={(e) =>
+                      setDisplayFormat(e.target.value as "timetable" | "table")
+                    }
+                  >
+                    <option value="timetable">Timetable Grid</option>
+                    <option value="table">Row Table</option>
+                  </Select>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                      Section:
+                    </span>
+                    <Select
+                      className="w-44"
+                      value={selectedTimetableSection}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedTimetableSection(val);
+                        if (val !== "ALL") {
+                          setSelectedTimetableRoom("ALL"); // Only one dropdown can be ALL at a time
+                        }
+                      }}
+                    >
+                      <option value="ALL">ALL Sections</option>
+                      {availableTimetableSections.map((secCode) => (
+                        <option key={secCode} value={secCode}>
+                          {secCode}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                      Room:
+                    </span>
+                    <Select
+                      className="w-44"
+                      value={selectedTimetableRoom}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedTimetableRoom(val);
+                        if (val !== "ALL") {
+                          setSelectedTimetableSection("ALL"); // Only one dropdown can be ALL at a time
+                        }
+                      }}
+                    >
+                      <option value="ALL">ALL Rooms</option>
+                      {availableTimetableRooms.map((roomName) => (
+                        <option key={roomName} value={roomName}>
+                          {roomName}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Conditional Rendering based on displayFormat */}
+              {displayFormat === "timetable" ? (
+                <div className="max-h-[600px] overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead>
+                      <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                        <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+                          Time
+                        </th>
+                        {daysOfWeek.map((day) => (
+                          <th
+                            key={day}
+                            className="border-r border-b p-3 text-center font-bold"
+                          >
+                            {day.toUpperCase()}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timeSlotsGrid.map((timeSlot, tIdx) => {
+                        const slotTimeParts = timeSlot.split(":");
+                        const slotHour = parseInt(slotTimeParts[0], 10);
+                        const slotMin = parseInt(slotTimeParts[1], 10);
+                        const slotTotalMins = slotHour * 60 + slotMin;
+
+                        return (
+                          <tr
+                            key={tIdx}
+                            className="border-b dark:border-gray-800"
+                          >
+                            <td className="sticky left-0 z-10 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                              {timeSlot}
+                            </td>
+                            {daysOfWeek.map((day) => {
+                              const matchedEntry =
+                                filteredTimetableEntries.find((entry) => {
+                                  if (entry.day !== day) return false;
+                                  const [entryStart] =
+                                    entry.startTime.split(" - ");
+                                  return entryStart === timeSlot;
+                                });
+
+                              if (matchedEntry) {
+                                const [startH, startM] = matchedEntry.startTime
+                                  .split(":")
+                                  .map(Number);
+                                const [endH, endM] = matchedEntry.endTime
+                                  .split(":")
+                                  .map(Number);
+                                const durationMins =
+                                  endH * 60 + endM - (startH * 60 + startM);
+                                const rowSpan = Math.max(
+                                  1,
+                                  Math.round(durationMins / 30),
+                                );
+
+                                const blockStyle =
+                                  "bg-sky-50 text-sky-950 border-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800";
+
+                                return (
+                                  <td
+                                    key={day}
+                                    rowSpan={rowSpan}
+                                    className={`border-r p-1.5 align-top ${blockStyle} border font-sans`}
+                                  >
+                                    <div className="flex h-full flex-col justify-between rounded p-2 shadow-xs">
+                                      <div>
+                                        <div className="text-xs font-bold text-gray-900 dark:text-white">
+                                          {matchedEntry.courseCode}
+                                        </div>
+                                        <div className="truncate text-[10px] opacity-90">
+                                          {matchedEntry.courseName}
+                                        </div>
+                                      </div>
+                                      <div className="mt-2 space-y-0.5 text-[10px] font-semibold opacity-90">
+                                        <div>
+                                          👥 Sec: {matchedEntry.sectionCode}
+                                        </div>
+                                        <div>
+                                          📍 Room: {matchedEntry.roomName}
+                                        </div>
+                                        <div className="font-mono">
+                                          🕒 {matchedEntry.startTime} -{" "}
+                                          {matchedEntry.endTime}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                );
+                              }
+
+                              const isCoveredByPrevious =
+                                filteredTimetableEntries.some((entry) => {
+                                  if (entry.day !== day) return false;
+                                  const [startH, startM] = entry.startTime
+                                    .split(":")
+                                    .map(Number);
+                                  const [endH, endM] = entry.endTime
+                                    .split(":")
+                                    .map(Number);
+                                  const entryStartMins = startH * 60 + startM;
+                                  const entryEndMins = endH * 60 + endM;
+                                  return (
+                                    slotTotalMins > entryStartMins &&
+                                    slotTotalMins < entryEndMins
+                                  );
+                                });
+
+                              if (isCoveredByPrevious) {
+                                return null;
+                              }
+
+                              return (
+                                <td
+                                  key={day}
+                                  className="border-r p-2 text-center text-gray-300 dark:border-gray-800"
+                                ></td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="max-h-[600px] overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                  <Table hoverable>
+                    <TableHead>
+                      <TableRow>
+                        <TableHeadCell>Section</TableHeadCell>
+                        <TableHeadCell>Course Code</TableHeadCell>
+                        <TableHeadCell>Course Name</TableHeadCell>
+                        <TableHeadCell>Component</TableHeadCell>
+                        <TableHeadCell>Room</TableHeadCell>
+                        <TableHeadCell>Day</TableHeadCell>
+                        <TableHeadCell>Time</TableHeadCell>
+                        <TableHeadCell>Units</TableHeadCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filteredTimetableEntries.length > 0 ? (
+                        filteredTimetableEntries.map((entry, idx) => (
+                          <TableRow
+                            key={idx}
+                            className="bg-white dark:border-gray-700 dark:bg-gray-900"
+                          >
+                            <TableCell className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                              {entry.sectionCode}
+                            </TableCell>
+                            <TableCell className="font-medium text-gray-900 dark:text-white">
+                              {entry.courseCode}
+                            </TableCell>
+                            <TableCell className="text-gray-500">
+                              {entry.courseName}
+                            </TableCell>
+                            <TableCell>
+                              <Badge color="info" size="xs">
+                                {entry.componentType}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-semibold text-gray-700 dark:text-gray-300">
+                              {entry.roomName}
+                            </TableCell>
+                            <TableCell>{entry.day}</TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {entry.startTime} - {entry.endTime}
+                            </TableCell>
+                            <TableCell>{entry.units}</TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={8}
+                            className="py-6 text-center text-gray-400 italic"
+                          >
+                            No entries found matching the selected filters.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </ModalBody>
+          <ModalFooter className="flex justify-end">
+            <Button color="gray" onClick={() => setOpenTimetableModal(false)}>
+              Close Output Verification
             </Button>
           </ModalFooter>
         </Modal>

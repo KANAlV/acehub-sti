@@ -18,6 +18,33 @@ export interface SubjectRequirementRecord {
   year_term: string | null;
   required_aqs: string[];
 }
+export interface ScheduleEntryPayload {
+  subject_id: string;
+  teacher_id: string;
+  room_id: string;
+  section: string;
+  day: string;
+  start_time: number;
+  end_time: number;
+}
+export interface SaveSchedulePayload {
+  scheduleName: string;
+  generationConfig?: Record<string, unknown>;
+  entries: ScheduleEntryPayload[];
+}
+export interface SaveScheduleResult {
+  success: boolean;
+  scheduleId?: string;
+  insertedCount?: number;
+  error?: string;
+}
+interface DatabaseScheduleResponse {
+  schedule_id: string;
+  schedule_name: string;
+  generation_config: Record<string, unknown> | null;
+  created_at: string;
+  entries_inserted: number;
+}
 
 /* READ */
 export async function fetchSchedules(params: {
@@ -26,7 +53,8 @@ export async function fetchSchedules(params: {
   sortDir?: 'ASC' | 'DESC';
   page?: number;
   limit?: number;
-}) {
+})
+{
   const {
     search = null,
     sortBy = 'schedule_name',
@@ -71,11 +99,30 @@ export interface RoomForGeneration {
 }
 
 /* Rooms */
+export async function fetchLecRoomID() {
+  try {
+    const res = await sql`Select * FROM get_lecture_room_id()`
+
+    return {
+      success: true,
+      data: res
+    };
+  } catch (error) {
+    console.error('Fetching room id Error:', error)
+    return {
+      success: false,
+      data: [],
+      error: (error as Error).message || 'Failed to fetch Lecture Room ID',
+    }
+  }
+}
+
 export async function getRoomsForGeneration(): Promise<{
   success: boolean;
   data: RoomForGeneration[];
   error?: string;
-}> {
+}>
+{
   try {
     const data = await sql`
       SELECT * FROM get_rooms_for_generation();
@@ -147,6 +194,67 @@ export async function getTeachersWithAqAndFcce(params: {
       success: false,
       error: (error as Error).message || "Failed to fetch teacher qualifications.",
       data: [],
+    };
+  }
+}
+
+
+/** --- POST GENERATED SCHEDULE --- **/
+
+export async function saveGeneratedSchedule(payload: {
+  scheduleName: string;
+  generationConfig: { description: string };
+  entries: {
+    subject_id: string | null;
+    teacher_id: null;
+    room_id: string | null;
+    section: string;
+    day: string;
+    start_time: number;
+    end_time: number;
+  }[];
+}): Promise<SaveScheduleResult> {
+  try {
+    const { scheduleName, generationConfig, entries } = payload;
+
+    const safeEntries = Array.isArray(entries) ? entries : [];
+
+    // DEBUG: Inspect what you are sending to PostgreSQL
+    console.log(
+      `📤 Sending ${safeEntries.length} entries to DB transaction:`,
+      JSON.stringify(safeEntries, null, 2),
+    );
+
+    const result = await sql`
+      SELECT * FROM create_schedule_with_entries(
+          ${scheduleName},
+          ${generationConfig ? JSON.stringify(generationConfig) : null}::jsonb,
+          ${sql.json(safeEntries)}
+                    );
+    `;
+
+    const rows = result as unknown as DatabaseScheduleResponse[];
+    const row = rows[0];
+
+    if (!row) {
+      throw new Error(
+        "No response returned from schedule creation transaction.",
+      );
+    }
+
+    return {
+      success: true,
+      scheduleId: row.schedule_id,
+      insertedCount: row.entries_inserted,
+    };
+  } catch (error: unknown) {
+    console.error("Failed to save generated schedule transaction:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to save generated schedule transaction.",
     };
   }
 }
