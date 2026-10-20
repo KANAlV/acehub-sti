@@ -177,7 +177,8 @@ export async function fetchSubjectRequirements(
 export async function getTeachersWithAqAndFcce(params: {
   aySem?: string | null;
   search?: string | null;
-}) {
+})
+{
   const { aySem = null, search = null } = params;
 
   try {
@@ -206,24 +207,19 @@ export async function saveGeneratedSchedule(payload: {
   generationConfig: { description: string };
   entries: {
     subject_id: string | null;
-    teacher_id: null;
+    teacher_id: string | null;
     room_id: string | null;
     section: string;
     day: string;
     start_time: number;
     end_time: number;
   }[];
-}): Promise<SaveScheduleResult> {
+}): Promise<SaveScheduleResult>
+{
   try {
     const { scheduleName, generationConfig, entries } = payload;
 
     const safeEntries = Array.isArray(entries) ? entries : [];
-
-    // DEBUG: Inspect what you are sending to PostgreSQL
-    console.log(
-      `📤 Sending ${safeEntries.length} entries to DB transaction:`,
-      JSON.stringify(safeEntries, null, 2),
-    );
 
     const result = await sql`
       SELECT * FROM create_schedule_with_entries(
@@ -242,6 +238,12 @@ export async function saveGeneratedSchedule(payload: {
       );
     }
 
+    await createLog(
+        "",
+        "create_schedule",
+        `schedule_name: '${scheduleName}'`,
+    );
+
     return {
       success: true,
       scheduleId: row.schedule_id,
@@ -255,6 +257,101 @@ export async function saveGeneratedSchedule(payload: {
         error instanceof Error
           ? error.message
           : "Failed to save generated schedule transaction.",
+    };
+  }
+}
+
+/**********************
+ * SCHEDULES SUMMARY  *
+ **********************/
+
+export interface ScheduleByNameRecord {
+  schedule_id: string;
+  schedule_name: string;
+  created_at: string;
+  is_active: boolean;
+}
+export interface ScheduleEntriesSummaryRecord {
+  total_entries: number;
+  active_teachers: number;
+  subjects: number;
+  total_units: number;
+}
+export interface ScheduleDetailedSummaryRecord {
+  daily_avg: number;
+  avg_class_dur: number;
+  no_teacher: number;
+  no_room: number;
+}
+
+export async function fetchScheduleByName(scheduleName: string) {
+  try {
+    const result = await sql`
+      SELECT * FROM get_schedule_by_name(${scheduleName});
+    `;
+
+    const rows = result as unknown as ScheduleByNameRecord[];
+
+    if (!rows || rows.length === 0) {
+      return { success: false, error: "Schedule not found." };
+    }
+
+    return { success: true, data: rows[0] };
+  } catch (error: unknown) {
+    console.error("Failed to fetch schedule by name:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unexpected error occurred."
+    };
+  }
+}
+
+export async function fetchScheduleEntriesSummary(scheduleId: string) {
+  try {
+    const result = await sql`
+      SELECT * FROM get_schedule_summary(${scheduleId});
+    `;
+
+    const rows = result as unknown as ScheduleEntriesSummaryRecord[];
+
+    if (!rows || rows.length === 0) {
+      return { success: false, error: "Schedule summary not found." };
+    }
+
+    return {
+      success: true,
+      data: rows[0]
+    };
+  } catch (error: unknown) {
+    console.error("Failed to fetch schedule summary:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unexpected error occurred."
+    };
+  }
+}
+
+export async function fetchScheduleDetailedSummary(scheduleId: string) {
+  try {
+    const result = await sql`
+      SELECT * FROM get_schedule_detailed_summary(${scheduleId});
+    `;
+
+    const rows = result as unknown as ScheduleDetailedSummaryRecord[];
+
+    if (!rows || rows.length === 0) {
+      return { success: false, error: "Detailed schedule summary not found." };
+    }
+
+    return {
+      success: true,
+      data: rows[0]
+    };
+  } catch (error: unknown) {
+    console.error("Failed to fetch detailed schedule summary:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unexpected error occurred."
     };
   }
 }

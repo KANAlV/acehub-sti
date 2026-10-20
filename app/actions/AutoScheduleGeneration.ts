@@ -60,7 +60,7 @@ export interface ScheduleEntry {
   courseName: string;
   componentType: "LECTURE" | "LABORATORY" | "LECTURE_LAB_COMBINED";
   units: number;
-  roomId: string;
+  roomId: string | null;
   roomName: string;
   day: string;
   startTime: string;
@@ -179,7 +179,8 @@ export async function assignSubjectsToSections(
   success: boolean;
   assignments: SectionSubjectAssignment[];
   error?: string;
-}> {
+}>
+{
   try {
     let sections = precomputedSections;
 
@@ -384,7 +385,7 @@ export async function generateRoomAndClassSchedules(
     if (!assignmentResult.success || !assignmentResult.assignments) {
       throw new Error(
         assignmentResult.error ||
-          "Failed to resolve section subject assignments.",
+        "Failed to resolve section subject assignments.",
       );
     }
     const sectionAssignments = assignmentResult.assignments;
@@ -678,26 +679,18 @@ function scheduleSession(
     availableRooms.length > 0
       ? availableRooms
       : rooms.filter((r) => {
-          if (componentType === "LECTURE" && requiredLabTypeId) {
-            return r.room_type !== requiredLabTypeId;
-          }
-          return true;
-        });
-
-  if (fallbackRooms.length === 0) {
-    if (testMode) {
-      console.warn(
-        `⚠️ [Warning] No valid rooms available for ${subject.course_code} (${componentType})`,
-      );
-    }
-    return;
-  }
+        if (componentType === "LECTURE" && requiredLabTypeId) {
+          return r.room_type !== requiredLabTypeId;
+        }
+        return true;
+      });
 
   const prioritizedDays = [
     ...days.filter((d) => d !== preferredVacantDay),
     preferredVacantDay,
   ];
 
+  // PASS 1: Try to schedule with a valid available room
   for (const day of prioritizedDays) {
     if (
       day === preferredVacantDay &&
@@ -753,9 +746,9 @@ function scheduleSession(
             );
           }
 
-          scheduleEntries.push( {
+          scheduleEntries.push({
             sectionCode,
-            subjectId: subject.subject_id, // <-- Populated here
+            subjectId: subject.subject_id,
             courseCode: subject.course_code,
             courseName: subject.course_name,
             componentType,
@@ -772,9 +765,74 @@ function scheduleSession(
     }
   }
 
+  // PASS 2 (Fallback): If no room is available, schedule without a room as long as section & course are free
+  for (const day of prioritizedDays) {
+    if (
+      day === preferredVacantDay &&
+      activeDays.size < 5 &&
+      activeDays.size > 0
+    ) {
+      continue;
+    }
+
+    if (!activeDays.has(day) && activeDays.size >= 5) {
+      continue;
+    }
+
+    for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
+      const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
+
+      const isSectionFree = sessionSlots.every(
+        (slot: string) =>
+          !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`),
+      );
+      if (!isSectionFree) continue;
+
+      const isCourseFree = sessionSlots.every(
+        (slot: string) =>
+          !occupiedCourseSlots.has(`${subject.course_code}_${day}_${slot}`),
+      );
+      if (!isCourseFree) continue;
+
+      sessionSlots.forEach((slot: string) => {
+        occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+        occupiedCourseSlots.add(`${subject.course_code}_${day}_${slot}`);
+      });
+      activeDays.add(day);
+
+      const startTime = sessionSlots[0].split(" - ")[0];
+      const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
+
+      let totalUnits = subject.lecture_units + subject.lab_units;
+      if (componentType === "LECTURE") totalUnits = subject.lecture_units;
+      if (componentType === "LABORATORY") totalUnits = subject.lab_units;
+
+      if (testMode) {
+        console.warn(
+          `         ⚠️ Scheduled WITHOUT ROOM [${subject.course_code}] (${componentType}) -> Day: ${day} (${startTime} - ${endTime})`,
+        );
+      }
+
+      scheduleEntries.push({
+        sectionCode,
+        subjectId: subject.subject_id,
+        courseCode: subject.course_code,
+        courseName: subject.course_name,
+        componentType,
+        units: totalUnits,
+        roomId: null,
+        roomName: "Unassigned Room",
+        day,
+        startTime,
+        endTime,
+      });
+      return;
+    }
+  }
+
   if (testMode) {
     console.warn(
-      `❌ [Failed] Could not find a valid time/room slot for ${subject.course_code} (${componentType}) in section ${sectionCode}`,
+      `❌ [Failed Completely] Could not find any valid time slot for ${subject.course_code} (${componentType}) in section ${sectionCode}`,
     );
   }
 }

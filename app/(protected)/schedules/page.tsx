@@ -75,6 +75,16 @@ export interface CurriculumRecord {
   created_at: string;
 }
 
+interface SaveScheduleEntryPayload {
+  subject_id: string | null;
+  teacher_id: string | null;
+  room_id: string | null;
+  section: string;
+  day: string;
+  start_time: number;
+  end_time: number;
+}
+
 export default function ScheduleManagement() {
   const router = useRouter();
   const [isLoading, setLoading] = useState(true);
@@ -131,7 +141,6 @@ export default function ScheduleManagement() {
   const [openTimetableModal, setOpenTimetableModal] = useState<boolean>(false);
 
   // --- Form & Validation States --- //
-  const [scheduleId, setScheduleId] = useState("");
   const [scheduleNameError, setScheduleNameError] = useState("");
 
   // Add Form State (Common / Template mode)
@@ -139,7 +148,6 @@ export default function ScheduleManagement() {
   const [selectedTemplate, setSelectedTemplate] = useState("");
 
   // Auto Assign / Generation Specific State
-  const [autoGenerationConfig, setAutoGenerationConfig] = useState("");
   const [selectedTerm, setSelectedTerm] = useState("Term 1");
 
   // --- Pagination State --- //
@@ -211,7 +219,6 @@ export default function ScheduleManagement() {
   }
 
   const handleCloseModals = () => {
-    setScheduleId("");
     setScheduleNameError("");
     setOpenAddModal(false);
     setAddStep("selection");
@@ -220,7 +227,6 @@ export default function ScheduleManagement() {
     setAddScheduleName("");
     setSelectedTerm("Term 1");
     setSelectedTemplate("");
-    setAutoGenerationConfig("");
     setCurriculumAdd([]);
     setCurriculaSearch("");
     setIsCurriculaSearching(false);
@@ -283,7 +289,8 @@ export default function ScheduleManagement() {
     setCurriculumAdd((prev) => [...prev, input]);
   };
 
-  // --- Submit Handler using separated step execution for precise UI progress --- //
+  // --- Unified Submit Handler for Auto & Semi-Auto Generation --- //
+  // --- Unified Submit Handler for Auto & Semi-Auto Generation --- //
   async function handleAutoGenerationSubmit() {
     if (
       !addScheduleName.trim() ||
@@ -328,7 +335,7 @@ export default function ScheduleManagement() {
 
     let isSuccess = false;
     let errorMessage = "";
-    let savedScheduleId: string | undefined = undefined;
+    let entriesPayload: SaveScheduleEntryPayload[] = [];
 
     if (autoAssignRoom) {
       setGenerationStatusText(
@@ -345,64 +352,21 @@ export default function ScheduleManagement() {
       isSuccess = roomScheduleRes.success;
       errorMessage = roomScheduleRes.error || "";
 
-      if (
-        isSuccess &&
-        !testMode &&
-        roomScheduleRes.scheduleEntries.length > 0
-      ) {
-        setGenerationProgress(80);
-        setGenerationStatusText(
-          "Posting and saving generated schedule to database...",
-        );
-
-        // Helper to convert "HH:MM" to minutes from midnight (Integer)
+      if (isSuccess && roomScheduleRes.scheduleEntries.length > 0) {
         function timeToMinutes(timeStr: string): number {
           const [hours, minutes] = timeStr.split(":").map(Number);
           return hours * 60 + minutes;
         }
 
-        const savePayload = {
-          scheduleName: addScheduleName.trim(),
-          generationConfig: {
-            description: `Generated for term ${selectedTerm}`,
-          },
-          entries: roomScheduleRes.scheduleEntries.map((entry) => ({
-            subject_id: entry.subjectId || null, // Passes valid UUID or null
-            teacher_id: null, // Passes null instead of "" for UUID
-            room_id: entry.roomId || null, // Passes valid UUID or null
-            section: entry.sectionCode,
-            day: entry.day,
-            start_time: timeToMinutes(entry.startTime), // Converts "07:00" -> 420
-            end_time: timeToMinutes(entry.endTime),
-          })),
-        };
-
-        console.log(
-          "=== SAVE GENERATED SCHEDULE PAYLOAD ===",
-          JSON.stringify(savePayload, null, 2),
-        );
-
-        const saveRes = await saveGeneratedSchedule(savePayload);
-        console.log("=== SAVE GENERATED SCHEDULE RESPONSE ===", saveRes);
-
-        if (saveRes.success) {
-          savedScheduleId = saveRes.scheduleId;
-        } else {
-          isSuccess = false;
-          errorMessage =
-            saveRes.error || "Failed to persist schedule to database.";
-        }
-      }
-
-      setGenerationProgress(100);
-      setGenerationStatusText("Timetable generation complete!");
-      setIsSubmittingAutoGeneration(false);
-      setOpenLoadingModal(false);
-
-      if (isSuccess) {
-        if (!testMode && savedScheduleId) {
-          router.push(`/schedule/${savedScheduleId}`);
-        }
+        entriesPayload = roomScheduleRes.scheduleEntries.map((entry) => ({
+          subject_id: entry.subjectId || null,
+          teacher_id: null,
+          room_id: entry.roomId || null,
+          section: entry.sectionCode,
+          day: entry.day,
+          start_time: timeToMinutes(entry.startTime),
+          end_time: timeToMinutes(entry.endTime),
+        }));
 
         startTransition(() => {
           setScheduleEntriesResult(roomScheduleRes.scheduleEntries);
@@ -411,18 +375,7 @@ export default function ScheduleManagement() {
             new Set(roomScheduleRes.scheduleEntries.map((e) => e.roomName)),
           );
           setSelectedTimetableRoom(rooms.length > 0 ? rooms[0] : "ALL");
-          if (testMode) {
-            setOpenTimetableModal(true); // Open timetable format results modal
-          }
         });
-        setToastMessage("Rooms and class schedules generated successfully!");
-        setToastType("success");
-        toastTimer();
-        void getScheduleRecords();
-      } else {
-        setToastMessage(errorMessage || "Failed to generate room schedules.");
-        setToastType("error");
-        setShowToast(true);
       }
     } else {
       setGenerationStatusText(
@@ -440,31 +393,153 @@ export default function ScheduleManagement() {
       isSuccess = assignRes.success;
       errorMessage = assignRes.error || "";
 
-      setGenerationProgress(100);
-      setGenerationStatusText("Assignment complete!");
-      setIsSubmittingAutoGeneration(false);
-      setOpenLoadingModal(false);
+      if (isSuccess && assignRes.assignments) {
+        // Expand subjects into separate lecture and lab entries matching the exact breakdown
+        entriesPayload = assignRes.assignments.flatMap((assignment) =>
+          assignment.subjects.flatMap((subj: AssignedSubjectDetail) => {
+            const lectureUnits = subj.lecture_units || 0;
+            const labUnits = subj.lab_units || 0;
+            const entries: SaveScheduleEntryPayload[] = [];
 
-      if (isSuccess) {
+            const lecHours = lectureUnits * 1.5;
+            const labHours = labUnits * 2.0;
+            const combinedHours = lecHours + labHours;
+
+            const canMerge =
+              lectureUnits > 0 && labUnits > 0 && combinedHours <= 5;
+            const shouldMerge = canMerge ? Math.random() < 0.8 : false;
+
+            if (shouldMerge) {
+              entries.push({
+                subject_id: subj.subject_id || null,
+                teacher_id: null,
+                room_id: null,
+                section: assignment.sectionCode,
+                day: "TBA",
+                start_time: 0,
+                end_time: 0,
+              });
+            } else {
+              if (lectureUnits > 0) {
+                const splitLecture =
+                  lecHours >= 5 ? Math.random() < 0.5 : false;
+                if (splitLecture) {
+                  entries.push(
+                    {
+                      subject_id: subj.subject_id || null,
+                      teacher_id: null,
+                      room_id: null,
+                      section: assignment.sectionCode,
+                      day: "TBA",
+                      start_time: 0,
+                      end_time: 0,
+                    },
+                    {
+                      subject_id: subj.subject_id || null,
+                      teacher_id: null,
+                      room_id: null,
+                      section: assignment.sectionCode,
+                      day: "TBA",
+                      start_time: 0,
+                      end_time: 0,
+                    },
+                  );
+                } else {
+                  entries.push({
+                    subject_id: subj.subject_id || null,
+                    teacher_id: null,
+                    room_id: null,
+                    section: assignment.sectionCode,
+                    day: "TBA",
+                    start_time: 0,
+                    end_time: 0,
+                  });
+                }
+              }
+
+              if (labUnits > 0) {
+                entries.push({
+                  subject_id: subj.subject_id || null,
+                  teacher_id: null,
+                  room_id: null,
+                  section: assignment.sectionCode,
+                  day: "TBA",
+                  start_time: 0,
+                  end_time: 0,
+                });
+              }
+            }
+
+            return entries;
+          }),
+        );
+
         startTransition(() => {
           setAssignedSectionsResult(assignRes.assignments);
-          if (testMode) {
-            setOpenResultsModal(true); // Open standard assignments test modal
-          }
         });
-        setToastMessage(
-          "Program sections and subject assignments generated successfully!",
-        );
-        setToastType("success");
-        toastTimer();
-        void getScheduleRecords();
-      } else {
-        setToastMessage(
-          errorMessage || "Failed to assign subjects to sections.",
-        );
-        setToastType("error");
-        setShowToast(true);
       }
+    }
+
+    // --- SHARED PERSISTENCE & COMPLETION STEP ---
+    if (isSuccess && !testMode && entriesPayload.length > 0) {
+      setGenerationProgress(80);
+      setGenerationStatusText(
+        "Posting and saving generated schedule to database...",
+      );
+
+      const savePayload = {
+        scheduleName: addScheduleName.trim(),
+        generationConfig: {
+          description: `Generated for term ${selectedTerm} (Auto Room: ${autoAssignRoom})`,
+        },
+        entries: entriesPayload,
+      };
+
+      console.log(
+        "=== SAVE GENERATED SCHEDULE PAYLOAD ===",
+        JSON.stringify(savePayload, null, 2),
+      );
+
+      const saveRes = await saveGeneratedSchedule(savePayload);
+      console.log("=== SAVE GENERATED SCHEDULE RESPONSE ===", saveRes);
+
+      if (!saveRes.success) {
+        isSuccess = false;
+        errorMessage =
+          saveRes.error || "Failed to persist schedule to database.";
+      }
+    }
+
+    setGenerationProgress(100);
+    setGenerationStatusText("Generation complete!");
+    setIsSubmittingAutoGeneration(false);
+    setOpenLoadingModal(false);
+
+    if (isSuccess) {
+      if (!testMode) {
+        router.push(`/schedules/${encodeURIComponent(addScheduleName.trim())}`);
+      }
+
+      if (testMode) {
+        if (autoAssignRoom) {
+          setOpenTimetableModal(true);
+        } else {
+          setOpenResultsModal(true);
+        }
+      }
+
+      setToastMessage(
+        autoAssignRoom
+          ? "Rooms and class schedules generated successfully!"
+          : "Program sections and subject assignments generated successfully!",
+      );
+      setToastType("success");
+      toastTimer();
+      void getScheduleRecords();
+    } else {
+      setToastMessage(errorMessage || "Failed to complete schedule generation.");
+      setToastType("error");
+      setShowToast(true);
     }
   }
 
@@ -606,14 +681,14 @@ export default function ScheduleManagement() {
   // Filtering entries enforcing strict mutual ALL rule: only one dropdown can be "ALL" at a time
   const filteredTimetableEntries = scheduleEntriesResult
     ? scheduleEntriesResult.filter((entry) => {
-        const matchesSection =
-          selectedTimetableSection === "ALL" ||
-          entry.sectionCode === selectedTimetableSection;
-        const matchesRoom =
-          selectedTimetableRoom === "ALL" ||
-          entry.roomName === selectedTimetableRoom;
-        return matchesSection && matchesRoom;
-      })
+      const matchesSection =
+        selectedTimetableSection === "ALL" ||
+        entry.sectionCode === selectedTimetableSection;
+      const matchesRoom =
+        selectedTimetableRoom === "ALL" ||
+        entry.roomName === selectedTimetableRoom;
+      return matchesSection && matchesRoom;
+    })
     : [];
 
   const availableTimetableSections = scheduleEntriesResult
@@ -764,7 +839,9 @@ export default function ScheduleManagement() {
                   <TableRow
                     key={item.schedule_id}
                     onClick={() =>
-                      router.push("/schedules/" + item.schedule_name)
+                      router.push(
+                        `/schedules/${encodeURIComponent(item.schedule_name || "")}`,
+                      )
                     }
                     className="cursor-pointer dark:border-gray-700 dark:bg-gray-800"
                   >
@@ -820,7 +897,7 @@ export default function ScheduleManagement() {
                 schedule:
               </p>
               <div className="space-y-3">
-                <div className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 dark:border-gray-700">
+                <div className="flex cursor-pointer items-center gap-3 rounded-lg p-3">
                   <Radio
                     id="mode-auto"
                     name="creationMode"
@@ -839,7 +916,7 @@ export default function ScheduleManagement() {
                   </Label>
                 </div>
 
-                <div className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 dark:border-gray-700">
+                <div className="flex cursor-pointer items-center gap-3 rounded-lg p-3">
                   <Radio
                     id="mode-semi-auto"
                     name="creationMode"
@@ -858,7 +935,7 @@ export default function ScheduleManagement() {
                   </Label>
                 </div>
 
-                <div className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 dark:border-gray-700">
+                <div className="flex cursor-pointer items-center gap-3 rounded-lg p-3">
                   <Radio
                     id="mode-template"
                     name="creationMode"
@@ -1102,14 +1179,14 @@ export default function ScheduleManagement() {
           {addStep === "selection" ? (
             <>
               <Button onClick={() => setAddStep("form")}>Next</Button>
-              <Button color="gray" onClick={handleCloseModals}>
+              <Button color="alternative" onClick={handleCloseModals}>
                 Cancel
               </Button>
             </>
           ) : creationMode === "auto" || creationMode === "semi-auto" ? (
             <>
               <Button
-                color="gray"
+                color="alternative"
                 onClick={() => setAddStep("selection")}
                 disabled={isSubmittingAutoGeneration}
               >
@@ -1122,7 +1199,7 @@ export default function ScheduleManagement() {
                 Generate Sections
               </Button>
               <Button
-                color="gray"
+                color="alternative"
                 onClick={handleCloseModals}
                 disabled={isSubmittingAutoGeneration}
               >
@@ -1131,7 +1208,10 @@ export default function ScheduleManagement() {
             </>
           ) : (
             <>
-              <Button color="gray" onClick={() => setAddStep("selection")}>
+              <Button
+                color="alternative"
+                onClick={() => setAddStep("selection")}
+              >
                 Back
               </Button>
               <Button
@@ -1140,7 +1220,7 @@ export default function ScheduleManagement() {
               >
                 Save Schedule
               </Button>
-              <Button color="gray" onClick={handleCloseModals}>
+              <Button color="alternative" onClick={handleCloseModals}>
                 Cancel
               </Button>
             </>
@@ -1273,7 +1353,7 @@ export default function ScheduleManagement() {
             </div>
           </ModalBody>
           <ModalFooter className="flex justify-end">
-            <Button color="gray" onClick={() => setOpenResultsModal(false)}>
+            <Button color="alternative" onClick={() => setOpenResultsModal(false)}>
               Close Preview
             </Button>
           </ModalFooter>
@@ -1564,7 +1644,7 @@ export default function ScheduleManagement() {
             </div>
           </ModalBody>
           <ModalFooter className="flex justify-end">
-            <Button color="gray" onClick={() => setOpenTimetableModal(false)}>
+            <Button color="alternative" onClick={() => setOpenTimetableModal(false)}>
               Close Output Verification
             </Button>
           </ModalFooter>
