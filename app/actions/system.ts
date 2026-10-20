@@ -283,6 +283,13 @@ export interface ScheduleDetailedSummaryRecord {
   no_teacher: number;
   no_room: number;
 }
+export interface ScheduleUsageSummaryRecord {
+  used_rooms: number;
+  max_rooms: number;
+  active_teachers: number;
+  max_teachers: number;
+  sections: number;
+}
 
 export async function fetchScheduleByName(scheduleName: string) {
   try {
@@ -349,6 +356,31 @@ export async function fetchScheduleDetailedSummary(scheduleId: string) {
     };
   } catch (error: unknown) {
     console.error("Failed to fetch detailed schedule summary:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unexpected error occurred."
+    };
+  }
+}
+
+export async function fetchScheduleUsageSummary(scheduleId: string) {
+  try {
+    const result = await sql`
+      SELECT * FROM get_schedule_usage_summary(${scheduleId});
+    `;
+
+    const rows = result as unknown as ScheduleUsageSummaryRecord[];
+
+    if (!rows || rows.length === 0) {
+      return { success: false, error: "Schedule usage summary not found." };
+    }
+
+    return {
+      success: true,
+      data: rows[0]
+    };
+  } catch (error: unknown) {
+    console.error("Failed to fetch schedule usage summary:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "An unexpected error occurred."

@@ -25,6 +25,7 @@ import {
   fetchScheduleByName,
   fetchScheduleDetailedSummary,
   fetchScheduleEntriesSummary,
+  fetchScheduleUsageSummary,
 } from "@/app/actions/system";
 
 interface TeacherCardData {
@@ -163,6 +164,30 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
     }
   }
 
+  async function getScheduleUsageSummary() {
+    if (scheduleID !== null) {
+      const res = await fetchScheduleUsageSummary(scheduleID);
+
+      if (res.success && res.data) {
+        setTeachersUtil({
+          current: res.data.active_teachers,
+          max: res.data.max_teachers,
+        });
+        setRoomsUtil({
+          current: res.data.used_rooms,
+          max: res.data.max_rooms,
+        });
+        setSectionsCount(res.data.sections);
+
+      } else {
+        triggerToast(
+          res.error || "Failed to load teachers with pre-assignment metrics.",
+          "error",
+        );
+      }
+    }
+  }
+
   async function getScheduleDetailedSummary() {
     if (scheduleID !== null) {
       const res = await fetchScheduleDetailedSummary(scheduleID);
@@ -193,6 +218,7 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
     // TODO: Put your fetch logic here using scheduleID
     getScheduleEntriesSummary();
     getScheduleDetailedSummary();
+    getScheduleUsageSummary();
 
     setIsLoading(false);
   }, [scheduleID]);
@@ -395,7 +421,7 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
                 <div className="flex justify-between border-b border-gray-100 pb-2 dark:border-gray-700/60">
                 <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
                   <HiExclamationCircle
-                      className={`h-4 w-4 ${(unassignedTeachersCount ?? 0) > 0 ? "text-amber-500" : "text-emerald-500"}`}
+                      className={`h-4 w-4 ${(unassignedTeachersCount ?? 0) > 0 ? "text-amber-500" : "hidden"}`}
                   />
                   Entries Lacking Teacher:
                 </span>
@@ -408,7 +434,7 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
                 <div className="flex justify-between pt-1">
                 <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
                   <HiExclamationCircle
-                      className={`h-4 w-4 ${(unassignedRoomsCount ?? 0) > 0 ? "text-amber-500" : "text-emerald-500"}`}
+                      className={`h-4 w-4 ${(unassignedRoomsCount ?? 0) > 0 ? "text-amber-500" : "hidden"}`}
                   />
                   Entries Lacking Room:
                 </span>
