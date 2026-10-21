@@ -1372,7 +1372,7 @@ export default function TeachersManagement() {
               <Label htmlFor="teacher_code">Teacher Code *</Label>
               <TextInput
                 id="teacher_code"
-                placeholder="e.g. T10452"
+                placeholder="e.g. JMR"
                 value={inputTeacherCode}
                 onChange={handleTeacherCodeChange}
                 color={teacherCodeError ? "failure" : "gray"}

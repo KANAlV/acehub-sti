@@ -4,6 +4,32 @@ import { cookies } from "next/headers";
 import { log } from "next/dist/server/typescript/utils";
 
 /*************
+ * DASHBOARD *
+ *************/
+
+export async function fetchActiveScheduleName() {
+  try {
+    const result = await sql`
+      SELECT get_active_schedule_name() AS schedule_name;
+    `;
+
+    const rows = result as unknown as Array<{ schedule_name: string | null }>;
+    const scheduleName = rows[0]?.schedule_name ?? null;
+
+    return {
+      success: true,
+      data: scheduleName
+    };
+  } catch (error: unknown) {
+    console.error("Failed to fetch active schedule name:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unexpected error occurred."
+    };
+  }
+}
+
+/*************
  * SCHEDULES *
  *************/
 export interface SubjectRequirementRecord {
@@ -261,6 +287,24 @@ export async function saveGeneratedSchedule(payload: {
   }
 }
 
+export async function deleteScheduleUsingID(schedule_id: string) {
+  try {
+    const result = await sql`
+      SELECT delete_schedule(${schedule_id});
+    `;
+
+    return {
+      success: true,
+    };
+  } catch (error: unknown) {
+    console.error("Failed to delete schedule name:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unexpected error occurred."
+    };
+  }
+}
+
 /**********************
  * SCHEDULES SUMMARY  *
  **********************/
@@ -289,6 +333,27 @@ export interface ScheduleUsageSummaryRecord {
   active_teachers: number;
   max_teachers: number;
   sections: number;
+}
+export interface TeacherMetricRecord {
+  teacher_id: string;
+  name: string;
+  id_number: string;
+  code: string;
+  status: string;
+  current_units: number;
+  max_units: number;
+  absolute_max: number;
+  available: number;
+  utilization: number;
+}
+export interface ScheduleTeacherMetricsSummaryRow extends TeacherMetricRecord {
+  overloaded: number;
+  on_leave_count: number;
+}
+export interface ScheduleTeacherMetricsData {
+  overloaded: number;
+  on_leave_count: number;
+  teachers: TeacherMetricRecord[];
 }
 
 export async function fetchScheduleByName(scheduleName: string) {
@@ -381,6 +446,80 @@ export async function fetchScheduleUsageSummary(scheduleId: string) {
     };
   } catch (error: unknown) {
     console.error("Failed to fetch schedule usage summary:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unexpected error occurred."
+    };
+  }
+}
+
+export async function fetchScheduleTeacherMetricsSummary(scheduleId: string) {
+  try {
+    const result = await sql`
+      SELECT * FROM get_schedule_teacher_metrics_summary(${scheduleId});
+    `;
+
+    const rows = result as unknown as ScheduleTeacherMetricsSummaryRow[];
+
+    if (!rows || rows.length === 0) {
+      return {
+        success: true,
+        data: {
+          overloaded: 0,
+          on_leave_count: 0,
+          teachers: []
+        }
+      };
+    }
+
+    // Extract summary counts from the first row safely
+    const overloaded = rows[0].overloaded ?? 0;
+    const onLeaveCount = rows[0].on_leave_count ?? 0;
+
+    // Map all rows into the teacher card array format
+    const teachers: TeacherMetricRecord[] = rows.map((row) => ({
+      teacher_id: row.teacher_id,
+      name: row.name,
+      id_number: row.id_number,
+      code: row.code,
+      status: row.status,
+      current_units: Number(row.current_units),
+      max_units: Number(row.max_units),
+      absolute_max: Number(row.absolute_max),
+      available: Number(row.available),
+      utilization: Number(row.utilization),
+    }));
+
+    return {
+      success: true,
+      data: {
+        overloaded,
+        on_leave_count: onLeaveCount,
+        teachers,
+      }
+    };
+  } catch (error: unknown) {
+    console.error("Failed to fetch schedule teacher metrics summary:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unexpected error occurred."
+    };
+  }
+}
+
+// UPDATE DISPLAYED SCHEDULE
+export async function updateActiveSchedule(scheduleId: string | null) {
+  try {
+    await sql`
+      SELECT update_active_schedule(${scheduleId});
+    `;
+
+    return {
+      success: true,
+      message: "Active schedule successfully updated."
+    };
+  } catch (error: unknown) {
+    console.error("Failed to update active schedule:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "An unexpected error occurred."

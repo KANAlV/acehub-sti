@@ -109,6 +109,7 @@ export default function TeacherPreassignmentManagement({
     [],
   );
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [templateExists, setTemplateExists] = useState<boolean>(true);
   const [constraintsLoading, setConstraintsLoading] = useState(true);
 
   // --- Program/Strand Math Count Holder ---
@@ -350,12 +351,15 @@ export default function TeacherPreassignmentManagement({
       if (!preassignmentName || preassignmentName.trim() === "") {
         setCurriculumAdd([]);
         setInitialCurriculumAdd([]);
+        setTemplateExists(false);
+        setConstraintsLoading(false);
         return;
       }
 
       const fetchData = await fetchPreassignmentTemplates(preassignmentName);
 
       if (fetchData.success && fetchData.data && fetchData.data.length > 0) {
+        setTemplateExists(true);
         const templateRecord = fetchData.data[0];
         let rawConfig = templateRecord.config;
 
@@ -383,6 +387,7 @@ export default function TeacherPreassignmentManagement({
         if (itemIds.length === 0) {
           setCurriculumAdd([]);
           setInitialCurriculumAdd([]);
+          setConstraintsLoading(false);
           return;
         }
 
@@ -407,12 +412,13 @@ export default function TeacherPreassignmentManagement({
         setCurriculumAdd(validItems);
         setInitialCurriculumAdd(validItems);
       } else {
+        setTemplateExists(false);
         setCurriculumAdd([]);
         setInitialCurriculumAdd([]);
       }
+      setConstraintsLoading(false);
     }
 
-    setConstraintsLoading(false);
     void loadTemplateConfigStandalone();
   }, [preassignmentName]);
 
@@ -2683,6 +2689,35 @@ export default function TeacherPreassignmentManagement({
             Cancel
           </Button>
         </ModalFooter>
+      </Modal>
+
+      {/* Template Does Not Exist Modal */}
+      <Modal
+        show={!templateExists && !constraintsLoading}
+        size="md"
+        onClose={() => {}}
+        popup
+      >
+        <ModalHeader />
+        <ModalBody>
+          <div className="text-center">
+            <HiExclamation className="mx-auto mb-4 h-14 w-14 text-red-400 dark:text-red-500" />
+            <h3 className="mb-2 text-lg font-bold text-gray-900 dark:text-white">
+              Template Not Found
+            </h3>
+            <p className="mb-5 text-sm text-gray-500 dark:text-gray-400">
+              The pre-assignment template <span className="font-semibold">{preassignmentName}</span> does not exist or may have been deleted.
+            </p>
+            <div className="flex justify-center">
+              <button
+                className="flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+                onClick={() => router.push("/teachers")}
+              >
+                <HiChevronLeft className="mr-1.5 h-4 w-4" /> Back to Teachers
+              </button>
+            </div>
+          </div>
+        </ModalBody>
       </Modal>
     </div>
   );
