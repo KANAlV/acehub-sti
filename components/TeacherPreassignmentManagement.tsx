@@ -1035,6 +1035,21 @@ export default function TeacherPreassignmentManagement({
     }
   };
 
+  // Helper to determine if a curriculum belongs to Senior High School / Strand
+  const isShsCurriculum = (curriculum: CurriculumRecord): boolean => {
+    if (!curriculum?.curriculum_version) return false;
+
+    const versionUpper = curriculum.curriculum_version.trim().toUpperCase();
+
+    // Find if any non-tertiary (SHS/strand) program code exists inside the curriculum version string
+    return programs.some((p) => {
+      const isNonTertiary = p.year_level?.toLowerCase() !== "tertiary";
+      const progCode = p.program_code?.trim().toUpperCase();
+
+      return isNonTertiary && progCode && versionUpper.includes(progCode);
+    });
+  };
+
   return (
     <div
       className={
@@ -1769,17 +1784,18 @@ export default function TeacherPreassignmentManagement({
                 <div className={"flex flex-wrap gap-2"}>
                   {curriculumAdd.length > 0 &&
                     curriculumAdd.map((item) => {
+                      const isShs = isShsCurriculum(item);
                       return (
                         <Badge
                           key={item.curriculum_id}
                           className={"items-center"}
-                          color={"info"}
+                          color={isShs ? "warning" : "info"} // Yellow for SHS/Strands, Blue for Tertiary
                         >
                           <span className={"inline-flex items-center gap-1.5"}>
                             {item.curriculum_version}
                             <HiX
                               className={
-                                "h-4 w-4 cursor-pointer text-cyan-950 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400"
+                                "h-4 w-4 cursor-pointer hover:text-red-500 dark:hover:text-red-400"
                               }
                               onClick={() => {
                                 setCurriculumAdd((prev) =>
@@ -1830,6 +1846,7 @@ export default function TeacherPreassignmentManagement({
                       }
                       key={item.program_code}
                       className={"my-1 justify-center border border-gray-400"}
+                      onClick={() => setCurriculaSearch(item.program_code)}
                     >
                       {item.program_code}
                     </Badge>
@@ -1896,7 +1913,9 @@ export default function TeacherPreassignmentManagement({
       {/* ADD MODAL */}
       <Modal show={openAddModal} onClose={closeAddModal}>
         <ModalHeader>Add Subject Pre-Assignment</ModalHeader>
-        <ModalBody className={"scrollbar-thumb-gray-400 scrollbar-track-transparent"}>
+        <ModalBody
+          className={"scrollbar-thumb-gray-400 scrollbar-track-transparent"}
+        >
           <div className="space-y-4">
             <div>
               <Label>Teacher</Label>
@@ -2112,7 +2131,11 @@ export default function TeacherPreassignmentManagement({
 
                 {/* Merge Lec/Lab Checkbox */}
                 <div className="flex items-center gap-2 pt-1">
-                  <Tooltip content={"Merges discussion and lab schedules to be held in the laboratory."}>
+                  <Tooltip
+                    content={
+                      "Merges discussion and lab schedules to be held in the laboratory."
+                    }
+                  >
                     <Checkbox
                       id="merge-lec-lab"
                       checked={mergeLecLab}
@@ -2166,7 +2189,9 @@ export default function TeacherPreassignmentManagement({
                         <Tooltip
                           content={
                             <div>
-                              Projected Prep: Estimated workload derived from maximum possible subject assignments post-generation.
+                              Projected Prep: Estimated workload derived from
+                              maximum possible subject assignments
+                              post-generation.
                             </div>
                           }
                         >
@@ -2204,7 +2229,9 @@ export default function TeacherPreassignmentManagement({
                         <Tooltip
                           content={
                             <div>
-                              Projected Load: Estimated teaching hours derived from maximum possible subject assignments post-generation.
+                              Projected Load: Estimated teaching hours derived
+                              from maximum possible subject assignments
+                              post-generation.
                             </div>
                           }
                         >
@@ -2706,7 +2733,9 @@ export default function TeacherPreassignmentManagement({
               Template Not Found
             </h3>
             <p className="mb-5 text-sm text-gray-500 dark:text-gray-400">
-              The pre-assignment template <span className="font-semibold">{preassignmentName}</span> does not exist or may have been deleted.
+              The pre-assignment template{" "}
+              <span className="font-semibold">{preassignmentName}</span> does
+              not exist or may have been deleted.
             </p>
             <div className="flex justify-center">
               <button

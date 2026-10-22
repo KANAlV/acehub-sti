@@ -699,6 +699,21 @@ export default function ScheduleManagement() {
     ? Array.from(new Set(scheduleEntriesResult.map((e) => e.roomName)))
     : [];
 
+  // Helper to determine if a curriculum belongs to Senior High School / Strand
+  const isShsCurriculum = (curriculum: CurriculumRecord): boolean => {
+    if (!curriculum?.curriculum_version) return false;
+
+    const versionUpper = curriculum.curriculum_version.trim().toUpperCase();
+
+    // Check if any non-tertiary (SHS/strand) program code exists inside the curriculum version string
+    return programs.some((p) => {
+      const isNonTertiary = p.year_level?.toLowerCase() !== "tertiary";
+      const progCode = p.program_code?.trim().toUpperCase();
+
+      return isNonTertiary && progCode && versionUpper.includes(progCode);
+    });
+  };
+
   return (
     <>
       {/* Toast Notification */}
@@ -1081,7 +1096,7 @@ export default function ScheduleManagement() {
                             <Badge
                               key={item.curriculum_id}
                               className="items-center"
-                              color="info"
+                              color={`${isShsCurriculum(item)? "warning" : "info"}`}
                             >
                               <span className="inline-flex items-center gap-1.5">
                                 {item.curriculum_version}
