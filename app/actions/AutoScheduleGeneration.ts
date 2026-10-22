@@ -43,16 +43,6 @@ export interface RoomForGeneration {
   room_type: string | null;
   floor_level: number | null;
 }
-export interface AssignedSubjectDetail {
-  subject_id: string;
-  course_code: string;
-  course_name: string;
-  lecture_units: number;
-  lab_units: number;
-  lab_type: string | null;
-  year_term: string | null;
-  required_aqs: string[];
-}
 export interface ScheduleEntry {
   sectionCode: string;
   subjectId: string; // <-- Added here
@@ -133,17 +123,16 @@ export async function generateProgramSections(
           let sectionCode = "";
 
           if (isShs) {
-            const gradeShort = levelKey === "12" ? "2" : "1";
-            const sectionNumber = 10 + s;
-            sectionCode = `${progCode}${gradeShort}${sectionNumber}`;
+            // SHS format: Program Code + Grade Level (11 or 12) + Section Number suffix (e.g., ABM121)
+            const gradeNum = levelKey === "12" ? "12" : "11";
+            const sectionNumber = String(s).padStart(1, "0");
+            sectionCode = `${progCode}${gradeNum}${sectionNumber}`;
           } else {
             // Tertiary: levelKey is Year Level ("1", "2", "3", "4")
             const yearNum = Number(levelKey);
             if (isNaN(yearNum)) continue;
 
             // Convert Year (1-4) and Term (1 or 2) into your 1-8 sequence code:
-            // Year 1, Term 1 = 1 | Year 1, Term 2 = 2
-            // Year 2, Term 1 = 3 | Year 2, Term 2 = 4, etc.
             const yearTermCode = (yearNum - 1) * 2 + termOffset;
 
             const sectionNumber = 10 + s;
@@ -179,8 +168,7 @@ export async function assignSubjectsToSections(
   success: boolean;
   assignments: SectionSubjectAssignment[];
   error?: string;
-}>
-{
+}> {
   try {
     let sections = precomputedSections;
 
@@ -207,6 +195,7 @@ export async function assignSubjectsToSections(
     const allSubjects = subjectResult.data;
 
     const assignments: SectionSubjectAssignment[] = [];
+    const termNum = term.toLowerCase().includes("2") ? 2 : 1;
 
     if (testMode) {
       console.log("sched_name: " + _name);
@@ -218,49 +207,47 @@ export async function assignSubjectsToSections(
 
     // Map subjects to sections based on the parsed digit breakdown
     for (const sectionCode of sections) {
-      // Separate program letters from the trailing digits (e.g., BSIT311 -> "BSIT" and "311")
-      const match = sectionCode.match(/^([A-Z]+)(\d+)$/);
-      if (!match) {
-        console.log(`⚠️ Skipped section (Regex failed): "${sectionCode}"`);
-        continue;
-      }
-
-      const progCode = match[1].trim().toUpperCase();
-      const digits = match[2]; // e.g., "311" or "111"
-
-      // Separate further: First digit as indicator, last 2 digits as section number
-      const indicatorDigit = digits.charAt(0); // e.g., "3" or "1"
-      const sectionNum = digits.slice(1); // e.g., "11"
-
-      if (testMode) {
-        console.log(
-          `🔎 Checking Section: ${sectionCode} -> Prog: "${progCode}", Indicator: "${indicatorDigit}", SectionNum: "${sectionNum}"`,
-        );
-      }
+      // Check if it's an SHS section format (e.g., ABM121 -> Program, Grade 11/12, Section Num)
+      const shsMatch = sectionCode.match(/^([A-Z]+)(11|12)(\d+)$/);
 
       const matchedSubjects = allSubjects.filter((subject) => {
         const subProg = (subject.program_code || "").trim().toUpperCase();
-
-        if (subProg !== progCode) {
-          return false;
-        }
-
         const yt = (subject.year_term || "").toLowerCase().trim();
-        const isSubjectSHS = yt.includes("grade");
+        const isSubjectSHS = yt.includes("shs") || yt.includes("grade");
 
-        if (isSubjectSHS) {
-          // Senior High School: indicator '1' = Grade 11, '2' = Grade 12
-          const targetGrade = indicatorDigit === "2" ? "grade 12" : "grade 11";
-          const shsMatch = yt.includes(targetGrade);
+        if (shsMatch) {
+          const [, progCode, gradeStr] = shsMatch;
+          if (subProg !== progCode) return false;
 
-          if (testMode) {
-            console.log(
-              `   [SHS Match] Sec: ${sectionCode} | Sub: ${subject.course_code} | DB: "${yt}" | Target: "${targetGrade}" => Match: ${shsMatch}`,
-            );
+          if (isSubjectSHS) {
+            const gradeMatches = yt.includes(gradeStr);
+            const termMatches =
+              yt.includes(`term ${termNum}`) ||
+              yt.includes(`semester ${termNum}`) ||
+              yt.includes(`${termNum}`);
+
+            if (testMode) {
+              console.log(
+                `   [SHS Match] Sec: ${sectionCode} | Sub: ${subject.course_code} | DB: "${yt}" | Target Grade:${gradeStr}, Term:${termNum} => Match: ${gradeMatches && termMatches}`,
+              );
+            }
+
+            return gradeMatches && termMatches;
+          }
+          return false;
+        } else {
+          // Separate program letters from the trailing digits (e.g., BSIT311 -> "BSIT" and "311")
+          const match = sectionCode.match(/^([A-Z]+)(\d+)$/);
+          if (!match) return false;
+
+          const progCode = match[1].trim().toUpperCase();
+          const digits = match[2];
+          const indicatorDigit = digits.charAt(0);
+
+          if (subProg !== progCode || isSubjectSHS) {
+            return false;
           }
 
-          return shsMatch;
-        } else {
           // Tertiary: indicator digit is the 1-8 sequence code
           const codeDigit = Number(indicatorDigit);
           const targetYearNum = Math.ceil(codeDigit / 2);
@@ -385,7 +372,7 @@ export async function generateRoomAndClassSchedules(
     if (!assignmentResult.success || !assignmentResult.assignments) {
       throw new Error(
         assignmentResult.error ||
-        "Failed to resolve section subject assignments.",
+          "Failed to resolve section subject assignments.",
       );
     }
     const sectionAssignments = assignmentResult.assignments;
@@ -679,11 +666,11 @@ function scheduleSession(
     availableRooms.length > 0
       ? availableRooms
       : rooms.filter((r) => {
-        if (componentType === "LECTURE" && requiredLabTypeId) {
-          return r.room_type !== requiredLabTypeId;
-        }
-        return true;
-      });
+          if (componentType === "LECTURE" && requiredLabTypeId) {
+            return r.room_type !== requiredLabTypeId;
+          }
+          return true;
+        });
 
   const prioritizedDays = [
     ...days.filter((d) => d !== preferredVacantDay),
