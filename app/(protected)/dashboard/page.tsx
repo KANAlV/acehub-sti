@@ -603,7 +603,7 @@ export default function Dashboard() {
             <p className="mb-1 text-[11px] font-medium tracking-wider text-gray-500 uppercase dark:text-gray-400">
               Overloaded
             </p>
-            <p className={`text-2xl font-bold ${overloadedCount === null || overloadedCount === 0 ? "text-gray-600 dark:text-gray-500" : "text-red-600 dark:text-red-500"}`}>
+            <p className={`text-2xl font-bold ${overloaded === null || overloaded === 0 ? "text-gray-600 dark:text-gray-500" : "text-red-600 dark:text-red-500"}`}>
               {overloaded !== null ? overloaded : <Spinner size="sm" />}
             </p>
           </div>
