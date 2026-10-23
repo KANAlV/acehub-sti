@@ -71,6 +71,7 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
   const [scheduleCreated, setScheduleCreated] = useState<string | null>(null);
   const [totalEntries, setTotalEntries] = useState<number | null>(null);
   const [activeTeachers, setActiveTeachers] = useState<number | null>(null);
+  const [overloadedCount, setOverloadedCount] = useState<number | null>(null);
   const [subjectsCount, setSubjectsCount] = useState<number | null>(null);
   const [totalUnits, setTotalUnits] = useState<number | null>(null);
   const [dailyAverage, setDailyAverage] = useState<number | null>(null);
@@ -281,6 +282,8 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
           available: teacher.available,
           utilization: teacher.utilization,
         }));
+
+        setOverloadedCount(res.data.overloaded);
 
         setTeachersList(formattedTeachers);
         setIsLoading(false); // Finished loading everything
@@ -684,8 +687,8 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
             <p className="mb-1 text-[11px] font-medium tracking-wider text-gray-500 uppercase dark:text-gray-400">
               Overloaded
             </p>
-            <p className="text-2xl font-bold text-red-600 dark:text-red-500">
-              0
+            <p className={`text-2xl font-bold ${overloadedCount === null || overloadedCount === 0 ? "text-gray-600 dark:text-gray-500" : "text-red-600 dark:text-red-500"}`}>
+              {overloadedCount !== null ? overloadedCount : <Spinner size="sm" />}
             </p>
           </div>
           <div>

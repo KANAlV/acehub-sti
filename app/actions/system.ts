@@ -527,6 +527,173 @@ export async function updateActiveSchedule(scheduleId: string | null) {
   }
 }
 
+/****************************
+ * SCHEDULES TEACHER TABLE  *
+ ****************************/
+
+export type TeacherMetricRow = {
+  teacher_id: string;
+  name: string;
+  id_number: string;
+  code: string;
+  status: string;
+  department: string;
+  current_units: number;
+  max_units: number;
+  absolute_max: number;
+  available: number;
+  utilization: number;
+};
+
+/**
+ * 1. Fetch global summary metrics (overloaded, on leave, total teachers, and active count) for a schedule.
+ */
+export async function fetchScheduleTeacherMetricsComputation(scheduleId: string): Promise<{
+  success: boolean;
+  data?: {
+    overloaded: number;
+    on_leave_count: number;
+    total_teachers: number;
+    active_count: number;
+  };
+  error?: string;
+}>
+{
+  try {
+    const result = await sql`
+      SELECT * FROM get_schedule_teacher_metrics_computation(${scheduleId}::uuid)
+    `;
+
+    const rawRows = result as unknown as Array<Record<string, unknown>>;
+    const row = rawRows && rawRows.length > 0 ? rawRows[0] : {};
+
+    const metrics = {
+      overloaded: Number(row.overloaded) || 0,
+      on_leave_count: Number(row.on_leave_count) || 0,
+      total_teachers: Number(row.total_teachers) || 0,
+      active_count: Number(row.active_count) || 0,
+    };
+
+    return { success: true, data: metrics };
+  } catch (error) {
+    console.error("Failed to fetch schedule teacher metrics computation:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch schedule teacher metrics computation.",
+    };
+  }
+}
+
+/**
+ * 2. Fetch paginated and filtered teacher rows with individual load metrics for a specific schedule.
+ */
+export async function fetchScheduleTeacherMetricsTable(params: {
+  scheduleId: string;
+  search?: string | null;
+  status?: string;
+  department?: string;
+  sortBy?: string;
+  sortDir?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  success: boolean;
+  data?: TeacherMetricRow[];
+  error?: string;
+}>
+{
+  try {
+    const {
+      scheduleId,
+      search = null,
+      status = "All Active & On Leave",
+      department = "All Departments",
+      sortBy = "surname",
+      sortDir = "ASC",
+      limit = 10,
+      offset = 0,
+    } = params;
+
+    const result = await sql`
+      SELECT * FROM get_schedule_teacher_metrics_table(
+        ${scheduleId}::uuid,
+        ${search},
+        ${status},
+        ${department},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      )
+    `;
+
+    const rawRows = result as unknown as Array<Record<string, unknown>>;
+    const data: TeacherMetricRow[] = rawRows.map((row) => ({
+      teacher_id: String(row.teacher_id),
+      name: String(row.name ?? ""),
+      id_number: String(row.id_number ?? ""),
+      code: String(row.code ?? ""),
+      department: String(row.department ?? ""),
+      status: String(row.status ?? ""),
+      current_units: Number(row.current_units) || 0,
+      max_units: Number(row.max_units) || 0,
+      absolute_max: Number(row.absolute_max) || 0,
+      available: Number(row.available) || 0,
+      utilization: Number(row.utilization) || 0,
+    }));
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to fetch schedule teacher metrics table:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch schedule teacher metrics table.",
+    };
+  }
+}
+
+export async function fetchScheduleTeacherMetricsCount(params: {
+  scheduleId: string;
+  search?: string | null;
+  status?: string;
+  department?: string;
+}): Promise<{
+  success: boolean;
+  count: number;
+  error?: string;
+}>
+{
+  try {
+    const {
+      scheduleId,
+      search = null,
+      status = "All Active & On Leave",
+      department = "All Departments",
+    } = params;
+
+    const result = await sql`
+      SELECT get_schedule_teacher_metrics_count(
+        ${scheduleId}::uuid,
+        ${search},
+        ${status},
+        ${department}
+      ) AS count
+    `;
+
+    const rawRows = result as unknown as Array<Record<string, unknown>>;
+    const count = rawRows && rawRows.length > 0 ? Number(rawRows[0].count) || 0 : 0;
+
+    return { success: true, count };
+  } catch (error) {
+    console.error("Failed to fetch schedule teacher metrics count:", error);
+    return {
+      success: false,
+      count: 0,
+      error: (error as Error).message || "Failed to fetch schedule teacher metrics count.",
+    };
+  }
+}
+
 /**************
  * CURRICULUM *
  **************/
@@ -3049,15 +3216,15 @@ export async function fetchBreakPeriods(
 
 // Update Break Period
 export async function updateBreakPeriod(
-  user: string,
-  breakId: string,
-  description: string,
-  dayOfWeek: number,
-  startTime: string,
-  endTime: string,
+    user: string,
+    breakId: string,
+    description: string,
+    dayOfWeek: number,
+    startTime: string,
+    endTime: string,
 ) {
   try {
-    const [result] = await sql<{ break_periods_update: boolean }[]>`
+    await sql`
       SELECT break_periods_update(
         ${breakId}::UUID,
         ${description},
@@ -3068,12 +3235,13 @@ export async function updateBreakPeriod(
     `;
 
     await createLog(
-      user,
-      "update_break_period",
-      `break_period_id: '${breakId}' | description: '${description}' | day: '${dayOfWeek}' | start: '${startTime}' | end: '${endTime}'`,
+        user,
+        "update_break_period",
+        `break_period_id: '${breakId}' | description: '${description}' | day: '${dayOfWeek}' | start: '${startTime}' | end: '${endTime}'`,
     );
+
     return {
-      success: result?.break_periods_update ?? false,
+      success: true, // 👈 Explicitly return true since it completed without throwing
     };
   } catch (error) {
     console.error("Failed to update break period:", error);
@@ -4193,23 +4361,24 @@ export async function fetchLogList(
 
 // Create Logs
 export async function createLog(
-  activeAccount: string,
-  action: string,
-  details?: string | null,
+    userEmailArg: string | null | undefined,
+    action: string,
+    details?: string | null,
 ): Promise<void> {
   try {
     const cookieStore = await cookies();
     const cookie = cookieStore.get("user_email");
-    const userEmail = cookie?.value || "system";
+    const userEmail = userEmailArg || cookie?.value || "system";
 
     await sql`
       SELECT logs_create(
-        get_user_id_by_email(${userEmail}),
-        ${action},
-        ${details ?? null}
-      );
+                 get_user_id_by_email(${userEmail}),
+                 ${action},
+                 ${details ?? null}
+             );
     `;
   } catch (error) {
+    // Catch logging errors silently so they NEVER break updates/creates
     console.error("Failed to insert log entry:", error);
   }
 }

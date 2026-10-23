@@ -56,6 +56,7 @@ export default function Dashboard() {
   const [scheduleCreated, setScheduleCreated] = useState<string | null>(null);
   const [totalEntries, setTotalEntries] = useState<number | null>(null);
   const [activeTeachers, setActiveTeachers] = useState<number | null>(null);
+  const [overloaded, setOverloaded] = useState<number | null>(null)
   const [subjectsCount, setSubjectsCount] = useState<number | null>(null);
   const [totalUnits, setTotalUnits] = useState<number | null>(null);
   const [dailyAverage, setDailyAverage] = useState<number | null>(null);
@@ -245,6 +246,7 @@ export default function Dashboard() {
           utilization: teacher.utilization,
         }));
 
+        setOverloaded(res.data.overloaded)
         setTeachersList(formattedTeachers);
       } else {
         triggerToast(res.error || "Failed to load teachers metrics.", "error");
@@ -601,8 +603,8 @@ export default function Dashboard() {
             <p className="mb-1 text-[11px] font-medium tracking-wider text-gray-500 uppercase dark:text-gray-400">
               Overloaded
             </p>
-            <p className="text-2xl font-bold text-red-600 dark:text-red-500">
-              0
+            <p className={`text-2xl font-bold ${overloadedCount === null || overloadedCount === 0 ? "text-gray-600 dark:text-gray-500" : "text-red-600 dark:text-red-500"}`}>
+              {overloaded !== null ? overloaded : <Spinner size="sm" />}
             </p>
           </div>
           <div>

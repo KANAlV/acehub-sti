@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import {
   Button,
@@ -30,11 +30,7 @@ import {
   updateBreakPeriod,
 } from "@/app/actions/system";
 import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
-import {
-  HiCheck,
-  HiOutlineExclamationCircle,
-  HiTrash,
-} from "react-icons/hi2";
+import { HiCheck, HiOutlineExclamationCircle, HiTrash } from "react-icons/hi2";
 import { useEffect, useState } from "react";
 import { HiExclamation, HiX } from "react-icons/hi";
 import { filterAlphanumericUnderscore } from "@/utils/validation";
@@ -97,6 +93,8 @@ export default function BreakPeriods() {
   // --- Day Conversion Constants --- //
 
   const DAYS_OF_WEEK = [
+    { id: 0, name: "Whole Week" },
+    { id: 7, name: "Weekdays" },
     { id: 1, name: "Monday" },
     { id: 2, name: "Tuesday" },
     { id: 3, name: "Wednesday" },
@@ -106,6 +104,8 @@ export default function BreakPeriods() {
   ];
 
   const DAYS_OF_WEEK_ABV = [
+    { id: 0, name: "Whole Week" },
+    { id: 7, name: "Weekdays" },
     { id: 1, name: "Mon" },
     { id: 2, name: "Tue" },
     { id: 3, name: "Wed" },
@@ -140,21 +140,15 @@ export default function BreakPeriods() {
   /** --- Table Related Functions --- **/
   // Sorting
   function handleBreakPeriodSorting(sortBy: string) {
-    if (sortBy == sortBreakPeriodsBy) {
-      setSortBreakPeriodsDir(sortBreakPeriodsDir === "ASC" ? "DESC" : "ASC");
-    } else {
-      setSortBreakPeriodsBy(sortBy);
-      setSortBreakPeriodsDir("ASC");
-    }
+    const newDir =
+      sortBy === sortBreakPeriodsBy && sortBreakPeriodsDir === "ASC"
+        ? "DESC"
+        : "ASC";
+    setSortBreakPeriodsBy(sortBy);
+    setSortBreakPeriodsDir(newDir);
     setBreakPeriods([]);
-    onPageChangeBreakPeriods(1);
-    getBreakPeriods(
-      null,
-      sortBreakPeriodsBy,
-      sortBreakPeriodsDir,
-      maxRowBreakPeriod,
-      1,
-    );
+    setCurrentBreakPeriodPage(1);
+    void getBreakPeriods(null, sortBy, newDir, maxRowBreakPeriod, 1);
   }
 
   // Page Change
@@ -166,7 +160,7 @@ export default function BreakPeriods() {
     setPageChangingBreakPeriods(true);
     setBreakPeriods([]);
 
-    getBreakPeriods(
+    void getBreakPeriods(
       null,
       sortBreakPeriodsBy,
       sortBreakPeriodsDir,
@@ -184,17 +178,9 @@ export default function BreakPeriods() {
     setRowID(row_id);
     setOpenEditBreakModal(true);
 
-    // Find the selected break item from your state list by its ID
     const selectedBreak = breakPeriods.find((item) => item.break_id === row_id);
 
     if (selectedBreak) {
-      // 1. Set initial baseline state (used for comparison)
-      setDescription(selectedBreak.break_description);
-      setDayOfWeek(selectedBreak.day_of_week);
-      setStartTime(selectedBreak.start_time);
-      setEndTime(selectedBreak.end_time);
-
-      // 2. Set editable form state (bound to modal input fields)
       editDescription(selectedBreak.break_description);
       editDayOfWeek(selectedBreak.day_of_week);
       editStartTime(selectedBreak.start_time);
@@ -204,18 +190,16 @@ export default function BreakPeriods() {
 
   // --- Create Handlers --- //
 
-  // Description handler
   const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDescription = filterAlphanumericUnderscore(e.target.value);
-    setDescription(newDescription);
-    if (newDescription) {
+    const val = filterAlphanumericUnderscore(e.target.value);
+    setDescription(val);
+    if (val) {
       setDescriptionError("");
     } else {
       setDescriptionError("Description is required.");
     }
   };
 
-  // Time validation handler
   const handleStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newStart = e.target.value;
     setStartTime(newStart);
@@ -238,20 +222,18 @@ export default function BreakPeriods() {
 
   // --- Update Handlers --- //
 
-  // Description handler
   const handleNewDescriptionChange = (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const newDescription = filterAlphanumericUnderscore(e.target.value);
-    editDescription(newDescription);
-    if (newDescription) {
+    const val = filterAlphanumericUnderscore(e.target.value);
+    editDescription(val);
+    if (val) {
       setDescriptionError("");
     } else {
       setDescriptionError("Description is required.");
     }
   };
 
-  // Time validation handler
   const handleNewStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newStart = e.target.value;
     editStartTime(newStart);
@@ -300,7 +282,6 @@ export default function BreakPeriods() {
 
     if (response.success) {
       setBreakPeriodsCount(response.count);
-      console.log("breakPeriods row count fetched successfully");
     } else {
       setToastMessage(
         response?.error ??
@@ -333,7 +314,6 @@ export default function BreakPeriods() {
 
     if (response.success && response.data) {
       const msg = "Break Period Added successfully";
-      console.log(msg);
       setToastMessage(msg);
       setToastType("success");
       toastTimer();
@@ -346,7 +326,13 @@ export default function BreakPeriods() {
     }
 
     handleCloseBreakPeriodModals();
-    getBreakPeriods();
+    void getBreakPeriods(
+      null,
+      sortBreakPeriodsBy,
+      sortBreakPeriodsDir,
+      maxRowBreakPeriod,
+      currentBreakPeriodPage,
+    );
   }
 
   // Read
@@ -369,8 +355,7 @@ export default function BreakPeriods() {
 
     if (response.success && response.data) {
       setBreakPeriods(response.data);
-      setLoading(false)
-      console.log("breakPeriods fetched successfully");
+      setLoading(false);
     } else {
       setToastMessage(
         response?.error ?? "[fetchBreakPeriods]: An unexpected error occurred",
@@ -378,6 +363,7 @@ export default function BreakPeriods() {
       setToastType("error");
       setShowToast(true);
       setBreakPeriods([]);
+      setLoading(false);
     }
 
     await getBreakPeriodCount();
@@ -405,7 +391,6 @@ export default function BreakPeriods() {
 
     if (response.success) {
       const msg = "Break Period updated successfully";
-      console.log(msg);
       setToastMessage(msg);
       setToastType("success");
       setShowToast(true);
@@ -419,7 +404,13 @@ export default function BreakPeriods() {
     }
 
     handleCloseBreakPeriodModals();
-    getBreakPeriods();
+    void getBreakPeriods(
+      null,
+      sortBreakPeriodsBy,
+      sortBreakPeriodsDir,
+      maxRowBreakPeriod,
+      currentBreakPeriodPage,
+    );
   }
 
   // Delete
@@ -428,7 +419,6 @@ export default function BreakPeriods() {
 
     if (response.success) {
       const msg = "Break Period Deleted successfully";
-      console.log(msg);
       setToastMessage(msg);
       setToastType("success");
       toastTimer();
@@ -441,7 +431,13 @@ export default function BreakPeriods() {
     }
 
     handleCloseBreakPeriodModals();
-    getBreakPeriods();
+    void getBreakPeriods(
+      null,
+      sortBreakPeriodsBy,
+      sortBreakPeriodsDir,
+      maxRowBreakPeriod,
+      currentBreakPeriodPage,
+    );
   }
 
   /** --- Toast Related Functions --- **/
@@ -449,18 +445,17 @@ export default function BreakPeriods() {
   function toastTimer() {
     setShowToastTimer(true);
     setShowToast(true);
-    // Reset progress to 0 whenever a new toast opens
     setProgress(0);
 
-    const duration = 5000; // 5 seconds
-    const intervalTime = 50; // Update every 50ms
+    const duration = 5000;
+    const intervalTime = 50;
     const step = 100 / (duration / intervalTime);
 
     const timer = setInterval(() => {
       setProgress((prev) => {
         if (prev + step >= 100) {
           clearInterval(timer);
-          closeToast(); // <-- Trigger close ONLY when timer hits 100%
+          closeToast();
           return 100;
         }
         return prev + step;
@@ -480,7 +475,13 @@ export default function BreakPeriods() {
   /** --- UseEffects --- **/
 
   useEffect(() => {
-    getBreakPeriods();
+    void getBreakPeriods(
+      null,
+      sortBreakPeriodsBy,
+      sortBreakPeriodsDir,
+      maxRowBreakPeriod,
+      currentBreakPeriodPage,
+    );
   }, []);
 
   return (
@@ -568,19 +569,21 @@ export default function BreakPeriods() {
                 </div>
               </TableHeadCell>
               <TableHeadCell
-                className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300"
+                className="cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300"
                 onClick={() => handleBreakPeriodSorting("start_time")}
               >
-                Start
-                {sortBreakPeriodsBy === "start_time" ? (
-                  sortBreakPeriodsDir === "ASC" ? (
-                    <FaSortUp className="ml-1" />
+                <div className="flex">
+                  Start
+                  {sortBreakPeriodsBy === "start_time" ? (
+                    sortBreakPeriodsDir === "ASC" ? (
+                      <FaSortUp className="ml-1" />
+                    ) : (
+                      <FaSortDown className="ml-1" />
+                    )
                   ) : (
-                    <FaSortDown className="ml-1" />
-                  )
-                ) : (
-                  ""
-                )}
+                    ""
+                  )}
+                </div>
               </TableHeadCell>
               <TableHeadCell
                 onClick={() => handleBreakPeriodSorting("end_time")}
@@ -657,10 +660,9 @@ export default function BreakPeriods() {
         className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
       >
         <Pagination
-          layout="table"
+          layout="pagination"
           currentPage={currentBreakPeriodPage ? currentBreakPeriodPage : 1}
-          itemsPerPage={maxRowBreakPeriod}
-          totalItems={breakPeriodsCount ? breakPeriodsCount : 1}
+          totalPages={Math.ceil(breakPeriodsCount / maxRowBreakPeriod) || 1}
           onPageChange={onPageChangeBreakPeriods}
           showIcons
         />
@@ -708,9 +710,6 @@ export default function BreakPeriods() {
                 onChange={(e) => setDayOfWeek(Number(e.target.value))}
                 required
               >
-                <option value={1} hidden>
-                  Monday
-                </option>
                 {DAYS_OF_WEEK.map((day) => (
                   <option key={day.id} value={day.id}>
                     {day.name}
@@ -780,10 +779,12 @@ export default function BreakPeriods() {
             {/* Description Field */}
             <div>
               <div className="mb-2 block">
-                <Label htmlFor="break_description">Break Description</Label>
+                <Label htmlFor="edit_break_description">
+                  Break Description
+                </Label>
               </div>
               <TextInput
-                id="break_description"
+                id="edit_break_description"
                 placeholder="e.g. Lunch Break, Assembly"
                 value={newDescription}
                 onChange={handleNewDescriptionChange}
@@ -802,17 +803,14 @@ export default function BreakPeriods() {
             {/* Day of Week Field */}
             <div>
               <div className="mb-2 block">
-                <Label htmlFor="day_of_week">Day of the Week</Label>
+                <Label htmlFor="edit_day_of_week">Day of the Week</Label>
               </div>
               <Select
-                id="day_of_week"
+                id="edit_day_of_week"
                 value={newDayOfWeek}
                 onChange={(e) => editDayOfWeek(Number(e.target.value))}
                 required
               >
-                <option value={1} hidden>
-                  Monday
-                </option>
                 {DAYS_OF_WEEK.map((day) => (
                   <option key={day.id} value={day.id}>
                     {day.name}
@@ -825,10 +823,10 @@ export default function BreakPeriods() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="mb-2 block">
-                  <Label htmlFor="start_time">Start Time</Label>
+                  <Label htmlFor="edit_start_time">Start Time</Label>
                 </div>
                 <TextInput
-                  id="start_time"
+                  id="edit_start_time"
                   type="time"
                   value={newStartTime}
                   onChange={handleNewStartTimeChange}
@@ -839,10 +837,10 @@ export default function BreakPeriods() {
 
               <div>
                 <div className="mb-2 block">
-                  <Label htmlFor="end_time">End Time</Label>
+                  <Label htmlFor="edit_end_time">End Time</Label>
                 </div>
                 <TextInput
-                  id="end_time"
+                  id="edit_end_time"
                   type="time"
                   value={newEndTime}
                   onChange={handleNewEndTimeChange}
@@ -865,9 +863,18 @@ export default function BreakPeriods() {
               disabled={
                 Boolean(timeError) ||
                 !newDescription.trim() ||
-                (description === newDescription.trim() &&
-                  startTime === newStartTime &&
-                  endTime === newEndTime)
+                (() => {
+                  const original = breakPeriods.find(
+                    (item) => item.break_id === rowID,
+                  );
+                  if (!original) return false;
+                  return (
+                    original.break_description === newDescription.trim() &&
+                    original.day_of_week === newDayOfWeek &&
+                    original.start_time === newStartTime &&
+                    original.end_time === newEndTime
+                  );
+                })()
               }
             >
               Save
