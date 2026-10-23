@@ -1,5 +1,6 @@
 "use server";
 import sql from "@/lib/database";
+import { cookies } from "next/headers";
 
 export interface AuthSyncResponse {
   authorized: boolean;
@@ -77,8 +78,13 @@ export async function syncUserToDatabase(email: string, username: string) {
 
 export async function fetchUserRole(email: string) {
   try {
+    const cookieStore = await cookies();
+    const cookie = cookieStore.get("user_email");
+
+    const Email = (email === ""? cookie!.value :email);
+
     const [userRole] = await sql`
-      SELECT * FROM user_get_role(${email});
+      SELECT * FROM user_get_role(${Email});
     `;
 
     return {

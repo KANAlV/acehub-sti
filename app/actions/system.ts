@@ -694,6 +694,91 @@ export async function fetchScheduleTeacherMetricsCount(params: {
   }
 }
 
+/*****************************
+ * SCHEDULES TEACHER PROFILE *
+ *****************************/
+export interface TeacherDetailedInfo {
+  name: string;
+  pscs_id: string;
+  teacher_code: string;
+  employment_type: string;
+  current_units: number;
+  max_units: number;
+  absolute_max: number;
+  remaining_units: number;
+  unique_subjects: number;
+  prep_limit: number;
+  prep_utilization: number;
+  utilization_rate: number;
+  load_status: string;
+}
+
+export interface TeacherScheduleEntryRow {
+  day: string;
+  subject_name: string;
+  start_time: string;
+  end_time: string;
+  room_name: string;
+  section: string;
+  units: number;
+  code: string;
+}
+
+export async function fetchTeacherDetailedMetrics(
+  scheduleName: string,
+  pscsId: string
+): Promise<{
+  success: boolean;
+  teacher?: TeacherDetailedInfo;
+  entries?: TeacherScheduleEntryRow[];
+  error?: string;
+}> {
+  try {
+    // Fetch info and entries concurrently using non-prepared raw execution to clear cached plan issues
+    const [infoRows, entryRows] = await Promise.all([
+      sql`SELECT * FROM get_teacher_schedule_info(${scheduleName}, ${pscsId})`,
+      sql`SELECT * FROM get_teacher_schedule_entries(${scheduleName}, ${pscsId})`
+    ]);
+
+    const rawTeacher = (infoRows as unknown as Record<string, unknown>[])[0];
+    if (!rawTeacher) {
+      return { success: false, error: "Teacher details not found." };
+    }
+
+    const teacher: TeacherDetailedInfo = {
+      name: String(rawTeacher.name ?? ""),
+      pscs_id: String(rawTeacher.pscs_id ?? ""),
+      teacher_code: String(rawTeacher.teacher_code ?? ""),
+      employment_type: String(rawTeacher.employment_type ?? ""),
+      current_units: Number(rawTeacher.current_units) || 0,
+      max_units: Number(rawTeacher.max_units) || 0,
+      absolute_max: Number(rawTeacher.absolute_max) || 0,
+      remaining_units: Number(rawTeacher.remaining_units) || 0,
+      unique_subjects: Number(rawTeacher.unique_subjects) || 0,
+      prep_limit: Number(rawTeacher.prep_limit) || 0,
+      prep_utilization: Number(rawTeacher.prep_utilization) || 0,
+      utilization_rate: Number(rawTeacher.utilization_rate) || 0,
+      load_status: String(rawTeacher.load_status ?? "Normal Load"),
+    };
+
+    const entries: TeacherScheduleEntryRow[] = (entryRows as unknown as Record<string, unknown>[]).map((row) => ({
+      day: String(row.day ?? ""),
+      subject_name: String(row.subject_name ?? ""),
+      start_time: String(row.start_time ?? ""),
+      end_time: String(row.end_time ?? ""),
+      room_name: String(row.room_name ?? ""),
+      section: String(row.section ?? ""),
+      units: Number(row.units) || 0,
+      code: String(row.code ?? ""),
+    }));
+
+    return { success: true, teacher, entries };
+  } catch (error) {
+    console.error("Failed to fetch teacher detailed metrics:", error);
+    return { success: false, error: (error as Error).message || "Failed to fetch teacher details." };
+  }
+}
+
 /**************
  * CURRICULUM *
  **************/

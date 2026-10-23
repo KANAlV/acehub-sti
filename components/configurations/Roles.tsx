@@ -180,6 +180,7 @@ export default function RolesManagement() {
       "academic head",
       "admin",
       "registrar",
+      "superadmin",
       "superuser",
       "teacher",
       "viewer",
@@ -445,43 +446,48 @@ export default function RolesManagement() {
           </TableHead>
           <TableBody className="divide-y">
             {roles.length > 0 ? (
-              roles.filter((user) => user.role_name !== "superuser")
+              roles
+                .filter(
+                  (user) =>
+                    user.role_name !== "superuser" &&
+                    user.role_name !== "superadmin"
+                )
                 .map((item) => {
-                const activeCount = PERMISSION_KEYS.filter(
-                  (p) => item[p.key as keyof Role] === true,
-                ).length;
+                  const activeCount = PERMISSION_KEYS.filter(
+                    (p) => item[p.key as keyof Role] === true,
+                  ).length;
 
-                return (
-                  <TableRow
-                    key={item.role_id}
-                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    <TableCell className="font-medium whitespace-nowrap capitalize">
-                      {item.role_name}
-                    </TableCell>
-                    <TableCell>
-                      {item.superuser ? (
-                        <FaCheck className="text-green-500" />
-                      ) : (
-                        <FaTimes className="text-gray-300 dark:text-gray-600" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-blue-700/10 ring-inset dark:bg-blue-900/30 dark:text-blue-300">
-                        {activeCount} / {PERMISSION_KEYS.length} Modules
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <a
-                        onClick={() => loadEditData(item.role_id)}
-                        className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
-                      >
-                        Edit
-                      </a>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+                  return (
+                    <TableRow
+                      key={item.role_id}
+                      className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                    >
+                      <TableCell className="font-medium whitespace-nowrap capitalize">
+                        {item.role_name}
+                      </TableCell>
+                      <TableCell>
+                        {item.superuser ? (
+                          <FaCheck className="text-green-500" />
+                        ) : (
+                          <FaTimes className="text-gray-300 dark:text-gray-600" />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-blue-700/10 ring-inset dark:bg-blue-900/30 dark:text-blue-300">
+                          {activeCount} / {PERMISSION_KEYS.length} Modules
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <a
+                          onClick={() => loadEditData(item.role_id)}
+                          className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
+                        >
+                          Edit
+                        </a>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
             ) : isLoading ? (
               <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
                 <TableCell
@@ -609,7 +615,7 @@ export default function RolesManagement() {
                 <Label htmlFor="edit_role_name">Role Name</Label>
               </div>
               {isDefault(editFormData.role_name) ? (
-                <p className={"font-extrabold dark:text-white capitalize"}>
+                <p className={"font-extrabold capitalize dark:text-white"}>
                   {editFormData.role_name}
                 </p>
               ) : (

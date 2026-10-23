@@ -14,6 +14,8 @@ import {
   TableRow,
 } from "flowbite-react";
 import { HiArrowLeft, HiOutlineExternalLink } from "react-icons/hi";
+import { fetchTeacherDetailedMetrics } from "@/app/actions/system";
+import { fetchUserRole } from "@/app/actions/user";
 
 interface ScheduleTeacherProps {
   schedule_name: string;
@@ -25,7 +27,6 @@ interface TeacherInfo {
   pscs_id: string | null;
   teacher_code: string | null;
   employment_type: string | null;
-  specialization: string | null;
 }
 
 interface UnitsAnalysis {
@@ -56,6 +57,7 @@ export default function SchedulesTeacherPage({
   pscs_id,
 }: ScheduleTeacherProps) {
   const router = useRouter();
+  const [canEdit, setCanEdit] = useState(false);
 
   // --- Page Loading States ---
   const [isLoading, setIsLoading] = useState(true);
@@ -66,7 +68,6 @@ export default function SchedulesTeacherPage({
     pscs_id: null,
     teacher_code: null,
     employment_type: null,
-    specialization: null,
   });
 
   // --- Units Analysis States ---
@@ -90,9 +91,29 @@ export default function SchedulesTeacherPage({
     async function fetchTeacherDetails() {
       setIsLoading(true);
 
-      // TODO: Replace with your actual Server Action calls when ready, e.g.:
-      // const res = await fetchTeacherDetailedMetrics(schedule_name, pscs_id);
-      // if (res.success && res.data) { ... }
+      const res = await fetchTeacherDetailedMetrics(schedule_name, pscs_id);
+      if (res.success && res.teacher && res.entries) {
+        setTeacherInfo({
+          name: res.teacher.name,
+          pscs_id: res.teacher.pscs_id,
+          teacher_code: res.teacher.teacher_code,
+          employment_type: res.teacher.employment_type
+        });
+
+        setUnitsAnalysis({
+          current_units: res.teacher.current_units,
+          max_units: res.teacher.max_units,
+          absolute_max: res.teacher.absolute_max,
+          remaining_units: res.teacher.remaining_units,
+          unique_subjects: res.teacher.unique_subjects,
+          prep_limit: res.teacher.prep_limit,
+          prep_utilization: res.teacher.prep_utilization,
+          utilization_rate: res.teacher.utilization_rate,
+          load_status: res.teacher.load_status,
+        });
+
+        setScheduleEntries(res.entries);
+      }
 
       setIsLoading(false);
     }
@@ -101,6 +122,19 @@ export default function SchedulesTeacherPage({
       void fetchTeacherDetails();
     }
   }, [schedule_name, pscs_id]);
+
+  useEffect(() => {
+    async function fetchUserPerm() {
+      const res = await fetchUserRole("");
+
+      if (res.success && res.data) {
+        setCanEdit(res.data.schedules)
+        console.log("Can Edit: " + Boolean(res.data.schedules));
+      }
+    }
+
+    void fetchUserPerm()
+  }, []);
 
   const DAYS_OF_WEEK = [
     "Monday",
@@ -121,10 +155,13 @@ export default function SchedulesTeacherPage({
         >
           <HiArrowLeft className="mr-1.5 h-4 w-4" /> Back to Teachers Analysis
         </button>
+
+        {/* TODO: ADD EXPORT FOR TEACHER SCEHDULE */}
         <Button
           color="blue"
           size="sm"
           className="bg-cyan-600 text-white hover:bg-cyan-700"
+          hidden={!canEdit}
         >
           <HiOutlineExternalLink className="mr-1.5 h-4 w-4" />
           Export Teacher Schedule
@@ -205,18 +242,6 @@ export default function SchedulesTeacherPage({
               <p className="text-gray-900 dark:text-white">
                 {teacherInfo.employment_type !== null ? (
                   teacherInfo.employment_type
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Specialization
-              </p>
-              <p className="text-gray-900 dark:text-white">
-                {teacherInfo.specialization !== null ? (
-                  teacherInfo.specialization
                 ) : (
                   <Spinner size="sm" />
                 )}
@@ -408,7 +433,9 @@ export default function SchedulesTeacherPage({
         </div>
       </div>
 
-      {/* Subject Breakdown Table Section */}
+      {/* Subject Breakdown Table Section
+      TODO: ADD SUBJECT REASSIGN MODAL AND FUNCTION. IT MUST CHECK FOR FCCE AND MAQ
+      */}
       <div>
         <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">
           📖 Subject Breakdown
