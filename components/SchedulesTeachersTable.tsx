@@ -32,7 +32,11 @@ import {
   Tooltip,
   useThemeMode,
 } from "flowbite-react";
-import { HiCheck, HiChevronRight, HiOutlineExclamationCircle } from "react-icons/hi2";
+import {
+  HiCheck,
+  HiChevronRight,
+  HiOutlineExclamationCircle,
+} from "react-icons/hi2";
 import {
   HiArrowLeft,
   HiExclamation,
@@ -42,7 +46,7 @@ import {
 } from "react-icons/hi";
 import { useRouter } from "next/navigation";
 import { FaSortDown, FaSortUp } from "react-icons/fa6";
-import {DepartmentRecord} from "@/components/teachers/TeachersManagement";
+import { DepartmentRecord } from "@/components/teachers/TeachersManagement";
 
 interface ScheduleSummaryProps {
   scheduleName: string;
@@ -102,8 +106,8 @@ export default function SchedulesTeachersTable({
       setScheduleID(res.data.schedule_id);
     } else {
       setScheduleExists(false);
-      setIsLoading(false);
     }
+    setIsLoading(false);
   }
 
   async function fetchScheduleTeacherMetrics() {
@@ -119,10 +123,11 @@ export default function SchedulesTeachersTable({
   }
 
   async function loadAllDepartments() {
-    const response = await fetchDepartments("", "dept_name", "ASC", 0, 1);
+    // Fixed: pass a valid limit (e.g. 100) and 0 offset to load all departments properly
+    const response = await fetchDepartments("", "dept_name", "ASC", 100, 0);
     if (response?.success && response.data) {
       const names = (response.data as DepartmentRecord[]).map(
-          (d) => d.dept_name,
+        (d) => d.dept_name,
       );
       setAllDepartments(names);
     }
@@ -139,6 +144,9 @@ export default function SchedulesTeachersTable({
   ) {
     setIsTableLoading(true);
 
+    // Fixed: properly compute zero-indexed SQL offset ((page - 1) * limit)
+    const calculatedOffset = Math.max(0, (page - 1) * limit);
+
     const params = {
       scheduleId: scheduleID!,
       search: search,
@@ -147,7 +155,7 @@ export default function SchedulesTeachersTable({
       sortBy: sortby,
       sortDir: sortdir,
       limit: limit,
-      offset: page,
+      offset: calculatedOffset,
     };
 
     const response = await fetchScheduleTeacherMetricsTable(params);
@@ -163,8 +171,8 @@ export default function SchedulesTeachersTable({
       setTeachers([]);
     }
 
-    await getTeacherCount(search, status, department);
     setIsTableLoading(false);
+    await getTeacherCount(search, status, department);
   }
 
   async function getTeacherCount(
@@ -205,6 +213,12 @@ export default function SchedulesTeachersTable({
       void getTeachers();
     }
   }, [scheduleID]);
+
+  useEffect(() => {
+    if (searchTerm.length > 2 || searchTerm.length === 0) {
+      void getTeachers();
+    }
+  }, [searchTerm]);
 
   // --- UI FUNCTIONS ---
   function getCapacityTextColor(current: number | null, max: number | null) {
@@ -462,6 +476,14 @@ export default function SchedulesTeachersTable({
               <HiX className="h-4 w-4" />
             </button>
           )}
+          <span
+            className={`${searchTerm.length > 0 && searchTerm.length < 3 ? null : "hidden"}
+              absolute inset-y-0 left-0 -mt-2 px-1 ml-2 h-4 block text-[11px] text-gray-400 dark:text-gray-500
+              bg-white dark:bg-gray-900
+            `}
+          >
+            Type at least 3 characters to search
+          </span>
         </div>
       </div>
 
@@ -598,7 +620,11 @@ export default function SchedulesTeachersTable({
                     return (
                       <TableRow
                         key={item.teacher_id}
-                        onClick={() => router.push(`schedules/${scheduleName}/${item.id_number}`)}
+                        onClick={() =>
+                          router.push(
+                            `/schedules/${scheduleName}/teachers/${item.id_number}`,
+                          )
+                        }
                         className="bg-white dark:border-gray-700 dark:bg-gray-800"
                       >
                         {/* Code */}
@@ -689,7 +715,9 @@ export default function SchedulesTeachersTable({
                           </span>
                         </TableCell>
 
-                        <TableCell><HiChevronRight /></TableCell>
+                        <TableCell>
+                          <HiChevronRight />
+                        </TableCell>
                       </TableRow>
                     );
                   })
