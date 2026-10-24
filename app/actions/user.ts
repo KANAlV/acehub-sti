@@ -28,7 +28,7 @@ export async function authorizeAndSyncUser(
     );
 
     // 1. Superuser Check (Bypasses Domain & "Student" Name Checks)
-    const isSuperuser = normalizedRoleName === "superuser";
+    const isSuperuser = normalizedRoleName === "superuser" || normalizedRoleName === "superadmin";
 
     if (!isSuperuser) {
       const isAllowedDomain = trimmedEmail.endsWith("@alabang.sti.edu.ph");
