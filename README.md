@@ -20,13 +20,6 @@ This project was built using the following stack, libraries, and infrastructure:
 * **Neon** – Serverless PostgreSQL database cloud platform
 * **Azure** – Microsoft authentication and single sign-on (SSO) integration
 
-### **Storage & File Management**
-* **MinIO / Amazon S3** – S3-compatible object storage for documents and file uploads
-* **`@aws-sdk/client-s3`** (v3.1138.0) – Official AWS SDK v3 client for object storage integration
-* **ExcelJS** – Library used to generate and export schedule spreadsheets (.xlsx)
-* **FileSaver.js** – Client-side library used to trigger browser file downloads
-* **file-type** – Detects file type from magic bytes (used to infer ContentType on upload)
-
 ### **Package Manager**
 * **npm** – Node Package Manager (v12.0.2)
 

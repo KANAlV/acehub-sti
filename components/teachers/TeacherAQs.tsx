@@ -1,10 +1,6 @@
 "use client";
 
 import {
-  Accordion,
-  AccordionContent,
-  AccordionPanel,
-  AccordionTitle,
   Badge,
   Button,
   Card,
@@ -28,26 +24,20 @@ import {
   Tooltip,
 } from "flowbite-react";
 import { useEffect, useRef, useState } from "react";
-import {
-  FaFilePdf,
-  FaGraduationCap,
-  FaPlus,
-  FaSortDown,
-  FaSortUp,
-} from "react-icons/fa6";
+import { FaGraduationCap, FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
 import {
   HiCheck,
   HiExclamation,
-  HiEye,
   HiLockClosed,
-  HiRefresh,
   HiSearch,
+  HiTrash,
   HiX,
 } from "react-icons/hi";
 import { IoRefresh } from "react-icons/io5";
 import {
   AQRecord,
   createTeacherAQ,
+  deleteTeacherAQ,
   fetchTeacherAQRecords,
   fetchTeachers,
   fetchMaq,
@@ -84,12 +74,16 @@ export default function TeacherAQs() {
   const [aqSearchQuery, setAqSearchQuery] = useState("");
   const [aqSearchResults, setAqSearchResults] = useState<string[]>([]);
   const [selectedAQOption, setSelectedAQOption] = useState("");
-  const [initialStatus, setInitialStatus] = useState("Pending");
   const [isAQLocked, setIsAQLocked] = useState(false);
   const [isSearchingAqs, setIsSearchingAqs] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [aqSubmitError, setAqSubmitError] = useState("");
   const [isSubmittingAQ, setIsSubmittingAQ] = useState(false);
+
+  // --- Delete Confirmation Modal States --- //
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [aqToDelete, setAqToDelete] = useState<AQRecord | null>(null);
+  const [isDeletingAQ, setIsDeletingAQ] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -219,7 +213,18 @@ export default function TeacherAQs() {
     try {
       const res = await fetchMaq(query || undefined, "aq", "ASC", 0);
       if (res?.success && res.data) {
-        const results = res.data.map((item: MaqRecord) => item.aq);
+        // Get list of AQs already assigned to this teacher to filter them out
+        const existingTeacherAqNames = getTeacherAQs(
+          selectedTeacher?.pscs_id,
+        ).map((rec) => rec.aq.toLowerCase().trim());
+
+        const results = res.data
+          .map((item: MaqRecord) => item.aq)
+          .filter(
+            (aq: string) =>
+              !existingTeacherAqNames.includes(aq.toLowerCase().trim()),
+          );
+
         setAqSearchResults(results);
       } else {
         setAqSearchResults([]);
@@ -236,7 +241,6 @@ export default function TeacherAQs() {
       const initialQuery = selectedTeacher.department || "";
       setAqSearchQuery(initialQuery);
       setSelectedAQOption("");
-      setInitialStatus("Pending");
       setIsAQLocked(false);
       setShowSuggestions(true);
       void handleAQSearch(initialQuery);
@@ -280,7 +284,7 @@ export default function TeacherAQs() {
     const list = getTeacherAQs(pscsId);
     let approved = 0;
     let pending = 0;
-    let request = 0;
+    let failed = 0;
     let denied = 0;
 
     list.forEach((rec) => {
@@ -291,12 +295,14 @@ export default function TeacherAQs() {
         pending++;
       } else if (status === "denied") {
         denied++;
+      } else if (status === "failed") {
+        failed++;
       } else {
-        request++;
+        failed++;
       }
     });
 
-    return { approved, pending, request, denied };
+    return { approved, pending, failed, denied };
   };
 
   const renderStatusBadge = (status?: string) => {
@@ -306,10 +312,10 @@ export default function TeacherAQs() {
       case "pending":
         return <Badge color="warning">Pending</Badge>;
       case "denied":
-        return <Badge color="failure">Denied</Badge>;
-      case "request":
+        return <Badge color="red">Denied</Badge>;
+      case "failed":
       default:
-        return <Badge color="gray">Request</Badge>;
+        return <Badge color="gray">Failed</Badge>;
     }
   };
 
@@ -334,6 +340,33 @@ export default function TeacherAQs() {
     }
   };
 
+  const confirmDeleteAQ = (record: AQRecord) => {
+    setAqToDelete(record);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDeleteAQConfirmed = async () => {
+    if (!aqToDelete) return;
+
+    setIsDeletingAQ(true);
+    const res = await deleteTeacherAQ(aqToDelete.aq_id);
+    setIsDeletingAQ(false);
+
+    if (res?.success) {
+      triggerToast("success", "Academic Qualification removed successfully!");
+      setAqRecords((prev) =>
+        prev.filter((rec) => rec.aq_id !== aqToDelete.aq_id),
+      );
+      setIsDeleteModalOpen(false);
+      setAqToDelete(null);
+    } else {
+      triggerToast(
+        "error",
+        res?.error || "Failed to remove Academic Qualification.",
+      );
+    }
+  };
+
   const handleAddAQSubmit = async () => {
     if (!selectedAQOption || selectedAQOption.trim() === "") {
       setAqSubmitError(
@@ -344,7 +377,7 @@ export default function TeacherAQs() {
 
     if (!aqSearchResults.includes(selectedAQOption)) {
       setAqSubmitError(
-        "Selected Academic Qualification does not exist in system records.",
+        "Selected Academic Qualification does not exist in system records or is already assigned.",
       );
       return;
     }
@@ -358,7 +391,6 @@ export default function TeacherAQs() {
     setAqSubmitError("");
 
     const customAqCode = `AQ-${Date.now()}`;
-
     const aqContents: Record<string, JSONValue> = {
       custom_aq_id: customAqCode,
     };
@@ -368,14 +400,12 @@ export default function TeacherAQs() {
         selectedTeacher.pscs_id,
         selectedAQOption,
         aqContents,
-        initialStatus,
+        "Approved",
       );
 
       if (res?.success) {
         triggerToast("success", "Academic Qualification added successfully!");
-
         await loadData(currentPage, employmentFilter);
-
         closeAqAddModal();
       } else {
         setAqSubmitError(res?.error || "Failed to add Academic Qualification.");
@@ -436,7 +466,7 @@ export default function TeacherAQs() {
 
             <button
               type="button"
-              className="-mx-1.5 -my-1.5 ml-auto inline-flex h-8 w-8 rounded-lg bg-white p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900 focus:ring-2 focus:ring-gray-300 dark:bg-gray-800 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-white"
+              className="-mx-1.5 -my-1.5 ml-auto inline-flex h-8 w-8 cursor-pointer rounded-lg bg-white p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900 focus:ring-2 focus:ring-gray-300 dark:bg-gray-800 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-white"
               onClick={() => setShowToast(false)}
             >
               <HiX className="h-5 w-5" />
@@ -478,7 +508,7 @@ export default function TeacherAQs() {
                       setCurrentPage(1);
                       void loadData(1, selectedVal);
                     }}
-                    className="w-full"
+                    className="w-full cursor-pointer"
                   >
                     <option value="All Employment Types">
                       All Employment Types
@@ -591,7 +621,7 @@ export default function TeacherAQs() {
                       </TableRow>
                     ) : (
                       filteredTeachers.map((teacher) => {
-                        const { approved, pending, request, denied } =
+                        const { approved, pending, failed, denied } =
                           getAQStatusCounts(teacher.pscs_id);
                         const isSelected =
                           selectedTeacher?.teacher_id === teacher.teacher_id;
@@ -654,12 +684,12 @@ export default function TeacherAQs() {
                                 <Tooltip
                                   content={
                                     <span className="font-bold text-gray-300">
-                                      AQ Requested: {request}
+                                      AQ Failed: {failed}
                                     </span>
                                   }
                                 >
                                   <span className="cursor-pointer text-gray-500 hover:underline dark:text-gray-300">
-                                    {request}
+                                    {failed}
                                   </span>
                                 </Tooltip>
                                 <span className="text-gray-400 dark:text-gray-500">
@@ -700,8 +730,8 @@ export default function TeacherAQs() {
 
         {/* Side Panel Inspector */}
         {selectedTeacher && (
-          <div className="fixed inset-0 top-17 bottom-0 left-14 z-10 h-[calc(100vh-64px)] bg-white p-4 transition-all sm:static sm:z-0 sm:h-[calc(100vh-8rem)] sm:p-0 sm:col-span-5 dark:bg-gray-900">
-            <Card className="sticky top-2 ">
+          <div className="fixed inset-0 top-17 bottom-0 left-14 z-10 h-[calc(100vh-64px)] bg-white p-4 transition-all sm:static sm:z-0 sm:col-span-5 sm:h-[calc(100vh-8rem)] sm:p-0 dark:bg-gray-900">
+            <Card className="sticky top-2">
               <div className="flex items-start justify-between border-b pb-4 dark:border-gray-700">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -716,6 +746,7 @@ export default function TeacherAQs() {
                   <Button
                     color="red"
                     size="xs"
+                    className="cursor-pointer"
                     onClick={() => setSelectedTeacher(null)}
                   >
                     <HiX className="h-4 w-4" />
@@ -731,10 +762,10 @@ export default function TeacherAQs() {
                   <Button
                     size="xs"
                     color="blue"
+                    className="cursor-pointer"
                     onClick={() => {
                       setIsAddAQOpen(true);
                     }}
-                    className="flex items-center gap-1"
                   >
                     <FaPlus className="mr-1 h-3 w-3" />
                     <span>Add AQ</span>
@@ -753,132 +784,94 @@ export default function TeacherAQs() {
                   }
 
                   return (
-                    <Accordion
-                      collapseAll
-                      className="divide-y divide-gray-200 border-none dark:divide-gray-700"
-                    >
+                    <div className="max-h-[calc(100vh-260px)] space-y-3 overflow-y-auto pr-1">
                       {teacherAqs.map((record) => {
-                        const fileKey =
-                          typeof record.contents?.bucket_key === "string"
-                            ? record.contents.bucket_key
-                            : undefined;
-                        const fileName =
-                          typeof record.contents?.file_name === "string"
-                            ? record.contents.file_name
-                            : "AQ_Certificate.pdf";
                         const status = (
                           record.approved || "Pending"
                         ).toLowerCase();
 
                         return (
-                          <AccordionPanel key={record.aq_id}>
-                            <AccordionTitle className="rounded-lg px-3 py-3 hover:bg-gray-100 dark:hover:bg-gray-800">
-                              <div className="mr-2 flex w-full items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <FaGraduationCap className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
-                                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                                    {record.aq}
-                                  </span>
-                                </div>
-                                <div className="ml-auto">
-                                  {renderStatusBadge(record.approved)}
-                                </div>
+                          <div
+                            key={record.aq_id}
+                            className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2">
+                                <FaGraduationCap className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  {record.aq}
+                                </span>
                               </div>
-                            </AccordionTitle>
+                              <div className="flex items-center gap-2">
+                                {renderStatusBadge(record.approved)}
+                                <Tooltip content="Remove AQ">
+                                  <button
+                                    type="button"
+                                    onClick={() => confirmDeleteAQ(record)}
+                                    className="cursor-pointer text-gray-400 transition-colors hover:text-red-600 dark:hover:text-red-400"
+                                  >
+                                    <HiTrash className="mt-2" />
+                                  </button>
+                                </Tooltip>
+                              </div>
+                            </div>
 
-                            <AccordionContent className="rounded-b-lg border-t border-gray-100 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between rounded border border-gray-200 bg-white p-2.5 dark:border-gray-600 dark:bg-gray-700">
-                                  <div className="flex items-center space-x-2 truncate">
-                                    <FaFilePdf className="h-4 w-4 shrink-0 text-red-500" />
-                                    <span className="truncate text-xs font-medium text-gray-700 dark:text-gray-200">
-                                      {fileKey ? fileName : "No file attached"}
-                                    </span>
-                                  </div>
+                            {/* Status Actions */}
+                            {status !== "approved" && (
+                              <div className="flex items-center justify-between border-t border-gray-200/60 pt-2 dark:border-gray-700">
+                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                  Status Action:
+                                </span>
 
-                                  {fileKey ? (
-                                    <Tooltip content="View Document in S3 Bucket">
-                                      <a
-                                        href={`/api/bucket/download?key=${encodeURIComponent(fileKey)}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center space-x-1 text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
-                                      >
-                                        <HiEye className="h-4 w-4" />
-                                        <span>View</span>
-                                      </a>
-                                    </Tooltip>
-                                  ) : (
-                                    <span className="text-xs text-gray-400 italic">
-                                      Unattached
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Status Actions */}
-                                {status !== "approved" && (
-                                  <div className="flex items-center justify-between pt-1">
-                                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                                      Status Action:
-                                    </span>
-
-                                    {(status === "pending" ||
-                                      status === "request") && (
-                                      <div className="flex items-center gap-2">
-                                        <Button
-                                          size="xs"
-                                          color="success"
-                                          onClick={() =>
-                                            handleStatusChange(
-                                              record,
-                                              "Approved",
-                                            )
-                                          }
-                                          className="flex items-center gap-1"
-                                        >
-                                          <HiCheck className="h-3.5 w-3.5" />
-                                          <span>Approve</span>
-                                        </Button>
-                                        <Button
-                                          size="xs"
-                                          color="failure"
-                                          onClick={() =>
-                                            handleStatusChange(record, "Denied")
-                                          }
-                                          className="flex items-center gap-1"
-                                        >
-                                          <HiX className="h-3.5 w-3.5" />
-                                          <span>Deny</span>
-                                        </Button>
-                                      </div>
-                                    )}
-
-                                    {status === "denied" && (
-                                      <Tooltip content="Request resubmission from teacher">
-                                        <Button
-                                          size="xs"
-                                          color="warning"
-                                          onClick={() =>
-                                            handleStatusChange(
-                                              record,
-                                              "Pending",
-                                            )
-                                          }
-                                          className="flex items-center gap-1"
-                                        >
-                                          <IoRefresh className="h-4 w-4" />
-                                          <span>Request Resubmission</span>
-                                        </Button>
-                                      </Tooltip>
-                                    )}
+                                {(status === "pending" ||
+                                  status === "failed") && (
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      size="xs"
+                                      color="success"
+                                      className="cursor-pointer"
+                                      onClick={() =>
+                                        handleStatusChange(record, "Approved")
+                                      }
+                                    >
+                                      <HiCheck className="mr-1 h-3.5 w-3.5" />
+                                      <span>Approve</span>
+                                    </Button>
+                                    <Button
+                                      size="xs"
+                                      color="red"
+                                      className="cursor-pointer"
+                                      onClick={() =>
+                                        handleStatusChange(record, "Denied")
+                                      }
+                                    >
+                                      <HiX className="mr-1 h-3.5 w-3.5" />
+                                      <span>Deny</span>
+                                    </Button>
                                   </div>
                                 )}
+
+                                {status === "denied" && (
+                                  <Tooltip content="Change AQ status to approved">
+                                    <Button
+                                      size="xs"
+                                      color="warning"
+                                      className="cursor-pointer"
+                                      onClick={() =>
+                                        handleStatusChange(record, "Approved")
+                                      }
+                                    >
+                                      <IoRefresh className="mr-1 h-4 w-4" />
+                                      <span>Approve</span>
+                                    </Button>
+                                  </Tooltip>
+                                )}
                               </div>
-                            </AccordionContent>
-                          </AccordionPanel>
+                            )}
+                          </div>
                         );
                       })}
-                    </Accordion>
+                    </div>
                   );
                 })()}
               </div>
@@ -896,7 +889,7 @@ export default function TeacherAQs() {
               <div className="mb-2 block">
                 <Label htmlFor="teacher-name-modal">Selected Teacher</Label>
               </div>
-              <span className={"text-md dark:text-white font-bold"}>
+              <span className={"text-md font-bold dark:text-white"}>
                 {selectedTeacher?.full_name || ""}
                 <span className={"ml-2 text-gray-400"}>
                   ({selectedTeacher?.department || "No Department"})
@@ -931,7 +924,7 @@ export default function TeacherAQs() {
                   <button
                     type="button"
                     onClick={handleUnlockAQ}
-                    className="absolute top-2.5 right-2 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-white"
+                    className="absolute top-2.5 right-2 cursor-pointer rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-white"
                     title="Unlock to search again"
                   >
                     <HiX className="h-4 w-4" />
@@ -963,26 +956,11 @@ export default function TeacherAQs() {
                     </ul>
                   ) : (
                     <div className="p-4 text-center text-xs text-gray-500">
-                      No matching qualifications found.
+                      No matching or unassigned qualifications found.
                     </div>
                   )}
                 </div>
               )}
-            </div>
-
-            {/* Status Selection Dropdown */}
-            <div>
-              <div className="mb-2 block">
-                <Label htmlFor="aq-status-select">AQ Status</Label>
-              </div>
-              <Select
-                id="aq-status-select"
-                value={initialStatus}
-                onChange={(e) => setInitialStatus(e.target.value)}
-              >
-                <option value="Approved">Approved</option>
-                <option value="Request">Requested</option>
-              </Select>
             </div>
 
             {aqSubmitError && (
@@ -995,6 +973,7 @@ export default function TeacherAQs() {
         <ModalFooter>
           <Button
             color="blue"
+            className="cursor-pointer"
             onClick={handleAddAQSubmit}
             disabled={isSubmittingAQ || !selectedAQOption || !isAQLocked}
           >
@@ -1007,10 +986,64 @@ export default function TeacherAQs() {
               "Submit AQ"
             )}
           </Button>
-          <Button color="gray" onClick={() => closeAqAddModal()}>
+          <Button
+            color="gray"
+            className="cursor-pointer"
+            onClick={() => closeAqAddModal()}
+          >
             Cancel
           </Button>
         </ModalFooter>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        show={isDeleteModalOpen}
+        size="md"
+        onClose={() => setIsDeleteModalOpen(false)}
+        popup
+      >
+        <ModalHeader />
+        <ModalBody>
+          <div className="text-center">
+            <HiExclamation className="mx-auto mb-4 h-12 w-12 text-red-500 dark:text-red-400" />
+            <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+              Are you sure you want to remove{" "}
+              <span className="font-semibold text-gray-800 dark:text-white">
+                {aqToDelete?.aq}
+              </span>{" "}
+              for this teacher?
+            </h3>
+            <div className="flex justify-center gap-4">
+              <Button
+                color="red"
+                className="cursor-pointer"
+                onClick={handleDeleteAQConfirmed}
+                disabled={isDeletingAQ}
+              >
+                {isDeletingAQ ? (
+                  <>
+                    <Spinner size="sm" className="mr-2" />
+                    Deleting...
+                  </>
+                ) : (
+                  "Yes, I'm sure"
+                )}
+              </Button>
+              <Button
+                color="gray"
+                className="cursor-pointer"
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setAqToDelete(null);
+                }}
+                disabled={isDeletingAQ}
+              >
+                No, cancel
+              </Button>
+            </div>
+          </div>
+        </ModalBody>
       </Modal>
     </div>
   );

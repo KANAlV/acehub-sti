@@ -1845,7 +1845,7 @@ export default function TeacherPreassignmentManagement({
                           : "warning"
                       }
                       key={item.program_code}
-                      className={"my-1 justify-center border border-gray-400"}
+                      className={"my-1 justify-center border border-gray-400 cursor-pointer"}
                       onClick={() => setCurriculaSearch(item.program_code)}
                     >
                       {item.program_code}
