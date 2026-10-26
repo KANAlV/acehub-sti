@@ -121,3 +121,31 @@ export async function fetchUserLogoffStatus(
     };
   }
 }
+
+export async function fetchPscsIdByEmail(): Promise<{ success: boolean; pscs_id?: string; error?: string }> {
+  try {
+    const cookieStore = await cookies();
+    const cookie = cookieStore.get("user_email");
+
+    const Email = cookie!.value;
+
+    const result = await sql`
+      SELECT get_pscs_id_by_email(${Email}) AS pscs_id;
+    `;
+
+    const row = (result as unknown as Record<string, unknown>[])[0];
+    const pscsId = row?.pscs_id ? String(row.pscs_id) : undefined;
+
+    if (!pscsId) {
+      return { success: false, error: "No associated teacher record found for this email." };
+    }
+
+    return { success: true, pscs_id: pscsId };
+  } catch (error) {
+    console.error("Failed to fetch pscs_id by email:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch pscs_id by email.",
+    };
+  }
+}
