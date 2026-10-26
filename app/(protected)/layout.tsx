@@ -821,7 +821,7 @@ export default function ProtectedLayout({
           <main className="relative h-full flex-1 overflow-auto border-t border-l border-gray-200 shadow-md shadow-gray-400/30 dark:border-gray-700">
 
             {checkingPermission ? (
-              <div className="h-full w-full flex-col items-center justify-center bg-white/80 backdrop-blur-xs dark:bg-gray-900/80">
+              <div className="flex h-full w-full flex-col items-center justify-center bg-white/80 backdrop-blur-xs dark:bg-gray-900/80">
                 <Spinner size="xl" />
                 <div className="mt-2 text-sm font-medium text-gray-700 dark:text-gray-300">
                   Checking user permission...
