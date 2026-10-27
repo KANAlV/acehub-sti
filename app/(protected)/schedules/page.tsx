@@ -90,7 +90,7 @@ export default function ScheduleManagement() {
   const [isLoading, setLoading] = useState(true);
 
   // For Debugging Only (Developer-controlled code flag)
-  const testMode = false;
+  const testMode = true;
 
   // --- Table & View Filter State --- //
   const [records, setRecords] = useState<ScheduleRecord[]>([]);
