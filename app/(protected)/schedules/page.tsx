@@ -275,6 +275,10 @@ export default function ScheduleManagement() {
   }, []);
 
   useEffect(() => {
+    document.title = "AceHub | Schedules";
+  }, []);
+
+  useEffect(() => {
     void loadProgramsAndBenchmarks();
   }, [loadProgramsAndBenchmarks]);
 

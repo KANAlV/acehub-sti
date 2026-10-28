@@ -108,6 +108,7 @@ export default function RoomsManagement() {
   }
 
   useEffect(() => {
+    document.title = "AceHub | Rooms";
     void loadRoomTypes();
   }, []);
 

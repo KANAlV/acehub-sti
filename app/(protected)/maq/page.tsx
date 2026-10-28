@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TabItem, Tabs } from "flowbite-react";
 import MaqClusterPage from "@/components/maq/MaqClusterPage";
 import { FaCubes } from "react-icons/fa6";
@@ -15,6 +15,10 @@ const AVAILABLE_MAIN_TABS = [
 
 export default function MaqPage() {
   const [activeTabKey, setActiveTabKey] = useState("MAQ Clusters");
+
+  useEffect(() => {
+    document.title = "AceHub | MAQ";
+  }, []);
 
   return (
     <div className="m-8">

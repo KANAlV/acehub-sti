@@ -126,6 +126,10 @@ export default function Configuration() {
     }
   }, [permissions, router, username, activeTabKey, availableMainTabs]);
 
+  useEffect(() => {
+    document.title = "AceHub | Configurations";
+  }, []);
+
   if (pageLoading || permissions === null) {
     return (
       <div className="flex h-full w-full columns-1 flex-col items-center justify-center bg-white dark:bg-gray-900">

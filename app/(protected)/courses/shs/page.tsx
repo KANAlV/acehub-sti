@@ -392,6 +392,10 @@ export default function StrandsManagement() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
+  useEffect(() => {
+    document.title = "AceHub | Strands";
+  }, []);
+
   return (
     <>
       {/* --- Toast --- */}

@@ -1,7 +1,7 @@
 "use client";
 import SubjectManagement from "@/components/subjects/SubjectManagement";
 import { TabItem, Tabs } from "flowbite-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   HiDocumentCheck,
   HiUsers,
@@ -16,6 +16,10 @@ export default function SubjectsPage() {
     "subject management",
     "subject aq",
   ];
+
+  useEffect(() => {
+    document.title = "AceHub | Subjects";
+  }, []);
 
   return (
       <div className={"m-8"}>

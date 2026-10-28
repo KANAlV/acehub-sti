@@ -416,6 +416,10 @@ export default function CollegeProgramsManagement() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
+  useEffect(() => {
+    document.title = "AceHub | Programs";
+  }, []);
+
   return (
     <>
       {/* --- Toast --- */}

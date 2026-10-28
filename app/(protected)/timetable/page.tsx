@@ -196,7 +196,7 @@ export default function Timetable() {
 
   // 1. Fetch schedule ID by name on mount / scheduleName change
   useEffect(() => {
-    document.title = "AceHub | Schedule Timetable";
+    document.title = "AceHub | Timetable";
 
     async function fetchScheduleData() {
       if (scheduleName === null) {

@@ -241,6 +241,7 @@ export default function FcceManagement() {
   }
 
   useEffect(() => {
+    document.title = "AceHub | FCCE";
     void loadAcademicYears();
     void loadCourseNames();
   }, []);

@@ -258,6 +258,10 @@ export default function TeacherPreassignmentManagement({
     };
   }, []);
 
+  useEffect(() => {
+    document.title = "AceHub | Teacher Pre-Assignment";
+  }, []);
+
   // Table search input
   useEffect(() => {
     const handler = setTimeout(() => {

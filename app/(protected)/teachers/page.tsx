@@ -1,7 +1,7 @@
 "use client";
 import TeachersManagement from "@/components/teachers/TeachersManagement";
 import { TabItem, Tabs } from "flowbite-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   HiArrowDownOnSquareStack,
   HiDocumentCheck,
@@ -18,6 +18,10 @@ export default function TeachersPage() {
     "pre-assign subjects",
     "academic qualifications",
   ];
+
+  useEffect(() => {
+    document.title = "AceHub | Teachers";
+  }, []);
 
   return (
     <div className={"m-8"}>
