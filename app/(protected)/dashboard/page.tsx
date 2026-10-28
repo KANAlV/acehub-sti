@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { fetchUserRole } from "@/app/actions/user";
 import ScheduleDashboard from "@/components/dashboard/ScheduleDashboard";
-import TeacherSchedule from "@/components/TeacherSchedule";
+import TeacherSchedule from "@/components/dashboard/TeacherSchedule";
 import { Spinner } from "flowbite-react";
 
 interface UserPermissions {

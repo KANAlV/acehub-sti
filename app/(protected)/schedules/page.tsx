@@ -50,6 +50,7 @@ import {
   fetchPrograms,
   ProgramRecord,
   saveGeneratedSchedule,
+  SubjectRequirementRecord,
 } from "@/app/actions/system";
 import {
   assignSubjectsToSections,
@@ -58,8 +59,12 @@ import {
   generateProgramSections,
   generateRoomAndClassSchedules,
   ScheduleEntry,
+  fetchSubjectsForGeneration,
 } from "@/app/actions/AutoScheduleGeneration";
 import Image from "next/image";
+
+// For Debugging Only (Developer-controlled code flag)
+const testMode = false;
 
 // --- Types matching database statement schema --- //
 export interface ScheduleRecord {
@@ -89,9 +94,6 @@ export default function ScheduleManagement() {
   const router = useRouter();
   const [isLoading, setLoading] = useState(true);
 
-  // For Debugging Only (Developer-controlled code flag)
-  const testMode = false;
-
   // --- Table & View Filter State --- //
   const [records, setRecords] = useState<ScheduleRecord[]>([]);
   const [sortScheduleBy, setSortScheduleBy] = useState("created_at");
@@ -119,6 +121,17 @@ export default function ScheduleManagement() {
   const [generationProgress, setGenerationProgress] = useState<number>(0);
   const [generationStatusText, setGenerationStatusText] = useState<string>("");
   const [openLoadingModal, setOpenLoadingModal] = useState<boolean>(false); // Dedicated loading modal state
+
+  // --- AQ Warning Modal State --- //
+  const [openAqWarningModal, setOpenAqWarningModal] = useState<boolean>(false);
+  const [subjectsWithoutAq, setSubjectsWithoutAq] = useState<
+    SubjectRequirementRecord[]
+  >([]);
+  const [pendingAutoPayload, setPendingAutoPayload] = useState<{
+    scheduleName: string;
+    curriculumIds: string[];
+    term: string;
+  } | null>(null);
 
   // --- Testing State: Preview generated data modals --- //
   const [assignedSectionsResult, setAssignedSectionsResult] = useState<
@@ -221,6 +234,7 @@ export default function ScheduleManagement() {
   const handleCloseModals = () => {
     setScheduleNameError("");
     setOpenAddModal(false);
+    setOpenAqWarningModal(false);
     setAddStep("selection");
     setCreationMode("auto");
     setAutoAssignRoom(false);
@@ -232,6 +246,7 @@ export default function ScheduleManagement() {
     setIsCurriculaSearching(false);
     setGenerationProgress(0);
     setGenerationStatusText("");
+    setPendingAutoPayload(null);
   };
 
   // --- Curriculum & Benchmark Loaders --- //
@@ -289,8 +304,7 @@ export default function ScheduleManagement() {
     setCurriculumAdd((prev) => [...prev, input]);
   };
 
-  // --- Unified Submit Handler for Auto & Semi-Auto Generation --- //
-  // --- Unified Submit Handler for Auto & Semi-Auto Generation --- //
+  // --- Step 1: Trigger Auto Generation & Run Subject Check First --- //
   async function handleAutoGenerationSubmit() {
     if (
       !addScheduleName.trim() ||
@@ -299,20 +313,80 @@ export default function ScheduleManagement() {
     )
       return;
 
-    // Close the wizard modal and open the standalone uncloseable loading modal
+    const scheduleNameTrimmed = addScheduleName.trim();
+    const curriculumIds = curriculumAdd.map((item) => item.curriculum_id);
+
+    // Close wizard modal and show quick status or proceed directly
     setOpenAddModal(false);
     setOpenLoadingModal(true);
     setIsSubmittingAutoGeneration(true);
-    setGenerationProgress(15);
-    setGenerationStatusText("Initializing program sections generation...");
+    setGenerationProgress(10);
+    setGenerationStatusText("Fetching and checking subject requirements...");
 
-    const curriculumIds = curriculumAdd.map((item) => item.curriculum_id);
-
-    // Step 1: Run section generation separately to accurately update UI state/progress
-    const sectionRes = await generateProgramSections(
-      addScheduleName.trim(),
+    // 1. Fetch subjects first as requested
+    const subjectRes = await fetchSubjectsForGeneration(
       curriculumIds,
       selectedTerm,
+    );
+    if (testMode) {console.log("=== SUBJECTS FOR GENERATION RESPONSE ===", subjectRes);}
+    if (!subjectRes.success || !subjectRes.data) {
+      setIsSubmittingAutoGeneration(false);
+      setOpenLoadingModal(false);
+      setToastMessage(
+        subjectRes.error || "Failed to fetch subject requirements.",
+      );
+      setToastType("error");
+      setShowToast(true);
+      return;
+    }
+
+    const allSubjects = subjectRes.data;
+
+    // 2. Check for subjects without AQ entries (required_aqs is null, undefined, or empty array)
+    const missingAqSubjects = allSubjects.filter((sub) => {
+      const aqs = sub.required_aqs;
+      return !aqs || (Array.isArray(aqs) && aqs.length === 0);
+    });
+
+    if (missingAqSubjects.length > 0) {
+      // Store payload and show warning modal, pausing the loader modal
+      setSubjectsWithoutAq(missingAqSubjects);
+      setPendingAutoPayload({
+        scheduleName: scheduleNameTrimmed,
+        curriculumIds,
+        term: selectedTerm,
+      });
+      setOpenLoadingModal(false);
+      setIsSubmittingAutoGeneration(false);
+      setOpenAqWarningModal(true);
+      return;
+    }
+
+    // If all subjects have AQs, proceed immediately
+    await executeAutoGenerationPipeline(
+      scheduleNameTrimmed,
+      curriculumIds,
+      selectedTerm,
+    );
+  }
+
+  // --- Step 2: Core Execution Pipeline (Runs Section Generation & Assignment/Scheduling) --- //
+  async function executeAutoGenerationPipeline(
+    scheduleName: string,
+    curriculumIds: string[],
+    term: string,
+  ) {
+    setOpenAqWarningModal(false);
+    setOpenLoadingModal(true);
+    setIsSubmittingAutoGeneration(true);
+    setGenerationProgress(30);
+    setGenerationStatusText("Initializing program sections generation...");
+
+    // Step A: Run section generation
+    const sectionRes = await generateProgramSections(
+      scheduleName,
+      curriculumIds,
+      term,
     );
     console.log("=== GENERATED SECTIONS RESULT ===", sectionRes);
 
@@ -331,7 +405,7 @@ export default function ScheduleManagement() {
       return;
     }
 
-    setGenerationProgress(50);
+    setGenerationProgress(60);
 
     let isSuccess = false;
     let errorMessage = "";
@@ -343,9 +417,9 @@ export default function ScheduleManagement() {
       );
 
       const roomScheduleRes = await generateRoomAndClassSchedules(
-        addScheduleName.trim(),
+        scheduleName,
         curriculumIds,
-        selectedTerm,
+        term,
       );
       console.log("=== ROOM & CLASS SCHEDULE ENTRIES ===", roomScheduleRes);
 
@@ -379,13 +453,12 @@ export default function ScheduleManagement() {
       }
     } else {
       setGenerationStatusText(
-        `Generated ${sectionRes.sections.length} sections. Fetching requirements and assigning subjects...`,
+        `Generated ${sectionRes.sections.length} sections. Assigning subjects...`,
       );
 
       const assignRes = await assignSubjectsToSections(
-        addScheduleName.trim(),
-        curriculumIds,
-        selectedTerm,
+        scheduleName,
+        term,
         sectionRes.sections,
       );
       console.log("=== SUBJECT ASSIGNMENT RESULT ===", assignRes);
@@ -394,7 +467,6 @@ export default function ScheduleManagement() {
       errorMessage = assignRes.error || "";
 
       if (isSuccess && assignRes.assignments) {
-        // Expand subjects into separate lecture and lab entries matching the exact breakdown
         entriesPayload = assignRes.assignments.flatMap((assignment) =>
           assignment.subjects.flatMap((subj: AssignedSubjectDetail) => {
             const lectureUnits = subj.lecture_units || 0;
@@ -480,29 +552,22 @@ export default function ScheduleManagement() {
       }
     }
 
-    // --- SHARED PERSISTENCE & COMPLETION STEP ---
+    // --- PERSISTENCE STEP ---
     if (isSuccess && !testMode && entriesPayload.length > 0) {
-      setGenerationProgress(80);
+      setGenerationProgress(85);
       setGenerationStatusText(
         "Posting and saving generated schedule to database...",
       );
 
       const savePayload = {
-        scheduleName: addScheduleName.trim(),
+        scheduleName,
         generationConfig: {
-          description: `Generated for term ${selectedTerm} (Auto Room: ${autoAssignRoom})`,
+          description: `Generated for term ${term} (Auto Room: ${autoAssignRoom})`,
         },
         entries: entriesPayload,
       };
 
-      console.log(
-        "=== SAVE GENERATED SCHEDULE PAYLOAD ===",
-        JSON.stringify(savePayload, null, 2),
-      );
-
       const saveRes = await saveGeneratedSchedule(savePayload);
-      console.log("=== SAVE GENERATED SCHEDULE RESPONSE ===", saveRes);
-
       if (!saveRes.success) {
         isSuccess = false;
         errorMessage =
@@ -517,7 +582,7 @@ export default function ScheduleManagement() {
 
     if (isSuccess) {
       if (!testMode) {
-        router.push(`/schedules/${encodeURIComponent(addScheduleName.trim())}`);
+        router.push(`/schedules/${encodeURIComponent(scheduleName)}`);
       }
 
       if (testMode) {
@@ -537,7 +602,9 @@ export default function ScheduleManagement() {
       toastTimer();
       void getScheduleRecords();
     } else {
-      setToastMessage(errorMessage || "Failed to complete schedule generation.");
+      setToastMessage(
+        errorMessage || "Failed to complete schedule generation.",
+      );
       setToastType("error");
       setShowToast(true);
     }
@@ -638,7 +705,7 @@ export default function ScheduleManagement() {
     !!scheduleNameError ||
     curriculumAdd.length === 0;
 
-  // Timetable helper constants & functions
+  // timetable helper constants & functions
   const daysOfWeek = [
     "Monday",
     "Tuesday",
@@ -681,14 +748,14 @@ export default function ScheduleManagement() {
   // Filtering entries enforcing strict mutual ALL rule: only one dropdown can be "ALL" at a time
   const filteredTimetableEntries = scheduleEntriesResult
     ? scheduleEntriesResult.filter((entry) => {
-      const matchesSection =
-        selectedTimetableSection === "ALL" ||
-        entry.sectionCode === selectedTimetableSection;
-      const matchesRoom =
-        selectedTimetableRoom === "ALL" ||
-        entry.roomName === selectedTimetableRoom;
-      return matchesSection && matchesRoom;
-    })
+        const matchesSection =
+          selectedTimetableSection === "ALL" ||
+          entry.sectionCode === selectedTimetableSection;
+        const matchesRoom =
+          selectedTimetableRoom === "ALL" ||
+          entry.roomName === selectedTimetableRoom;
+        return matchesSection && matchesRoom;
+      })
     : [];
 
   const availableTimetableSections = scheduleEntriesResult
@@ -705,7 +772,6 @@ export default function ScheduleManagement() {
 
     const versionUpper = curriculum.curriculum_version.trim().toUpperCase();
 
-    // Check if any non-tertiary (SHS/strand) program code exists inside the curriculum version string
     return programs.some((p) => {
       const isNonTertiary = p.year_level?.toLowerCase() !== "tertiary";
       const progCode = p.program_code?.trim().toUpperCase();
@@ -893,7 +959,7 @@ export default function ScheduleManagement() {
         </div>
       </div>
 
-      {/* --- ADD MODAL (Multi-step wizard with integrated Curriculum selector & Term selector) --- */}
+      {/* --- ADD MODAL --- */}
       <Modal show={openAddModal} onClose={handleCloseModals} size="xl">
         <ModalHeader>
           {addStep === "selection"
@@ -984,7 +1050,6 @@ export default function ScheduleManagement() {
                 )}
               </div>
 
-              {/* Enhanced Term Selector */}
               <div>
                 <Label htmlFor="term-select">Select Term / Semester *</Label>
                 <Select
@@ -997,7 +1062,6 @@ export default function ScheduleManagement() {
                 </Select>
               </div>
 
-              {/* Semi-Auto Toggle */}
               {creationMode === "semi-auto" && (
                 <div className="flex items-center justify-between rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                   <div>
@@ -1014,7 +1078,6 @@ export default function ScheduleManagement() {
                 </div>
               )}
 
-              {/* Curriculum Selection UI integrated from Config Modal */}
               <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                 <h3 className="mb-1 text-sm font-bold text-gray-900 dark:text-white">
                   Subject Constraints (Curricula) *
@@ -1096,7 +1159,7 @@ export default function ScheduleManagement() {
                             <Badge
                               key={item.curriculum_id}
                               className="items-center"
-                              color={`${isShsCurriculum(item)? "warning" : "info"}`}
+                              color={`${isShsCurriculum(item) ? "warning" : "info"}`}
                             >
                               <span className="inline-flex items-center gap-1.5">
                                 {item.curriculum_version}
@@ -1125,7 +1188,6 @@ export default function ScheduleManagement() {
                     </div>
                   </div>
 
-                  {/* Programs and Strands Side Panel */}
                   <div className="w-[25%] border-l border-gray-200 pl-3 dark:border-gray-700">
                     <div className="text-center text-xs font-semibold text-cyan-700 dark:text-cyan-300">
                       Programs
@@ -1240,6 +1302,58 @@ export default function ScheduleManagement() {
               </Button>
             </>
           )}
+        </ModalFooter>
+      </Modal>
+
+      {/* --- AQ WARNING MODAL (Shows subjects missing AQ entries in a scrollable list) --- */}
+      <Modal show={openAqWarningModal} onClose={handleCloseModals} size="lg">
+        <ModalHeader className="border-b border-gray-200 font-bold text-amber-600 dark:border-gray-700">
+          Warning: Subjects Missing AQ Entries
+        </ModalHeader>
+        <ModalBody>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              The following subjects do not have any Academic Qualification (AQ)
+              entries configured. Generation will still proceed with all
+              subjects, but unassigned faculty qualifications may occur:
+            </p>
+
+            {/* Scrollable Div Containing Bullet Points */}
+            <div className="max-h-60 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+              <ul className="list-disc space-y-2 pl-5">
+                {subjectsWithoutAq.map((sub) => (
+                  <li
+                    key={sub.subject_id}
+                    className="text-sm text-gray-800 dark:text-gray-200"
+                  >
+                    <span className="font-semibold">{sub.course_code}</span>:{" "}
+                    {sub.course_name}{" "}
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      ({sub.program_code} - {sub.year_term})
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </ModalBody>
+        <ModalFooter className="flex justify-end gap-2">
+          <Button color="alternative" onClick={handleCloseModals}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (pendingAutoPayload) {
+                void executeAutoGenerationPipeline(
+                  pendingAutoPayload.scheduleName,
+                  pendingAutoPayload.curriculumIds,
+                  pendingAutoPayload.term,
+                );
+              }
+            }}
+          >
+            Proceed
+          </Button>
         </ModalFooter>
       </Modal>
 
@@ -1368,14 +1482,17 @@ export default function ScheduleManagement() {
             </div>
           </ModalBody>
           <ModalFooter className="flex justify-end">
-            <Button color="alternative" onClick={() => setOpenResultsModal(false)}>
+            <Button
+              color="alternative"
+              onClick={() => setOpenResultsModal(false)}
+            >
               Close Preview
             </Button>
           </ModalFooter>
         </Modal>
       )}
 
-      {/* --- TESTING MODAL 2: Timetable / Row Table Preview with Independent Section & Room Dropdowns --- */}
+      {/* --- TESTING MODAL 2: timetable / Row Table Preview with Independent Section & Room Dropdowns --- */}
       {testMode && (
         <Modal
           show={openTimetableModal}
@@ -1390,7 +1507,7 @@ export default function ScheduleManagement() {
                 </span>
                 <Badge color="purple" size="sm">
                   {displayFormat === "timetable"
-                    ? "Timetable Grid View"
+                    ? "timetable Grid View"
                     : "Row Table View"}
                 </Badge>
               </div>
@@ -1402,7 +1519,6 @@ export default function ScheduleManagement() {
           </ModalHeader>
           <ModalBody>
             <div className="space-y-4">
-              {/* Controls bar: Display Format + Section Dropdown + Room Dropdown with Mutual ALL enforcement */}
               <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
@@ -1431,7 +1547,7 @@ export default function ScheduleManagement() {
                         const val = e.target.value;
                         setSelectedTimetableSection(val);
                         if (val !== "ALL") {
-                          setSelectedTimetableRoom("ALL"); // Only one dropdown can be ALL at a time
+                          setSelectedTimetableRoom("ALL");
                         }
                       }}
                     >
@@ -1455,7 +1571,7 @@ export default function ScheduleManagement() {
                         const val = e.target.value;
                         setSelectedTimetableRoom(val);
                         if (val !== "ALL") {
-                          setSelectedTimetableSection("ALL"); // Only one dropdown can be ALL at a time
+                          setSelectedTimetableSection("ALL");
                         }
                       }}
                     >
@@ -1470,7 +1586,6 @@ export default function ScheduleManagement() {
                 </div>
               </div>
 
-              {/* Conditional Rendering based on displayFormat */}
               {displayFormat === "timetable" ? (
                 <div className="max-h-[600px] overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                   <table className="w-full border-collapse text-left text-xs">
@@ -1659,7 +1774,10 @@ export default function ScheduleManagement() {
             </div>
           </ModalBody>
           <ModalFooter className="flex justify-end">
-            <Button color="alternative" onClick={() => setOpenTimetableModal(false)}>
+            <Button
+              color="alternative"
+              onClick={() => setOpenTimetableModal(false)}
+            >
               Close Output Verification
             </Button>
           </ModalFooter>

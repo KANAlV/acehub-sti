@@ -30,6 +30,72 @@ export async function fetchActiveScheduleName() {
 }
 
 /*************
+ * TIMETABLE *
+ *************/
+
+export interface TimetableEntryRecord {
+  schedule_entry_id: string;
+  schedule_id: string;
+  subject_id: string;
+  teacher_id: string;
+  room_id: string;
+  section: string;
+  day: string;
+  start_time: number;
+  end_time: number;
+  course_code: string;
+  course_name: string;
+  lecture_units: number;
+  lab_units: number;
+  teacher_name: string;
+  teacher_code: string;
+  room_name: string;
+}
+
+export async function fetchTimetableEntriesByScheduleId(
+    scheduleId: string
+): Promise<{
+  success: boolean;
+  data?: TimetableEntryRecord[];
+  error?: string;
+}> {
+  try {
+    const result = await sql`
+      SELECT * FROM get_timetable_entries_by_schedule_id(${scheduleId}::uuid);
+    `;
+
+    const rawRows = result as unknown as Array<Record<string, unknown>>;
+    const data: TimetableEntryRecord[] = rawRows.map((row) => ({
+      schedule_entry_id: String(row.schedule_entry_id),
+      schedule_id: String(row.schedule_id),
+      subject_id: String(row.subject_id ?? ""),
+      teacher_id: String(row.teacher_id ?? ""),
+      room_id: String(row.room_id ?? ""),
+      section: String(row.section ?? ""),
+      day: String(row.day ?? ""),
+      start_time: Number(row.start_time) || 0,
+      end_time: Number(row.end_time) || 0,
+      course_code: String(row.course_code ?? ""),
+      course_name: String(row.course_name ?? ""),
+      lecture_units: Number(row.lecture_units) || 0,
+      lab_units: Number(row.lab_units) || 0,
+      teacher_name: String(row.teacher_name ?? ""),
+      teacher_code: String(row.teacher_code ?? ""),
+      room_name: String(row.room_name ?? ""),
+    }));
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to fetch timetable entries by schedule ID:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch timetable entries.",
+      data: [],
+    };
+  }
+}
+
+/*************
  * SCHEDULES *
  *************/
 export interface SubjectRequirementRecord {

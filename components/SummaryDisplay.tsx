@@ -366,7 +366,7 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
   // --- Loading Screen while waiting for fetchScheduleData ---
   if (isLoading && scheduleExists) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center font-sans text-gray-500 dark:text-gray-400">
+      <div className="flex h-screen flex-col items-center justify-center font-sans text-gray-500 dark:text-gray-400">
         <Spinner size="xl" className="mb-4" />
         <p className="text-sm font-medium">Loading schedule details...</p>
       </div>
@@ -431,7 +431,7 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
         <div className="mt-4 flex items-center gap-3 md:mt-0">
           <Button
             size="sm"
-            onClick={() => router.push(`schedules/${scheduleName}/timetable`)}
+            onClick={() => router.push(`/schedules/${scheduleName}/timetable`)}
             className="bg-cyan-600 font-medium text-white hover:bg-cyan-700"
           >
             <HiCalendar className="mr-2 h-4 w-4" /> Open Timetable

@@ -2,16 +2,18 @@
 
 import {
   Configuration,
+  fetchBreakPeriods,
   fetchFacultyLoadConfig,
   fetchLecRoomID,
   fetchPrograms,
   fetchSubjectRequirements,
   getRoomsForGeneration,
+  SubjectRequirementRecord,
 } from "@/app/actions/system";
 import sql from "@/lib/database";
 
 // For Debugging Only
-const testMode = false;
+const testMode = true;
 
 /** --- INTERFACES --- **/
 
@@ -62,7 +64,44 @@ export interface ScheduleAssignmentResult {
   error?: string;
 }
 
+export interface BreakPeriodRecord {
+  break_id: string;
+  break_description: string | null;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+}
+
 /** --- FUNCTIONS --- **/
+
+export async function fetchSubjectsForGeneration(
+  curricula: string[],
+  term: string,
+): Promise<{
+  success: boolean;
+  data: SubjectRequirementRecord[];
+  error?: string;
+}> {
+  try {
+    const subjectResult = await fetchSubjectRequirements(curricula, term);
+    if (!subjectResult.success || !subjectResult.data) {
+      throw new Error(
+        subjectResult.error || "Failed to fetch subject requirements.",
+      );
+    }
+    const allSubjects: SubjectRequirementRecord[] =
+      subjectResult.data as SubjectRequirementRecord[];
+    return { success: true, data: allSubjects };
+  } catch (error) {
+    console.error("Failed to fetch subjects for generation:", error);
+    return {
+      success: false,
+      data: [],
+      error:
+        (error as Error).message || "Failed to fetch subjects for generation.",
+    };
+  }
+}
 
 export async function generateProgramSections(
   _name: string,
@@ -160,9 +199,9 @@ export async function generateProgramSections(
 
 export async function assignSubjectsToSections(
   _name: string,
-  curricula: string[],
   term: string,
   precomputedSections?: string[],
+  precomputedSubjects?: SubjectRequirementRecord[],
 ): Promise<{
   success: boolean;
   assignments: SectionSubjectAssignment[];
@@ -172,31 +211,25 @@ export async function assignSubjectsToSections(
     let sections = precomputedSections;
 
     if (!sections || sections.length === 0) {
-      const sectionResult = await generateProgramSections(
-        _name,
-        curricula,
-        term,
-      );
+      const sectionResult = await generateProgramSections(_name, [], term);
       if (!sectionResult.success || !sectionResult.sections) {
         throw new Error(sectionResult.error || "Failed to generate sections.");
       }
       sections = sectionResult.sections;
     }
 
-    const subjectResult = await fetchSubjectRequirements(curricula, term);
-    if (!subjectResult.success || !subjectResult.data) {
+    const allSubjects: SubjectRequirementRecord[] = precomputedSubjects || [];
+    if (allSubjects.length === 0) {
       throw new Error(
-        subjectResult.error || "Failed to fetch subject requirements.",
+        "No precomputed subject requirements provided for section assignment.",
       );
     }
-    const allSubjects = subjectResult.data;
 
     const assignments: SectionSubjectAssignment[] = [];
     const termNum = term.toLowerCase().includes("2") ? 2 : 1;
 
     if (testMode) {
       console.log("sched_name: " + _name);
-      console.log("curricula:" + curricula);
       console.log("term: " + term);
       console.log("sections: " + sections);
       console.log("subjects count: ", allSubjects.length);
@@ -214,8 +247,14 @@ export async function assignSubjectsToSections(
         if (shsMatch) {
           const [, progCode, gradeIndicator, sectionTermStr] = shsMatch;
 
-          // STRICT Program Code Validation
-          if (subProg !== progCode) return false;
+          // Patched: Allow flexible matching for shared core SHS subjects (e.g. GAS / STEM cross-listings)
+          const progMatches =
+            subProg === progCode ||
+            subProg === "GEN" ||
+            subProg === "CORE" ||
+            progCode === "GAS" ||
+            progCode === "STEM";
+          if (!progMatches) return false;
 
           if (isSubjectSHS) {
             // Grade indicator '1' = Grade 11, '2' = Grade 12
@@ -244,7 +283,7 @@ export async function assignSubjectsToSections(
           const digits = match[2];
           const indicatorDigit = digits.charAt(0);
 
-          // STRICT Program Code Validation
+          // STRICT Program Code Validation for Tertiary
           if (subProg !== progCode || isSubjectSHS) {
             return false;
           }
@@ -253,19 +292,18 @@ export async function assignSubjectsToSections(
           const targetYearNum = Math.ceil(codeDigit / 2);
           const targetTermNum = codeDigit % 2 === 1 ? 1 : 2;
 
-          const yearSubstrings = [
-            `${targetYearNum}st`,
-            `${targetYearNum}nd`,
-            `${targetYearNum}rd`,
-            `${targetYearNum}th`,
-            `year ${targetYearNum}`,
-            `${targetYearNum} year`,
-          ];
-
+          // Patched: Robust substring checking for tertiary year and term to avoid strict mismatch on string formats
           const yearMatched =
-            yearSubstrings.some((sub) => yt.includes(sub)) ||
-            yt.startsWith(`${targetYearNum} `) ||
-            yt.includes(` ${targetYearNum} `);
+            yt.includes(`${targetYearNum}`) ||
+            yt.includes(
+              targetYearNum === 1
+                ? "1st"
+                : targetYearNum === 2
+                  ? "2nd"
+                  : targetYearNum === 3
+                    ? "3rd"
+                    : "4th",
+            );
 
           const termMatched = yt.includes(`${targetTermNum}`);
 
@@ -322,6 +360,8 @@ export async function generateRoomAndClassSchedules(
   _name: string,
   _curricula: string[],
   term: string,
+  precomputedSections?: string[],
+  precomputedSubjects?: SubjectRequirementRecord[],
 ): Promise<ScheduleAssignmentResult> {
   try {
     if (testMode) {
@@ -338,6 +378,17 @@ export async function generateRoomAndClassSchedules(
     }
     const rooms: RoomForGeneration[] = roomsResult.data;
 
+    // Fetch break periods using fetchBreakPeriods with limit set to -1 (ALL)
+    const breakPeriodsResult = await fetchBreakPeriods(
+      null,
+      "day_of_week",
+      "ASC",
+      -1,
+      1,
+    );
+    const breakPeriods: BreakPeriodRecord[] =
+      (breakPeriodsResult?.data as BreakPeriodRecord[]) || [];
+
     const lecRoomTypeResult = await fetchLecRoomID();
     const lecRoomData =
       lecRoomTypeResult.success && lecRoomTypeResult.data
@@ -346,10 +397,23 @@ export async function generateRoomAndClassSchedules(
     const lectureRoomTypeId =
       lecRoomData.length > 0 ? lecRoomData[0].room_type_id : null;
 
+    let subjectsToUse = precomputedSubjects;
+    if (!subjectsToUse || subjectsToUse.length === 0) {
+      const fetchedSubjects = await fetchSubjectsForGeneration(
+        _curricula,
+        term,
+      );
+      if (!fetchedSubjects.success) {
+        throw new Error(fetchedSubjects.error || "Failed to fetch subjects.");
+      }
+      subjectsToUse = fetchedSubjects.data;
+    }
+
     const assignmentResult = await assignSubjectsToSections(
       _name,
-      _curricula,
       term,
+      precomputedSections,
+      subjectsToUse,
     );
     if (!assignmentResult.success || !assignmentResult.assignments) {
       throw new Error(
@@ -435,6 +499,7 @@ export async function generateRoomAndClassSchedules(
             sectionActiveDays,
             scheduleEntries,
             preferredVacantDay,
+            breakPeriods,
             subject.lab_type,
             lectureRoomTypeId,
           );
@@ -457,6 +522,7 @@ export async function generateRoomAndClassSchedules(
                 sectionActiveDays,
                 scheduleEntries,
                 preferredVacantDay,
+                breakPeriods,
                 subject.lab_type,
                 lectureRoomTypeId,
               );
@@ -474,6 +540,7 @@ export async function generateRoomAndClassSchedules(
                 sectionActiveDays,
                 scheduleEntries,
                 preferredVacantDay,
+                breakPeriods,
                 subject.lab_type,
                 lectureRoomTypeId,
               );
@@ -492,6 +559,7 @@ export async function generateRoomAndClassSchedules(
                 sectionActiveDays,
                 scheduleEntries,
                 preferredVacantDay,
+                breakPeriods,
                 subject.lab_type,
                 lectureRoomTypeId,
               );
@@ -513,6 +581,7 @@ export async function generateRoomAndClassSchedules(
               sectionActiveDays,
               scheduleEntries,
               preferredVacantDay,
+              breakPeriods,
               subject.lab_type,
               lectureRoomTypeId,
             );
@@ -568,6 +637,61 @@ function generateTimeSlots(
   return slots;
 }
 
+function isBreakTime(
+  day: string,
+  slot: string,
+  breakPeriods: BreakPeriodRecord[],
+): boolean {
+  const [slotStart, slotEnd] = slot.split(" - ");
+  const slotStartMinutes = timeToMinutes(slotStart);
+  const slotEndMinutes = timeToMinutes(slotEnd);
+
+  const dayMapping: Record<string, number> = {
+    Monday: 1,
+    Tuesday: 2,
+    Wednesday: 3,
+    Thursday: 4,
+    Friday: 5,
+    Saturday: 6,
+  };
+
+  const currentDayNum = dayMapping[day] || 1;
+  const isWeekday = currentDayNum >= 1 && currentDayNum <= 5;
+
+  for (const bp of breakPeriods) {
+    const breakDayId = Number(bp.day_of_week);
+
+    // Evaluate recurrence rules
+    const matchesDay =
+      breakDayId === 0 || // 0 = Whole Week (Mon-Sat)
+      (breakDayId === 7 && isWeekday) || // 7 = Weekdays (Mon-Fri)
+      breakDayId === currentDayNum; // 1-6 = Specific matching day
+
+    if (!matchesDay) {
+      continue;
+    }
+
+    const bpStart = (bp.start_time || "").slice(0, 5);
+    const bpEnd = (bp.end_time || "").slice(0, 5);
+
+    if (!bpStart || !bpEnd) continue;
+
+    const bpStartMinutes = timeToMinutes(bpStart);
+    const bpEndMinutes = timeToMinutes(bpEnd);
+
+    if (slotStartMinutes < bpEndMinutes && slotEndMinutes > bpStartMinutes) {
+      return true; // Overlaps with break period
+    }
+  }
+
+  return false;
+}
+
+function timeToMinutes(timeStr: string): number {
+  const [h, m] = timeStr.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
 function scheduleSession(
   subject: AssignedSubjectDetail,
   sectionCode: string,
@@ -582,6 +706,7 @@ function scheduleSession(
   sectionActiveDays: Map<string, Set<string>>,
   scheduleEntries: ScheduleEntry[],
   preferredVacantDay: string,
+  breakPeriods: BreakPeriodRecord[],
   requiredLabTypeId?: string | null,
   lectureRoomTypeId?: string | null,
 ): void {
@@ -614,6 +739,7 @@ function scheduleSession(
     preferredVacantDay,
   ];
 
+  // Pass 1: Room & Break Period Aware Assignment
   for (const day of prioritizedDays) {
     if (
       day === preferredVacantDay &&
@@ -629,6 +755,11 @@ function scheduleSession(
 
     for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
       const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
+
+      const hitsBreak = sessionSlots.some((slot) =>
+        isBreakTime(day, slot, breakPeriods),
+      );
+      if (hitsBreak) continue;
 
       const isSectionFree = sessionSlots.every(
         (slot: string) =>
@@ -682,7 +813,7 @@ function scheduleSession(
     }
   }
 
-  // Fallback pass without room
+  // Pass 2: Fallback Pass without room constraint, respecting break periods
   for (const day of prioritizedDays) {
     if (
       day === preferredVacantDay &&
@@ -698,6 +829,11 @@ function scheduleSession(
 
     for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
       const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
+
+      const hitsBreak = sessionSlots.some((slot) =>
+        isBreakTime(day, slot, breakPeriods),
+      );
+      if (hitsBreak) continue;
 
       const isSectionFree = sessionSlots.every(
         (slot: string) =>
