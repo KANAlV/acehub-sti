@@ -248,7 +248,7 @@ export default function TeacherSchedule() {
   }
 
   return (
-    <div className="m-6 space-y-6">
+    <div className="m-6 space-y-6 scrollbar-thumb-gray-400 scrollbar-track-transparent">
       {/* Header & Status Badge */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -286,57 +286,59 @@ export default function TeacherSchedule() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Teacher Information Card */}
         <Card className="lg:col-span-1">
-          <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-            👥 Teacher Information
-          </h3>
-          <div className="space-y-4 text-sm">
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Full Name
-              </p>
-              <p className="font-semibold text-gray-900 dark:text-white">
-                {teacherInfo.name !== null ? (
-                  teacherInfo.name
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                PSCS ID
-              </p>
-              <p className="font-mono text-gray-900 dark:text-white">
-                {teacherInfo.pscs_id !== null ? (
-                  teacherInfo.pscs_id
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Teacher Code
-              </p>
-              <p className="font-mono text-gray-900 dark:text-white">
-                {teacherInfo.teacher_code !== null ? (
-                  teacherInfo.teacher_code
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Employment Type
-              </p>
-              <p className="text-gray-900 dark:text-white">
-                {teacherInfo.employment_type !== null ? (
-                  teacherInfo.employment_type
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
+          <div className={"h-full"}>
+            <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+              👥 Teacher Information
+            </h3>
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Full Name
+                </p>
+                <p className="font-semibold text-gray-900 dark:text-white">
+                  {teacherInfo.name !== null ? (
+                    teacherInfo.name
+                  ) : (
+                    <Spinner size="sm" />
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  PSCS ID
+                </p>
+                <p className="font-mono text-gray-900 dark:text-white">
+                  {teacherInfo.pscs_id !== null ? (
+                    teacherInfo.pscs_id
+                  ) : (
+                    <Spinner size="sm" />
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Teacher Code
+                </p>
+                <p className="font-mono text-gray-900 dark:text-white">
+                  {teacherInfo.teacher_code !== null ? (
+                    teacherInfo.teacher_code
+                  ) : (
+                    <Spinner size="sm" />
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Employment Type
+                </p>
+                <p className="text-gray-900 dark:text-white">
+                  {teacherInfo.employment_type !== null ? (
+                    teacherInfo.employment_type
+                  ) : (
+                    <Spinner size="sm" />
+                  )}
+                </p>
+              </div>
             </div>
           </div>
         </Card>

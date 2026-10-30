@@ -50,6 +50,7 @@ export interface TimetableEntryRecord {
   teacher_name: string;
   teacher_code: string;
   room_name: string;
+  type: string;
 }
 
 export async function fetchTimetableEntriesByScheduleId(
@@ -82,6 +83,7 @@ export async function fetchTimetableEntriesByScheduleId(
       teacher_name: String(row.teacher_name ?? ""),
       teacher_code: String(row.teacher_code ?? ""),
       room_name: String(row.room_name ?? ""),
+      type: String(row.type ?? ""),
     }));
 
     return { success: true, data };
@@ -90,6 +92,41 @@ export async function fetchTimetableEntriesByScheduleId(
     return {
       success: false,
       error: (error as Error).message || "Failed to fetch timetable entries.",
+      data: [],
+    };
+  }
+}
+
+export interface SubjectUnitsRecord {
+  subject_id: string;
+  lecture_units: number;
+  lab_units: number;
+}
+
+export async function fetchSubjectsUnitsByIds(
+  subjectIds: string[]
+): Promise<{
+  success: boolean;
+  data?: SubjectUnitsRecord[];
+  error?: string;
+}> {
+  try {
+    const result = await sql<SubjectUnitsRecord[]>`
+      SELECT * FROM get_subjects_units_by_ids(${subjectIds}::uuid[]);
+    `;
+
+    const data: SubjectUnitsRecord[] = result.map((row) => ({
+      subject_id: String(row.subject_id),
+      lecture_units: Number(row.lecture_units) || 0,
+      lab_units: Number(row.lab_units) || 0,
+    }));
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to fetch subject units by IDs:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch subject units.",
       data: [],
     };
   }
@@ -305,6 +342,7 @@ export async function saveGeneratedSchedule(payload: {
     day: string;
     start_time: number;
     end_time: number;
+    type: string;
   }[];
 }): Promise<SaveScheduleResult>
 {

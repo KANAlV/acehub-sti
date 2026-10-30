@@ -299,7 +299,7 @@ export default function ScheduleDashboard() {
   // --- Loading Screen ---
   if (isLoading) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center font-sans text-gray-500 dark:text-gray-400">
+      <div className="flex h-full flex-col items-center justify-center font-sans text-gray-500 dark:text-gray-400">
         <Spinner size="xl" className="mb-4" />
         <p className="text-sm font-medium">Loading your schedule overview...</p>
       </div>
@@ -334,7 +334,7 @@ export default function ScheduleDashboard() {
   }
 
   return (
-    <div className="m-6 min-h-screen font-sans text-gray-900 dark:text-gray-100">
+    <div className="m-6 min-h-screen font-sans text-gray-900 dark:text-gray-100 scrollbar-thumb-gray-400 scrollbar-track-transparent">
       {/* Header Banner */}
       <div className="mb-6 flex flex-col justify-between rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:flex-row md:items-center dark:border-gray-800 dark:bg-gray-800">
         <div>

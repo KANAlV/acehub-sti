@@ -88,6 +88,7 @@ interface SaveScheduleEntryPayload {
   day: string;
   start_time: number;
   end_time: number;
+  type: string; // Added type field
 }
 
 export default function ScheduleManagement() {
@@ -444,6 +445,7 @@ export default function ScheduleManagement() {
           day: entry.day,
           start_time: timeToMinutes(entry.startTime),
           end_time: timeToMinutes(entry.endTime),
+          type: entry.type || entry.componentType.toLowerCase(), // Maps type correctly
         }));
 
         startTransition(() => {
@@ -478,50 +480,12 @@ export default function ScheduleManagement() {
             const entries: SaveScheduleEntryPayload[] = [];
 
             const lecHours = lectureUnits * 1.5;
-            const labHours = labUnits * 2.0;
-            const combinedHours = lecHours + labHours;
 
-            const canMerge =
-              lectureUnits > 0 && labUnits > 0 && combinedHours <= 5;
-            const shouldMerge = canMerge ? Math.random() < 0.8 : false;
-
-            if (shouldMerge) {
-              entries.push({
-                subject_id: subj.subject_id || null,
-                teacher_id: null,
-                room_id: null,
-                section: assignment.sectionCode,
-                day: "TBA",
-                start_time: 0,
-                end_time: 0,
-              });
-            } else {
-              if (lectureUnits > 0) {
-                const splitLecture =
-                  lecHours >= 5 ? Math.random() < 0.5 : false;
-                if (splitLecture) {
-                  entries.push(
-                    {
-                      subject_id: subj.subject_id || null,
-                      teacher_id: null,
-                      room_id: null,
-                      section: assignment.sectionCode,
-                      day: "TBA",
-                      start_time: 0,
-                      end_time: 0,
-                    },
-                    {
-                      subject_id: subj.subject_id || null,
-                      teacher_id: null,
-                      room_id: null,
-                      section: assignment.sectionCode,
-                      day: "TBA",
-                      start_time: 0,
-                      end_time: 0,
-                    },
-                  );
-                } else {
-                  entries.push({
+            if (lectureUnits > 0) {
+              const splitLecture = lecHours >= 5 ? Math.random() < 0.5 : false;
+              if (splitLecture) {
+                entries.push(
+                  {
                     subject_id: subj.subject_id || null,
                     teacher_id: null,
                     room_id: null,
@@ -529,11 +493,20 @@ export default function ScheduleManagement() {
                     day: "TBA",
                     start_time: 0,
                     end_time: 0,
-                  });
-                }
-              }
-
-              if (labUnits > 0) {
+                    type: "lecture",
+                  },
+                  {
+                    subject_id: subj.subject_id || null,
+                    teacher_id: null,
+                    room_id: null,
+                    section: assignment.sectionCode,
+                    day: "TBA",
+                    start_time: 0,
+                    end_time: 0,
+                    type: "lecture",
+                  },
+                );
+              } else {
                 entries.push({
                   subject_id: subj.subject_id || null,
                   teacher_id: null,
@@ -542,8 +515,22 @@ export default function ScheduleManagement() {
                   day: "TBA",
                   start_time: 0,
                   end_time: 0,
+                  type: "lecture",
                 });
               }
+            }
+
+            if (labUnits > 0) {
+              entries.push({
+                subject_id: subj.subject_id || null,
+                teacher_id: null,
+                room_id: null,
+                section: assignment.sectionCode,
+                day: "TBA",
+                start_time: 0,
+                end_time: 0,
+                type: "laboratory",
+              });
             }
 
             return entries;
