@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -131,6 +131,9 @@ export default function ScheduleTimetableClient({
     timeSlot: string;
     duration: number;
   } | null>(null);
+
+  const hasDroppedRef = useRef<boolean>(false);
+  const draggedDurationRef = useRef<number>(60); // Tracks precise duration during drag
 
   // --- Break Periods State --- //
   const [breakPeriods, setBreakPeriods] = useState<BreakPeriodRecord[]>([]);
@@ -512,19 +515,20 @@ export default function ScheduleTimetableClient({
     );
   };
 
-  // --- Drag and Drop Conflict Verification & Break Check --- //
+  // --- Drag and Drop Conflict Verification & Boundary Check --- //
   const handleDropToSlot = (
     targetDay: string,
     targetTimeSlot: string,
     droppedData: DragPayload,
   ) => {
+    hasDroppedRef.current = true;
     setDragOverCell(null);
     setDraggedEntryId(null);
     setDragSourceInfo(null);
     const targetStartMins = timeStrToMinutes(targetTimeSlot);
 
     const targetEntryId = droppedData.scheduleEntryId;
-    let duration = droppedData.duration || 60;
+    let duration = droppedData.duration || draggedDurationRef.current || 60;
 
     const activeRoom =
       selectedTimetableRoom !== "ALL"
@@ -541,6 +545,16 @@ export default function ScheduleTimetableClient({
     }
 
     const targetEndMins = targetStartMins + duration;
+    const MAX_DAY_LIMIT = 20 * 60 + 30; // 8:30 PM start + 30 min slot = 9:00 PM max end (20:30 + 30m = 21:00 / 1260 mins)
+
+    // Check -0.5: Day Boundary Check (Strictly cannot end past 9:00 PM)
+    if (targetEndMins > MAX_DAY_LIMIT + 30) {
+      setConflictModalData({
+        show: true,
+        message: `Scheduling Conflict: Class cannot end past 9:00 PM (Attempted end time: ${formatTime(targetEndMins)}).`,
+      });
+      return;
+    }
 
     // Check 0: Break Period Interruption Check
     const breakConflict = expandedBreaks.find((bp) => {
@@ -549,27 +563,6 @@ export default function ScheduleTimetableClient({
     });
 
     if (breakConflict) {
-      if (
-        droppedData.type === "existing" &&
-        targetEntryId &&
-        droppedData.originalDay
-      ) {
-        setChangedSchedules(
-          (prev) =>
-            prev.map((e) => {
-              if (e.schedule_entry_id === targetEntryId) {
-                return {
-                  ...e,
-                  day: droppedData.originalDay!,
-                  start_time: droppedData.originalStartTime!,
-                  end_time: droppedData.originalEndTime!,
-                };
-              }
-              return e;
-            }) as LocalTimetableEntry[],
-        );
-      }
-
       setConflictModalData({
         show: true,
         message: `Scheduling Conflict: Cannot place classes during break period [${breakConflict.break_description}] (${formatTime(breakConflict.start_time)} - ${formatTime(breakConflict.end_time)}).`,
@@ -607,27 +600,6 @@ export default function ScheduleTimetableClient({
     });
 
     if (ghostOverlapConflict) {
-      if (
-        droppedData.type === "existing" &&
-        targetEntryId &&
-        droppedData.originalDay
-      ) {
-        setChangedSchedules(
-          (prev) =>
-            prev.map((e) => {
-              if (e.schedule_entry_id === targetEntryId) {
-                return {
-                  ...e,
-                  day: droppedData.originalDay!,
-                  start_time: droppedData.originalStartTime!,
-                  end_time: droppedData.originalEndTime!,
-                };
-              }
-              return e;
-            }) as LocalTimetableEntry[],
-        );
-      }
-
       setConflictModalData({
         show: true,
         message: `Scheduling Conflict: Room is already occupied by another section's class block [Section ${ghostOverlapConflict.section} - ${ghostOverlapConflict.course_code}] (${formatTime(ghostOverlapConflict.start_time)} - ${formatTime(ghostOverlapConflict.end_time)}).`,
@@ -635,11 +607,10 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // Check 1: Direct Block Overlap Check (Acts like dropping on a break period)
+    // Check 1: Direct Block Overlap Check (Excluding self so dropping back to original slot or overlapping self doesn't block)
     const blockOverlapConflict = changedSchedules.find((e) => {
       if (!e.day || e.start_time <= 0) return false;
       if (e.day.toLowerCase() !== targetDay.toLowerCase()) return false;
-      // Exclude the item being moved itself
       if (
         droppedData.scheduleEntryId &&
         e.schedule_entry_id === droppedData.scheduleEntryId
@@ -650,27 +621,6 @@ export default function ScheduleTimetableClient({
     });
 
     if (blockOverlapConflict) {
-      if (
-        droppedData.type === "existing" &&
-        targetEntryId &&
-        droppedData.originalDay
-      ) {
-        setChangedSchedules(
-          (prev) =>
-            prev.map((e) => {
-              if (e.schedule_entry_id === targetEntryId) {
-                return {
-                  ...e,
-                  day: droppedData.originalDay!,
-                  start_time: droppedData.originalStartTime!,
-                  end_time: droppedData.originalEndTime!,
-                };
-              }
-              return e;
-            }) as LocalTimetableEntry[],
-        );
-      }
-
       setConflictModalData({
         show: true,
         message: `Scheduling Conflict: Time slot is already occupied by another class block [${blockOverlapConflict.course_code}: ${blockOverlapConflict.course_name}] (${formatTime(blockOverlapConflict.start_time)} - ${formatTime(blockOverlapConflict.end_time)}).`,
@@ -694,27 +644,6 @@ export default function ScheduleTimetableClient({
     });
 
     if (sectionConflict) {
-      if (
-        droppedData.type === "existing" &&
-        targetEntryId &&
-        droppedData.originalDay
-      ) {
-        setChangedSchedules(
-          (prev) =>
-            prev.map((e) => {
-              if (e.schedule_entry_id === targetEntryId) {
-                return {
-                  ...e,
-                  day: droppedData.originalDay!,
-                  start_time: droppedData.originalStartTime!,
-                  end_time: droppedData.originalEndTime!,
-                };
-              }
-              return e;
-            }) as LocalTimetableEntry[],
-        );
-      }
-
       setConflictModalData({
         show: true,
         message: `Conflict Detected: Section [${droppedData.section}] is already occupied by ${sectionConflict.course_code} (${sectionConflict.course_name}) on ${targetDay} from ${formatTime(sectionConflict.start_time)} to ${formatTime(sectionConflict.end_time)}.`,
@@ -742,27 +671,6 @@ export default function ScheduleTimetableClient({
       });
 
       if (roomConflict) {
-        if (
-          droppedData.type === "existing" &&
-          targetEntryId &&
-          droppedData.originalDay
-        ) {
-          setChangedSchedules(
-            (prev) =>
-              prev.map((e) => {
-                if (e.schedule_entry_id === targetEntryId) {
-                  return {
-                    ...e,
-                    day: droppedData.originalDay!,
-                    start_time: droppedData.originalStartTime!,
-                    end_time: droppedData.originalEndTime!,
-                  };
-                }
-                return e;
-              }) as LocalTimetableEntry[],
-          );
-        }
-
         setConflictModalData({
           show: true,
           message: `Conflict Detected: Room [${activeRoom}] is already occupied by section ${roomConflict.section} (${roomConflict.course_code}) on ${targetDay} from ${formatTime(roomConflict.start_time)} to ${formatTime(roomConflict.end_time)}.`,
@@ -796,7 +704,7 @@ export default function ScheduleTimetableClient({
 
   if (isLoading) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3">
+      <div className="flex h-[75vh] w-full flex-col items-center justify-center gap-3">
         <Spinner size="xl" />
         <span className="text-sm text-gray-500 dark:text-gray-400">
           Loading timetable for {scheduleName}...
@@ -1069,39 +977,111 @@ export default function ScheduleTimetableClient({
 
                         const displayEntry = matchedEntry || ghostEntry;
 
-                        // Check if this cell is the original source slot of the currently dragged block
-                        const isDragSource =
-                          dragSourceInfo &&
-                          dragSourceInfo.day.toLowerCase() ===
-                            day.toLowerCase() &&
-                          formatMinutesToTimeStr(dragSourceInfo.start_time) ===
-                            timeSlot;
+                        // Check if this displayed entry is currently being dragged
+                        const isBeingDragged =
+                          displayEntry &&
+                          displayEntry.schedule_entry_id === draggedEntryId;
 
-                        if (isDragSource) {
-                          const srcDuration = dragSourceInfo.duration || 60;
-                          const srcRowSpan = Math.max(
+                        if (isBeingDragged) {
+                          const durationMins =
+                            displayEntry.end_time - displayEntry.start_time ||
+                            displayEntry.originalDuration ||
+                            60;
+                          const rowSpan = Math.max(
                             1,
-                            Math.round(srcDuration / 30),
+                            Math.round(durationMins / 30),
                           );
-                          const srcHeightPx = srcRowSpan * 42;
+                          const srcHeightPx = rowSpan * 42;
 
                           return (
                             <td
                               key={day}
-                              rowSpan={srcRowSpan}
+                              rowSpan={rowSpan}
                               style={{
                                 height: `${srcHeightPx}px`,
                                 position: "relative",
                               }}
-                              className="border-r border-dashed border-cyan-400 bg-cyan-50/50 p-2 text-center align-middle dark:bg-cyan-950/20"
+                              onDragEnd={() => {
+                                setDraggedEntryId(null);
+                                setDragSourceInfo(null);
+                                setDragOverCell(null);
+                              }}
+                              className="border-r border-dashed border-cyan-400 bg-cyan-50/50 p-0 align-top dark:bg-cyan-950/20"
                             >
+                              {/* ONLY the top 30-min slot acts as the drop target to allow nudging the rest of the span */}
                               <div
-                                className="absolute inset-1.5 flex flex-col items-center justify-center gap-1 rounded border border-dashed border-cyan-300 bg-cyan-100/40 p-2 text-center text-[10px] font-semibold text-cyan-700 dark:border-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300"
-                                style={{ height: `${srcHeightPx - 12}px` }}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  if (
+                                    !dragOverCell ||
+                                    dragOverCell.day !== day ||
+                                    dragOverCell.timeSlot !== timeSlot
+                                  ) {
+                                    setDragOverCell({
+                                      day,
+                                      timeSlot,
+                                      duration: durationMins,
+                                    });
+                                  }
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const rawData =
+                                    e.dataTransfer.getData("text/plain");
+                                  if (!rawData) return;
+                                  try {
+                                    const parsed = JSON.parse(
+                                      rawData,
+                                    ) as DragPayload;
+                                    handleDropToSlot(day, timeSlot, parsed);
+                                  } catch (err) {
+                                    console.error("Drop parse error", err);
+                                  }
+                                }}
+                                className="absolute inset-x-0 top-0 z-20 flex h-[42px] items-center justify-center gap-1 border-b border-dashed border-cyan-400 bg-cyan-100/70 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200"
                               >
-                                <HiLocationMarker className="h-4 w-4 animate-bounce" />
-                                <span>Original Position</span>
+                                <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
+                                <span>Original Position (Drop here)</span>
                               </div>
+
+                              {/* The remaining lower cells of the original position are free normal drop cells for nudging */}
+                              <div
+                                className="absolute inset-x-0 top-[42px] bottom-0 p-2 text-center"
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  const nextSlotTime = formatMinutesToTimeStr(
+                                    timeStrToMinutes(timeSlot) + 30,
+                                  );
+                                  if (
+                                    !dragOverCell ||
+                                    dragOverCell.day !== day ||
+                                    dragOverCell.timeSlot !== nextSlotTime
+                                  ) {
+                                    setDragOverCell({
+                                      day,
+                                      timeSlot: nextSlotTime,
+                                      duration: durationMins,
+                                    });
+                                  }
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const rawData =
+                                    e.dataTransfer.getData("text/plain");
+                                  if (!rawData) return;
+                                  try {
+                                    const parsed = JSON.parse(
+                                      rawData,
+                                    ) as DragPayload;
+                                    const nextSlotTime = formatMinutesToTimeStr(
+                                      timeStrToMinutes(timeSlot) + 30,
+                                    );
+                                    handleDropToSlot(day, nextSlotTime, parsed);
+                                  } catch (err) {
+                                    console.error("Drop parse error", err);
+                                  }
+                                }}
+                              ></div>
                             </td>
                           );
                         }
@@ -1145,7 +1125,9 @@ export default function ScheduleTimetableClient({
                               }}
                               draggable={isEditMode && !isGhost}
                               onDragStart={(e) => {
+                                hasDroppedRef.current = false;
                                 setDraggedEntryId(scheduleEntryId);
+                                draggedDurationRef.current = durationMins;
                                 setDragSourceInfo({
                                   day: displayEntry.day,
                                   start_time: displayEntry.start_time,
@@ -1157,9 +1139,8 @@ export default function ScheduleTimetableClient({
                                     displayEntry.room_name,
                                   );
                                 }
-                                handleUnassignEntry(scheduleEntryId);
 
-                                // Create a cleanly isolated drag preview element (completely independent of dashboard containers)
+                                // Create a cleanly isolated drag preview element
                                 const dragPreview =
                                   document.createElement("div");
                                 dragPreview.style.position = "absolute";
@@ -1405,15 +1386,6 @@ export default function ScheduleTimetableClient({
                           },
                         );
 
-                        // Also check if covered by drag source span
-                        const isCoveredByDragSource =
-                          dragSourceInfo &&
-                          dragSourceInfo.day.toLowerCase() ===
-                            day.toLowerCase() &&
-                          slotTotalMins > dragSourceInfo.start_time &&
-                          slotTotalMins <
-                            dragSourceInfo.start_time + dragSourceInfo.duration;
-
                         const isCoveredByBreak = expandedBreaks.some((bp) => {
                           if (bp.day.toLowerCase() !== day.toLowerCase())
                             return false;
@@ -1426,7 +1398,6 @@ export default function ScheduleTimetableClient({
                         if (
                           isCoveredByClass ||
                           isCoveredByGhost ||
-                          isCoveredByDragSource ||
                           isCoveredByBreak
                         ) {
                           return null;
@@ -1456,27 +1427,8 @@ export default function ScheduleTimetableClient({
                             key={day}
                             onDragOver={(e) => {
                               e.preventDefault();
-                              let dragDuration = 60;
-
-                              try {
-                                const raw =
-                                  e.dataTransfer.getData("text/plain");
-                                if (raw) {
-                                  const parsed = JSON.parse(raw);
-                                  if (parsed.duration)
-                                    dragDuration = parsed.duration;
-                                } else if (draggedEntryId) {
-                                  const foundEntry = changedSchedules.find(
-                                    (e) =>
-                                      e.schedule_entry_id === draggedEntryId,
-                                  );
-                                  if (foundEntry?.originalDuration) {
-                                    dragDuration = foundEntry.originalDuration;
-                                  }
-                                }
-                              } catch (err) {
-                                // ignore parse errors during drag over
-                              }
+                              const dragDuration =
+                                draggedDurationRef.current || 60;
 
                               if (
                                 !dragOverCell ||
@@ -1671,6 +1623,7 @@ export default function ScheduleTimetableClient({
                               key={subIdx}
                               draggable={!isPlaced}
                               onDragStart={(e) => {
+                                draggedDurationRef.current = itemDuration;
                                 e.dataTransfer.setData(
                                   "text/plain",
                                   JSON.stringify({
