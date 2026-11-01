@@ -384,10 +384,30 @@ export default function ScheduleManagement() {
     setOpenAqWarningModal(false);
     setOpenLoadingModal(true);
     setIsSubmittingAutoGeneration(true);
-    setGenerationProgress(30);
-    setGenerationStatusText("Initializing program sections generation...");
+    setGenerationProgress(20);
+    setGenerationStatusText("Fetching subject requirements...");
+
+    // 1. Fetch subjects here so they are available to both branches
+    const subjectRes = await fetchSubjectsForGeneration(
+      curriculumIds,
+      term,
+    );
+    if (!subjectRes.success || !subjectRes.data) {
+      setIsSubmittingAutoGeneration(false);
+      setOpenLoadingModal(false);
+      setToastMessage(
+        subjectRes.error || "Failed to fetch subject requirements.",
+      );
+      setToastType("error");
+      setShowToast(true);
+      return;
+    }
+    const allSubjects = subjectRes.data;
 
     // Step A: Run section generation
+    setGenerationProgress(40);
+    setGenerationStatusText("Initializing program sections generation...");
+
     const sectionRes = await generateProgramSections(
       scheduleName,
       curriculumIds,
@@ -410,7 +430,7 @@ export default function ScheduleManagement() {
       return;
     }
 
-    setGenerationProgress(60);
+    setGenerationProgress(65);
 
     let isSuccess = false;
     let errorMessage = "";
@@ -425,6 +445,8 @@ export default function ScheduleManagement() {
         scheduleName,
         curriculumIds,
         term,
+        sectionRes.sections,
+        allSubjects,
       );
       console.log("=== ROOM & CLASS SCHEDULE ENTRIES ===", roomScheduleRes);
 
@@ -466,6 +488,7 @@ export default function ScheduleManagement() {
         scheduleName,
         term,
         sectionRes.sections,
+        allSubjects,
       );
       console.log("=== SUBJECT ASSIGNMENT RESULT ===", assignRes);
 
@@ -739,14 +762,14 @@ export default function ScheduleManagement() {
   // Filtering entries enforcing strict mutual ALL rule: only one dropdown can be "ALL" at a time
   const filteredTimetableEntries = scheduleEntriesResult
     ? scheduleEntriesResult.filter((entry) => {
-        const matchesSection =
-          selectedTimetableSection === "ALL" ||
-          entry.sectionCode === selectedTimetableSection;
-        const matchesRoom =
-          selectedTimetableRoom === "ALL" ||
-          entry.roomName === selectedTimetableRoom;
-        return matchesSection && matchesRoom;
-      })
+      const matchesSection =
+        selectedTimetableSection === "ALL" ||
+        entry.sectionCode === selectedTimetableSection;
+      const matchesRoom =
+        selectedTimetableRoom === "ALL" ||
+        entry.roomName === selectedTimetableRoom;
+      return matchesSection && matchesRoom;
+    })
     : [];
 
   const availableTimetableSections = scheduleEntriesResult
@@ -1581,124 +1604,124 @@ export default function ScheduleManagement() {
                 <div className="max-h-[600px] overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
-                      <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                        <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
-                          Time
+                    <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                      <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+                        Time
+                      </th>
+                      {daysOfWeek.map((day) => (
+                        <th
+                          key={day}
+                          className="border-r border-b p-3 text-center font-bold"
+                        >
+                          {day.toUpperCase()}
                         </th>
-                        {daysOfWeek.map((day) => (
-                          <th
-                            key={day}
-                            className="border-r border-b p-3 text-center font-bold"
-                          >
-                            {day.toUpperCase()}
-                          </th>
-                        ))}
-                      </tr>
+                      ))}
+                    </tr>
                     </thead>
                     <tbody>
-                      {timeSlotsGrid.map((timeSlot, tIdx) => {
-                        const slotTimeParts = timeSlot.split(":");
-                        const slotHour = parseInt(slotTimeParts[0], 10);
-                        const slotMin = parseInt(slotTimeParts[1], 10);
-                        const slotTotalMins = slotHour * 60 + slotMin;
+                    {timeSlotsGrid.map((timeSlot, tIdx) => {
+                      const slotTimeParts = timeSlot.split(":");
+                      const slotHour = parseInt(slotTimeParts[0], 10);
+                      const slotMin = parseInt(slotTimeParts[1], 10);
+                      const slotTotalMins = slotHour * 60 + slotMin;
 
-                        return (
-                          <tr
-                            key={tIdx}
-                            className="border-b dark:border-gray-800"
-                          >
-                            <td className="sticky left-0 z-10 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                              {timeSlot}
-                            </td>
-                            {daysOfWeek.map((day) => {
-                              const matchedEntry =
-                                filteredTimetableEntries.find((entry) => {
-                                  if (entry.day !== day) return false;
-                                  const [entryStart] =
-                                    entry.startTime.split(" - ");
-                                  return entryStart === timeSlot;
-                                });
+                      return (
+                        <tr
+                          key={tIdx}
+                          className="border-b dark:border-gray-800"
+                        >
+                          <td className="sticky left-0 z-10 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                            {timeSlot}
+                          </td>
+                          {daysOfWeek.map((day) => {
+                            const matchedEntry =
+                              filteredTimetableEntries.find((entry) => {
+                                if (entry.day !== day) return false;
+                                const [entryStart] =
+                                  entry.startTime.split(" - ");
+                                return entryStart === timeSlot;
+                              });
 
-                              if (matchedEntry) {
-                                const [startH, startM] = matchedEntry.startTime
-                                  .split(":")
-                                  .map(Number);
-                                const [endH, endM] = matchedEntry.endTime
-                                  .split(":")
-                                  .map(Number);
-                                const durationMins =
-                                  endH * 60 + endM - (startH * 60 + startM);
-                                const rowSpan = Math.max(
-                                  1,
-                                  Math.round(durationMins / 30),
-                                );
+                            if (matchedEntry) {
+                              const [startH, startM] = matchedEntry.startTime
+                                .split(":")
+                                .map(Number);
+                              const [endH, endM] = matchedEntry.endTime
+                                .split(":")
+                                .map(Number);
+                              const durationMins =
+                                endH * 60 + endM - (startH * 60 + startM);
+                              const rowSpan = Math.max(
+                                1,
+                                Math.round(durationMins / 30),
+                              );
 
-                                const blockStyle =
-                                  "bg-sky-50 text-sky-950 border-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800";
-
-                                return (
-                                  <td
-                                    key={day}
-                                    rowSpan={rowSpan}
-                                    className={`border-r p-1.5 align-top ${blockStyle} border font-sans`}
-                                  >
-                                    <div className="flex h-full flex-col justify-between rounded p-2 shadow-xs">
-                                      <div>
-                                        <div className="text-xs font-bold text-gray-900 dark:text-white">
-                                          {matchedEntry.courseCode}
-                                        </div>
-                                        <div className="truncate text-[10px] opacity-90">
-                                          {matchedEntry.courseName}
-                                        </div>
-                                      </div>
-                                      <div className="mt-2 space-y-0.5 text-[10px] font-semibold opacity-90">
-                                        <div>
-                                          👥 Sec: {matchedEntry.sectionCode}
-                                        </div>
-                                        <div>
-                                          📍 Room: {matchedEntry.roomName}
-                                        </div>
-                                        <div className="font-mono">
-                                          🕒 {matchedEntry.startTime} -{" "}
-                                          {matchedEntry.endTime}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                );
-                              }
-
-                              const isCoveredByPrevious =
-                                filteredTimetableEntries.some((entry) => {
-                                  if (entry.day !== day) return false;
-                                  const [startH, startM] = entry.startTime
-                                    .split(":")
-                                    .map(Number);
-                                  const [endH, endM] = entry.endTime
-                                    .split(":")
-                                    .map(Number);
-                                  const entryStartMins = startH * 60 + startM;
-                                  const entryEndMins = endH * 60 + endM;
-                                  return (
-                                    slotTotalMins > entryStartMins &&
-                                    slotTotalMins < entryEndMins
-                                  );
-                                });
-
-                              if (isCoveredByPrevious) {
-                                return null;
-                              }
+                              const blockStyle =
+                                "bg-sky-50 text-sky-950 border-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800";
 
                               return (
                                 <td
                                   key={day}
-                                  className="border-r p-2 text-center text-gray-300 dark:border-gray-800"
-                                ></td>
+                                  rowSpan={rowSpan}
+                                  className={`border-r p-1.5 align-top ${blockStyle} border font-sans`}
+                                >
+                                  <div className="flex h-full flex-col justify-between rounded p-2 shadow-xs">
+                                    <div>
+                                      <div className="text-xs font-bold text-gray-900 dark:text-white">
+                                        {matchedEntry.courseCode}
+                                      </div>
+                                      <div className="truncate text-[10px] opacity-90">
+                                        {matchedEntry.courseName}
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 space-y-0.5 text-[10px] font-semibold opacity-90">
+                                      <div>
+                                        Sec: {matchedEntry.sectionCode}
+                                      </div>
+                                      <div>
+                                        Room: {matchedEntry.roomName}
+                                      </div>
+                                      <div className="font-mono">
+                                        {matchedEntry.startTime} -{" "}
+                                        {matchedEntry.endTime}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
                               );
-                            })}
-                          </tr>
-                        );
-                      })}
+                            }
+
+                            const isCoveredByPrevious =
+                              filteredTimetableEntries.some((entry) => {
+                                if (entry.day !== day) return false;
+                                const [startH, startM] = entry.startTime
+                                  .split(":")
+                                  .map(Number);
+                                const [endH, endM] = entry.endTime
+                                  .split(":")
+                                  .map(Number);
+                                const entryStartMins = startH * 60 + startM;
+                                const entryEndMins = endH * 60 + endM;
+                                return (
+                                  slotTotalMins > entryStartMins &&
+                                  slotTotalMins < entryEndMins
+                                );
+                              });
+
+                            if (isCoveredByPrevious) {
+                              return null;
+                            }
+
+                            return (
+                              <td
+                                key={day}
+                                className="border-r p-2 text-center text-gray-300 dark:border-gray-800"
+                              ></td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
                     </tbody>
                   </table>
                 </div>

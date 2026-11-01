@@ -441,10 +441,10 @@ export async function generateRoomAndClassSchedules(
         const shouldBeContinuous = hasLecture && hasLab && Math.random() < 0.5;
 
         if (shouldBeContinuous) {
-          // Randomly choose whether Lec comes first or Lab comes first
           const lecFirst = Math.random() < 0.5;
 
           if (lecFirst) {
+            // Schedule Lecture first in the lab room
             const lecResult = scheduleSession(
               subject,
               sectionCode,
@@ -461,12 +461,12 @@ export async function generateRoomAndClassSchedules(
               preferredVacantDay,
               breakPeriods,
               subject.lab_type,
-              lectureRoomTypeId,
+              subject.lab_type,
             );
 
             if (lecResult) {
-              // Try to place the lab immediately after the lecture slot on the same day
-              scheduleSessionStartingAt(
+              // Force Lab to use the exact same roomId and follow immediately after
+              scheduleSessionStartingAtRoom(
                 subject,
                 sectionCode,
                 "LABORATORY",
@@ -475,17 +475,18 @@ export async function generateRoomAndClassSchedules(
                 timeSlots,
                 lecResult.day,
                 lecResult.endSlotIndex,
+                lecResult.roomId,
+                lecResult.roomName,
                 occupiedRoomSlots,
                 occupiedSectionSlots,
                 occupiedCourseSlots,
                 sectionActiveDays,
                 scheduleEntries,
                 breakPeriods,
-                subject.lab_type,
-                lectureRoomTypeId,
               );
             }
           } else {
+            // Schedule Lab first
             const labResult = scheduleSession(
               subject,
               sectionCode,
@@ -506,7 +507,8 @@ export async function generateRoomAndClassSchedules(
             );
 
             if (labResult) {
-              scheduleSessionStartingAt(
+              // Force Lecture to use the exact same roomId and follow immediately after
+              scheduleSessionStartingAtRoom(
                 subject,
                 sectionCode,
                 "LECTURE",
@@ -515,14 +517,14 @@ export async function generateRoomAndClassSchedules(
                 timeSlots,
                 labResult.day,
                 labResult.endSlotIndex,
+                labResult.roomId,
+                labResult.roomName,
                 occupiedRoomSlots,
                 occupiedSectionSlots,
                 occupiedCourseSlots,
                 sectionActiveDays,
                 scheduleEntries,
                 breakPeriods,
-                subject.lab_type,
-                lectureRoomTypeId,
               );
             }
           }
@@ -718,7 +720,12 @@ function scheduleSession(
   breakPeriods: BreakPeriodRecord[],
   requiredLabTypeId?: string | null,
   lectureRoomTypeId?: string | null,
-): { day: string; endSlotIndex: number } | null {
+): {
+  day: string;
+  endSlotIndex: number;
+  roomId: string | null;
+  roomName: string;
+} | null {
   const slotsNeeded = Math.ceil((durationHours * 60) / 30);
   const activeDays = sectionActiveDays.get(sectionCode)!;
   const fallbackRooms = getFilteredRooms(
@@ -802,7 +809,12 @@ function scheduleSession(
             endTime,
             type: componentType.toLowerCase(),
           });
-          return { day, endSlotIndex: i + slotsNeeded };
+          return {
+            day,
+            endSlotIndex: i + slotsNeeded,
+            roomId: room.room_id,
+            roomName: room.room_name || "Unassigned Room",
+          };
         }
       }
     }
@@ -867,14 +879,19 @@ function scheduleSession(
         endTime,
         type: componentType.toLowerCase(),
       });
-      return { day, endSlotIndex: i + slotsNeeded };
+      return {
+        day,
+        endSlotIndex: i + slotsNeeded,
+        roomId: null,
+        roomName: "Unassigned Room",
+      };
     }
   }
 
   return null;
 }
 
-function scheduleSessionStartingAt(
+function scheduleSessionStartingAtRoom(
   subject: AssignedSubjectDetail,
   sectionCode: string,
   componentType: "LECTURE" | "LABORATORY",
@@ -883,23 +900,17 @@ function scheduleSessionStartingAt(
   timeSlots: string[],
   day: string,
   startIndex: number,
+  targetRoomId: string | null,
+  targetRoomName: string,
   occupiedRoomSlots: Set<string>,
   occupiedSectionSlots: Set<string>,
   occupiedCourseSlots: Set<string>,
   sectionActiveDays: Map<string, Set<string>>,
   scheduleEntries: ScheduleEntry[],
   breakPeriods: BreakPeriodRecord[],
-  requiredLabTypeId?: string | null,
-  lectureRoomTypeId?: string | null,
 ): boolean {
   const slotsNeeded = Math.ceil((durationHours * 60) / 30);
   const activeDays = sectionActiveDays.get(sectionCode)!;
-  const fallbackRooms = getFilteredRooms(
-    componentType,
-    rooms,
-    requiredLabTypeId,
-    lectureRoomTypeId,
-  );
 
   if (startIndex + slotsNeeded > timeSlots.length) return false;
 
@@ -924,17 +935,17 @@ function scheduleSessionStartingAt(
   );
   if (!isCourseFree) return false;
 
-  // Find a free room
-  for (const room of fallbackRooms) {
+  // Check if the exact target room is free for these slots
+  if (targetRoomId) {
     const isRoomFree = sessionSlots.every(
       (slot: string) =>
-        !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+        !occupiedRoomSlots.has(`${targetRoomId}_${day}_${slot}`),
     );
 
     if (isRoomFree) {
       sessionSlots.forEach((slot: string) => {
         occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-        occupiedRoomSlots.add(`${room.room_id}_${day}_${slot}`);
+        occupiedRoomSlots.add(`${targetRoomId}_${day}_${slot}`);
         occupiedCourseSlots.add(
           `${subject.course_code}_${componentType}_${day}_${slot}`,
         );
@@ -953,8 +964,8 @@ function scheduleSessionStartingAt(
         courseName: subject.course_name,
         componentType,
         units,
-        roomId: room.room_id,
-        roomName: room.room_name || "Unassigned Room",
+        roomId: targetRoomId,
+        roomName: targetRoomName,
         day,
         startTime,
         endTime,
@@ -964,7 +975,7 @@ function scheduleSessionStartingAt(
     }
   }
 
-  // Fallback without room constraint
+  // Fallback if target room is occupied: schedule without room constraint
   sessionSlots.forEach((slot: string) => {
     occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
     occupiedCourseSlots.add(
