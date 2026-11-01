@@ -31,6 +31,7 @@ import {
   HiX,
   HiRefresh,
   HiLocationMarker,
+  HiScissors,
 } from "react-icons/hi";
 import { FaCalendarDay, FaList } from "react-icons/fa6";
 import { FaCoffee } from "react-icons/fa";
@@ -99,8 +100,8 @@ interface DragPayload {
 }
 
 export default function ScheduleTimetableClient({
-                                                  scheduleName,
-                                                }: ScheduleTimetableClientProps) {
+  scheduleName,
+}: ScheduleTimetableClientProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
 
@@ -129,6 +130,19 @@ export default function ScheduleTimetableClient({
     show: boolean;
     message: string;
   }>({ show: false, message: "" });
+
+  // --- Split Modal State & Duplicate Scanning --- //
+  const [splitModalData, setSplitModalData] = useState<{
+    show: boolean;
+    entry: LocalTimetableEntry | null;
+    splitDurations: number[]; // in minutes
+    matchingDuplicates: LocalTimetableEntry[];
+  }>({
+    show: false,
+    entry: null,
+    splitDurations: [60, 60],
+    matchingDuplicates: [],
+  });
 
   // --- Confirmation Modal State for Lecture in Lab Room --- //
   const [confirmModalData, setConfirmModalData] = useState<{
@@ -234,7 +248,6 @@ export default function ScheduleTimetableClient({
     if (!typeId) return "Standard Room";
     const cleanedId: string = typeId.trim().toLowerCase();
 
-    // 1. Direct lookup from roomTypesList by matching room_type_id
     if (roomTypesList && roomTypesList.length > 0) {
       const found = roomTypesList.find(
         (rt: RoomType) => rt.room_type_id?.trim().toLowerCase() === cleanedId,
@@ -242,7 +255,6 @@ export default function ScheduleTimetableClient({
       if (found) return found.value;
     }
 
-    // 2. Return cleaned string if no match is found yet
     return cleanedId;
   };
 
@@ -296,7 +308,6 @@ export default function ScheduleTimetableClient({
   useEffect(() => {
     void getBreakPeriods();
 
-    // Fetch rooms and room types list via fetchRoomTypeList on mount
     async function loadMasterData() {
       try {
         const [roomRes, roomTypesRes] = await Promise.all([
@@ -355,7 +366,6 @@ export default function ScheduleTimetableClient({
         if (res.success && res.data) {
           const loadedData = res.data as LocalTimetableEntry[];
 
-          // Extract unique subject IDs (no duplicates)
           const uniqueSubjectIds = Array.from(
             new Set(
               loadedData
@@ -364,7 +374,6 @@ export default function ScheduleTimetableClient({
             ),
           );
 
-          // Fetch official unit mappings and lab_types for all unique subjects
           const unitsMap = new Map<
             string,
             { lecture_units: number; lab_units: number; lab_type: string }
@@ -383,7 +392,6 @@ export default function ScheduleTimetableClient({
           }
           setSubjectUnitsMap(unitsMap);
 
-          // Map database records directly, using their type and respective unit duration
           const processedData = loadedData.map((entry) => {
             let computedDuration = 60; // default fallback
             const isLab = entry.type?.toLowerCase() === "laboratory";
@@ -449,7 +457,6 @@ export default function ScheduleTimetableClient({
     }
   }, [scheduleID]);
 
-  // Discard changes action
   const handleDiscardChanges = () => {
     setChangedSchedules(originalEntries);
     setDragSourceInfo(null);
@@ -530,7 +537,6 @@ export default function ScheduleTimetableClient({
       });
     });
 
-    // Sort breaks so latest end time takes priority during overlaps
     return expanded.sort((a, b) => {
       if (a.day !== b.day) return a.day.localeCompare(b.day);
       if (a.start_time !== b.start_time) return a.start_time - b.start_time;
@@ -540,7 +546,6 @@ export default function ScheduleTimetableClient({
 
   const expandedBreaks = getExpandedBreaks();
 
-  // Filter active/placed entries for grid display
   const filteredTimetableEntries = changedSchedules.filter((entry) => {
     if (!entry.day || entry.start_time === undefined || entry.start_time <= 0) {
       return false;
@@ -558,7 +563,6 @@ export default function ScheduleTimetableClient({
     new Set(originalEntries.map((e) => e.section).filter(Boolean)),
   );
 
-  // --- Unassign / Return to Sidebar Handler --- //
   const handleUnassignEntry = (scheduleEntryId: string) => {
     setChangedSchedules(
       (prev) =>
@@ -576,7 +580,6 @@ export default function ScheduleTimetableClient({
     );
   };
 
-  // --- Core Placement & Room Type Validation --- //
   const executeDropPlacement = (
     targetDay: string,
     targetStartMins: number,
@@ -607,7 +610,6 @@ export default function ScheduleTimetableClient({
     );
   };
 
-  // --- Drag and Drop Conflict Verification & Boundary Check --- //
   const handleDropToSlot = (
     targetDay: string,
     targetTimeSlot: string,
@@ -637,9 +639,8 @@ export default function ScheduleTimetableClient({
     }
 
     const targetEndMins = targetStartMins + duration;
-    const MAX_DAY_LIMIT = 20 * 60 + 30; // 8:30 PM start + 30 min slot = 9:00 PM max end
+    const MAX_DAY_LIMIT = 20 * 60 + 30;
 
-    // Check -0.5: Day Boundary Check (Strictly cannot end past 9:00 PM)
     if (targetEndMins > MAX_DAY_LIMIT + 30) {
       setConflictModalData({
         show: true,
@@ -648,7 +649,6 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // --- Room Type Validation & Warnings with Clean Names --- //
     if (activeRoom && activeRoom !== "ALL" && droppedData.subjectId) {
       const targetRoomObj = allRooms.find(
         (r) => r.room_name?.toLowerCase() === activeRoom.toLowerCase(),
@@ -664,7 +664,6 @@ export default function ScheduleTimetableClient({
           ? String(subjectMeta.lab_type).trim()
           : "";
 
-        // Resolve friendly names using roomTypeFetcher matching fetchRoomTypeList data
         const roomTypeName = roomTypeFetcher(roomTypeUuid);
         const requiredLabTypeName = roomTypeFetcher(requiredLabTypeUuid);
 
@@ -681,7 +680,6 @@ export default function ScheduleTimetableClient({
             return;
           }
         } else {
-          // Lecture block placed in a lab room -> Show warning confirmation modal with clean names
           const isLabRoom =
             roomTypeName.toLowerCase().includes("lab") ||
             roomTypeName.toLowerCase().includes("kitchen") ||
@@ -716,7 +714,6 @@ export default function ScheduleTimetableClient({
       }
     }
 
-    // Check 0: Break Period Interruption Check
     const breakConflict = expandedBreaks.find((bp) => {
       if (bp.day.toLowerCase() !== targetDay.toLowerCase()) return false;
       return targetStartMins < bp.end_time && targetEndMins > bp.start_time;
@@ -730,7 +727,6 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // Check 0.5: Ghost / Overlapping Room Entry Check
     const ghostOverlapConflict = changedSchedules.find((entry) => {
       if (!entry.day || entry.start_time <= 0) return false;
       if (entry.day.toLowerCase() !== targetDay.toLowerCase()) return false;
@@ -766,7 +762,6 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // Check 1: Direct Block Overlap Check (Scoped strictly to the active room)
     const blockOverlapConflict = changedSchedules.find((e) => {
       if (!e.day || e.start_time <= 0) return false;
       if (e.day.toLowerCase() !== targetDay.toLowerCase()) return false;
@@ -797,7 +792,6 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // Conflict Check 1: Same section occupied at target time
     const sectionConflict = changedSchedules.find((e) => {
       if (!e.day || e.start_time <= 0) return false;
       if (
@@ -820,7 +814,6 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // Conflict Check 2: Same room occupied at target time
     if (activeRoom && activeRoom !== "ALL") {
       const roomConflict = changedSchedules.find((e) => {
         if (!e.day || e.start_time <= 0) return false;
@@ -855,6 +848,95 @@ export default function ScheduleTimetableClient({
       droppedData,
       activeRoom,
     );
+  };
+
+  // --- Handlers for Subject Splitting & Automatic Duplicate Merging --- //
+  const handleOpenSplitModal = (subj: LocalTimetableEntry) => {
+    const existingDuplicates = changedSchedules.filter(
+      (e) =>
+        e.section.toLowerCase() === subj.section.toLowerCase() &&
+        (e.subject_id === subj.subject_id ||
+          e.course_code === subj.course_code) &&
+        e.type?.toLowerCase() === subj.type?.toLowerCase(),
+    );
+
+    const totalCombinedDuration = existingDuplicates.reduce(
+      (sum, item) =>
+        sum + (item.originalDuration || item.end_time - item.start_time || 60),
+      0,
+    );
+
+    const baseDuration =
+      totalCombinedDuration > 0
+        ? totalCombinedDuration
+        : subj.originalDuration || 180;
+    const initialSplit =
+      baseDuration >= 120 ? [60, baseDuration - 60] : [baseDuration];
+
+    setSplitModalData({
+      show: true,
+      entry: subj,
+      splitDurations: initialSplit,
+      matchingDuplicates: existingDuplicates,
+    });
+  };
+
+  const currentSplitSum = splitModalData.splitDurations.reduce(
+    (a, b) => a + b,
+    0,
+  );
+
+  const computedTargetDuration =
+    splitModalData.matchingDuplicates.length > 0
+      ? splitModalData.matchingDuplicates.reduce(
+          (sum, item) => sum + (item.originalDuration || 60),
+          0,
+        )
+      : splitModalData.entry?.originalDuration || 60;
+
+  const isSplitValid =
+    currentSplitSum === computedTargetDuration &&
+    !splitModalData.splitDurations.some((d) => d < 60);
+
+  const handleSaveSplits = () => {
+    const targetEntry = splitModalData.entry;
+    if (!targetEntry || !isSplitValid) return;
+
+    setChangedSchedules((prev) => {
+      let workingList = [...prev];
+
+      // Automatically apply to all matching duplicates across the schedule
+      const duplicateIds = splitModalData.matchingDuplicates.map(
+        (d) => d.schedule_entry_id,
+      );
+      workingList = workingList.filter(
+        (e) => !duplicateIds.includes(e.schedule_entry_id),
+      );
+
+      workingList = workingList.filter(
+        (e) => e.schedule_entry_id !== targetEntry.schedule_entry_id,
+      );
+
+      const newEntries: LocalTimetableEntry[] =
+        splitModalData.splitDurations.map((dur, idx) => ({
+          ...targetEntry,
+          schedule_entry_id: `${targetEntry.schedule_entry_id}_split_${idx}_${Date.now()}`,
+          originalDuration: dur,
+          day: "",
+          start_time: 0,
+          end_time: 0,
+        }));
+
+      workingList.push(...newEntries);
+      return workingList;
+    });
+
+    setSplitModalData({
+      show: false,
+      entry: null,
+      splitDurations: [60, 60],
+      matchingDuplicates: [],
+    });
   };
 
   if (isLoading) {
@@ -896,9 +978,7 @@ export default function ScheduleTimetableClient({
 
   return (
     <div className="relative flex gap-6">
-      {/* Main Timetable Content Container */}
       <div className="flex-1 space-y-6">
-        {/* Top Header & Actions */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Button
@@ -941,35 +1021,32 @@ export default function ScheduleTimetableClient({
           </div>
         </div>
 
-        {/* Discard Changes Bar */}
         {JSON.stringify(changedSchedules) !==
           JSON.stringify(originalEntries) && (
-            <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 shadow-sm dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 shadow-sm dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
             <span className="font-medium">
               You have unsaved changes in this session.
             </span>
-              <div className={"flex space-x-2"}>
-                {/* TODO: Add Saving */}
-                <Button
-                  color="green"
-                  size="xs"
-                  className="flex items-center gap-1"
-                >
-                  <HiCheck className="h-3.5 w-3.5" /> Save Changes
-                </Button>
-                <Button
-                  color="alternative"
-                  size="xs"
-                  onClick={handleDiscardChanges}
-                  className="flex items-center gap-1 border-amber-300 bg-white hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-800 dark:hover:bg-gray-700"
-                >
-                  <HiRefresh className="h-3.5 w-3.5" /> Discard Changes
-                </Button>
-              </div>
+            <div className={"flex space-x-2"}>
+              <Button
+                color="green"
+                size="xs"
+                className="flex items-center gap-1"
+              >
+                <HiCheck className="h-3.5 w-3.5" /> Save Changes
+              </Button>
+              <Button
+                color="alternative"
+                size="xs"
+                onClick={handleDiscardChanges}
+                className="flex items-center gap-1 border-amber-300 bg-white hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+              >
+                <HiRefresh className="h-3.5 w-3.5" /> Discard Changes
+              </Button>
             </div>
-          )}
+          </div>
+        )}
 
-        {/* Legend & Controls Bar */}
         <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 dark:bg-gray-800">
           <div className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2">
@@ -998,7 +1075,6 @@ export default function ScheduleTimetableClient({
               </ButtonGroup>
             </div>
 
-            {/* Timetable Legend */}
             <div className="flex items-center gap-4 text-xs font-medium text-gray-600 dark:text-gray-300">
               <div className="flex items-center gap-1.5">
                 <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-100 dark:border-blue-700 dark:bg-blue-950"></span>
@@ -1012,10 +1088,13 @@ export default function ScheduleTimetableClient({
                 <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950"></span>
                 <span>Break Periods</span>
               </div>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800"></span>
+                <span>Other Section / Room</span>
+              </div>
             </div>
           </div>
 
-          {/* Filter Dropdowns */}
           <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
             <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
               <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
@@ -1067,276 +1146,269 @@ export default function ScheduleTimetableClient({
           </div>
         </div>
 
-        {/* Main Display Container */}
         {displayFormat === "timetable" ? (
           <div className="max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <table className="w-full min-w-[850px] border-collapse text-left text-xs">
               <thead>
-              <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
-                  Time
-                </th>
-                {daysOfWeek.map((day) => (
-                  <th
-                    key={day}
-                    className="min-w-[120px] border-r border-b p-3 text-center font-bold"
-                  >
+                <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                  <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+                    Time
+                  </th>
+                  {daysOfWeek.map((day) => (
+                    <th
+                      key={day}
+                      className="min-w-[120px] border-r border-b p-3 text-center font-bold"
+                    >
                       <span className="sm:hidden">
                         {day.substring(0, 3).toUpperCase()}
                       </span>
-                    <span className="hidden sm:inline">
+                      <span className="hidden sm:inline">
                         {day.toUpperCase()}
                       </span>
-                  </th>
-                ))}
-              </tr>
+                    </th>
+                  ))}
+                </tr>
               </thead>
               <tbody>
-              {timeSlotsGrid.map((timeSlot, tIdx) => {
-                const slotTotalMins = timeStrToMinutes(timeSlot);
+                {timeSlotsGrid.map((timeSlot, tIdx) => {
+                  const slotTotalMins = timeStrToMinutes(timeSlot);
 
-                return (
-                  <tr
-                    key={tIdx}
-                    className="h-11 border-b dark:border-gray-800"
-                  >
-                    <td className="sticky left-0 z-10 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                      {timeSlot}
-                    </td>
-                    {daysOfWeek.map((day) => {
-                      const matchedEntry = filteredTimetableEntries.find(
-                        (entry) => {
-                          if (entry.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          const entryStartStr = formatMinutesToTimeStr(
-                            entry.start_time,
-                          );
-                          return entryStartStr === timeSlot;
-                        },
-                      );
-
-                      const ghostEntry = !matchedEntry
-                        ? changedSchedules.find((entry) => {
-                          if (!entry.day || entry.start_time <= 0)
-                            return false;
-                          if (entry.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          const entryStartStr = formatMinutesToTimeStr(
-                            entry.start_time,
-                          );
-                          if (entryStartStr !== timeSlot) return false;
-
-                          // Exclude the item currently being dragged
-                          if (
-                            draggedEntryId &&
-                            entry.schedule_entry_id === draggedEntryId
-                          ) {
-                            return false;
-                          }
-
-                          // Check if it belongs to the same section as the item being dragged
-                          const draggedEntry = changedSchedules.find(
-                            (e) => e.schedule_entry_id === draggedEntryId,
-                          );
-                          const isSameSection =
-                            draggedEntry &&
-                            entry.section.toLowerCase() ===
-                            draggedEntry.section.toLowerCase();
-
-                          const matchesActiveRoom =
-                            selectedTimetableRoom !== "ALL" &&
-                            entry.room_name?.toLowerCase() ===
-                            selectedTimetableRoom.toLowerCase();
-
-                          return isSameSection || matchesActiveRoom;
-                        })
-                        : null;
-
-                      const displayEntry = matchedEntry || ghostEntry;
-
-                      // Check if this displayed entry is currently being dragged
-                      const isBeingDragged =
-                        displayEntry &&
-                        displayEntry.schedule_entry_id === draggedEntryId;
-
-                      if (isBeingDragged) {
-                        const durationMins =
-                          displayEntry.end_time - displayEntry.start_time ||
-                          displayEntry.originalDuration ||
-                          60;
-                        const rowSpan = Math.max(
-                          1,
-                          Math.round(durationMins / 30),
+                  return (
+                    <tr
+                      key={tIdx}
+                      className="h-11 border-b dark:border-gray-800"
+                    >
+                      <td className="sticky left-0 z-10 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                        {timeSlot}
+                      </td>
+                      {daysOfWeek.map((day) => {
+                        const matchedEntry = filteredTimetableEntries.find(
+                          (entry) => {
+                            if (entry.day.toLowerCase() !== day.toLowerCase())
+                              return false;
+                            const entryStartStr = formatMinutesToTimeStr(
+                              entry.start_time,
+                            );
+                            return entryStartStr === timeSlot;
+                          },
                         );
 
-                        return (
-                          <td
-                            key={day}
-                            rowSpan={rowSpan}
-                            style={{
-                              height: "0px",
-                            }}
-                            onDragEnd={() => {
-                              setDraggedEntryId(null);
-                              setDragSourceInfo(null);
-                              setDragOverCell(null);
-                            }}
-                            className="relative overflow-hidden border-r border-dashed border-cyan-400 bg-cyan-50/50 p-0 align-top dark:bg-cyan-950/20"
-                          >
-                            {/* ONLY the top 30-min slot acts as the drop target to allow nudging the rest of the span */}
-                            <div
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                if (
-                                  !dragOverCell ||
-                                  dragOverCell.day !== day ||
-                                  dragOverCell.timeSlot !== timeSlot
-                                ) {
-                                  setDragOverCell({
-                                    day,
-                                    timeSlot,
-                                    duration: durationMins,
-                                  });
-                                }
-                              }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                const rawData =
-                                  e.dataTransfer.getData("text/plain");
-                                if (!rawData) return;
-                                try {
-                                  const parsed = JSON.parse(
-                                    rawData,
-                                  ) as DragPayload;
-                                  handleDropToSlot(day, timeSlot, parsed);
-                                } catch (err) {
-                                  console.error("Drop parse error", err);
-                                }
-                              }}
-                              className="absolute inset-x-0 top-0 z-20 flex h-[42px] items-center justify-center gap-1 border-b border-dashed border-cyan-400 bg-cyan-100/70 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200"
-                            >
-                              <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
-                              <span>Original Position (Drop here)</span>
-                            </div>
+                        const ghostEntry = !matchedEntry
+                          ? changedSchedules.find((entry) => {
+                              if (!entry.day || entry.start_time <= 0)
+                                return false;
+                              if (entry.day.toLowerCase() !== day.toLowerCase())
+                                return false;
+                              const entryStartStr = formatMinutesToTimeStr(
+                                entry.start_time,
+                              );
+                              if (entryStartStr !== timeSlot) return false;
 
-                            {/* The remaining lower cells of the original position are free normal drop cells for nudging */}
-                            <div
-                              className="absolute inset-x-0 top-[42px] bottom-0 p-2 text-center"
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                const nextSlotTime = formatMinutesToTimeStr(
-                                  timeStrToMinutes(timeSlot) + 30,
-                                );
-                                if (
-                                  !dragOverCell ||
-                                  dragOverCell.day !== day ||
-                                  dragOverCell.timeSlot !== nextSlotTime
-                                ) {
-                                  setDragOverCell({
-                                    day,
-                                    timeSlot: nextSlotTime,
-                                    duration: durationMins,
-                                  });
-                                }
+                              if (
+                                draggedEntryId &&
+                                entry.schedule_entry_id === draggedEntryId
+                              ) {
+                                return false;
+                              }
+
+                              const draggedEntry = changedSchedules.find(
+                                (e) => e.schedule_entry_id === draggedEntryId,
+                              );
+                              const isSameSection =
+                                draggedEntry &&
+                                entry.section.toLowerCase() ===
+                                  draggedEntry.section.toLowerCase();
+
+                              const matchesActiveRoom =
+                                selectedTimetableRoom !== "ALL" &&
+                                entry.room_name?.toLowerCase() ===
+                                  selectedTimetableRoom.toLowerCase();
+
+                              return isSameSection || matchesActiveRoom;
+                            })
+                          : null;
+
+                        const displayEntry = matchedEntry || ghostEntry;
+
+                        const isBeingDragged =
+                          displayEntry &&
+                          displayEntry.schedule_entry_id === draggedEntryId;
+
+                        if (isBeingDragged) {
+                          const durationMins =
+                            displayEntry.end_time - displayEntry.start_time ||
+                            displayEntry.originalDuration ||
+                            60;
+                          const rowSpan = Math.max(
+                            1,
+                            Math.round(durationMins / 30),
+                          );
+
+                          return (
+                            <td
+                              key={day}
+                              rowSpan={rowSpan}
+                              style={{
+                                height: "0px",
                               }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                const rawData =
-                                  e.dataTransfer.getData("text/plain");
-                                if (!rawData) return;
-                                try {
-                                  const parsed = JSON.parse(
-                                    rawData,
-                                  ) as DragPayload;
+                              onDragEnd={() => {
+                                setDraggedEntryId(null);
+                                setDragSourceInfo(null);
+                                setDragOverCell(null);
+                              }}
+                              className="relative overflow-hidden border-r border-dashed border-cyan-400 bg-cyan-50/50 p-0 align-top dark:bg-cyan-950/20"
+                            >
+                              <div
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  if (
+                                    !dragOverCell ||
+                                    dragOverCell.day !== day ||
+                                    dragOverCell.timeSlot !== timeSlot
+                                  ) {
+                                    setDragOverCell({
+                                      day,
+                                      timeSlot,
+                                      duration: durationMins,
+                                    });
+                                  }
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const rawData =
+                                    e.dataTransfer.getData("text/plain");
+                                  if (!rawData) return;
+                                  try {
+                                    const parsed = JSON.parse(
+                                      rawData,
+                                    ) as DragPayload;
+                                    handleDropToSlot(day, timeSlot, parsed);
+                                  } catch (err) {
+                                    console.error("Drop parse error", err);
+                                  }
+                                }}
+                                className="absolute inset-x-0 top-0 z-25 flex h-[42px] items-center justify-center gap-1 border-b border-dashed border-cyan-400 bg-cyan-100/70 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200"
+                              >
+                                <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
+                                <span>Original Position (Drop here)</span>
+                              </div>
+
+                              <div
+                                className="absolute inset-x-0 top-[42px] bottom-0 p-2 text-center"
+                                onDragOver={(e) => {
+                                  e.preventDefault();
                                   const nextSlotTime = formatMinutesToTimeStr(
                                     timeStrToMinutes(timeSlot) + 30,
                                   );
-                                  handleDropToSlot(day, nextSlotTime, parsed);
-                                } catch (err) {
-                                  console.error("Drop parse error", err);
-                                }
-                              }}
-                            ></div>
-                          </td>
-                        );
-                      }
-
-                      if (displayEntry) {
-                        const durationMins =
-                          displayEntry.end_time - displayEntry.start_time ||
-                          displayEntry.originalDuration ||
-                          60;
-
-                        const rowSpan = Math.max(
-                          1,
-                          Math.round(durationMins / 30),
-                        );
-                        const blockHeightPx = rowSpan * 42;
-
-                        const isGhost = !matchedEntry && !!ghostEntry;
-                        const isLabType =
-                          displayEntry.type?.toLowerCase() === "laboratory";
-
-                        let blockStyle =
-                          "bg-blue-50/80 text-blue-950 border-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800";
-                        if (isGhost) {
-                          blockStyle =
-                            "bg-gray-100 text-gray-400 border-gray-200 opacity-50 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700";
-                        } else if (isLabType) {
-                          blockStyle =
-                            "bg-emerald-50/80 text-emerald-950 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
+                                  if (
+                                    !dragOverCell ||
+                                    dragOverCell.day !== day ||
+                                    dragOverCell.timeSlot !== nextSlotTime
+                                  ) {
+                                    setDragOverCell({
+                                      day,
+                                      timeSlot: nextSlotTime,
+                                      duration: durationMins,
+                                    });
+                                  }
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const rawData =
+                                    e.dataTransfer.getData("text/plain");
+                                  if (!rawData) return;
+                                  try {
+                                    const parsed = JSON.parse(
+                                      rawData,
+                                    ) as DragPayload;
+                                    const nextSlotTime = formatMinutesToTimeStr(
+                                      timeStrToMinutes(timeSlot) + 30,
+                                    );
+                                    handleDropToSlot(day, nextSlotTime, parsed);
+                                  } catch (err) {
+                                    console.error("Drop parse error", err);
+                                  }
+                                }}
+                              ></div>
+                            </td>
+                          );
                         }
 
-                        const scheduleEntryId =
-                          displayEntry.schedule_entry_id;
+                        if (displayEntry) {
+                          const durationMins =
+                            displayEntry.end_time - displayEntry.start_time ||
+                            displayEntry.originalDuration ||
+                            60;
 
-                        return (
-                          <td
-                            key={day}
-                            rowSpan={rowSpan}
-                            style={{
-                              height: "0px",
-                            }}
-                            draggable={isEditMode && !isGhost}
-                            onDragStart={(e) => {
-                              hasDroppedRef.current = false;
-                              setDraggedEntryId(scheduleEntryId);
-                              draggedDurationRef.current = durationMins;
-                              setDragSourceInfo({
-                                day: displayEntry.day,
-                                start_time: displayEntry.start_time,
-                                duration: durationMins,
-                                course_code: displayEntry.course_code,
-                              });
-                              if (displayEntry.room_name) {
-                                setSelectedTimetableRoom(
-                                  displayEntry.room_name,
-                                );
-                              }
+                          const rowSpan = Math.max(
+                            1,
+                            Math.round(durationMins / 30),
+                          );
+                          const blockHeightPx = rowSpan * 42;
 
-                              // Create a cleanly isolated drag preview element
-                              const dragPreview =
-                                document.createElement("div");
-                              dragPreview.style.position = "absolute";
-                              dragPreview.style.top = "-9999px";
-                              dragPreview.style.left = "-9999px";
-                              dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
-                              dragPreview.style.height = `${blockHeightPx - 12}px`;
-                              dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans ${
-                                isLabType
-                                  ? "bg-emerald-100 text-emerald-950 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:border-emerald-700"
-                                  : "bg-blue-100 text-blue-950 border border-blue-300 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-700"
-                              }`;
+                          const isGhost = !matchedEntry && !!ghostEntry;
+                          const isLabType =
+                            displayEntry.type?.toLowerCase() === "laboratory";
 
-                              dragPreview.innerHTML = `
+                          let blockStyle =
+                            "bg-blue-50/80 text-blue-950 border-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800";
+                          if (isGhost) {
+                            blockStyle =
+                              "bg-gray-100 text-gray-400 border-gray-200 opacity-50 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700";
+                          } else if (isLabType) {
+                            blockStyle =
+                              "bg-emerald-50/80 text-emerald-950 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
+                          }
+
+                          const scheduleEntryId =
+                            displayEntry.schedule_entry_id;
+
+                          return (
+                            <td
+                              key={day}
+                              rowSpan={rowSpan}
+                              style={{
+                                height: "0px",
+                              }}
+                              draggable={isEditMode && !isGhost}
+                              onDragStart={(e) => {
+                                hasDroppedRef.current = false;
+                                setDraggedEntryId(scheduleEntryId);
+                                draggedDurationRef.current = durationMins;
+                                setDragSourceInfo({
+                                  day: displayEntry.day,
+                                  start_time: displayEntry.start_time,
+                                  duration: durationMins,
+                                  course_code: displayEntry.course_code,
+                                });
+                                if (displayEntry.room_name) {
+                                  setSelectedTimetableRoom(
+                                    displayEntry.room_name,
+                                  );
+                                }
+
+                                const dragPreview =
+                                  document.createElement("div");
+                                dragPreview.style.position = "absolute";
+                                dragPreview.style.top = "-9999px";
+                                dragPreview.style.left = "-9999px";
+                                dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
+                                dragPreview.style.height = `${blockHeightPx - 12}px`;
+                                dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans ${
+                                  isLabType
+                                    ? "bg-emerald-100 text-emerald-950 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:border-emerald-700"
+                                    : "bg-blue-100 text-blue-950 border border-blue-300 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-700"
+                                }`;
+
+                                dragPreview.innerHTML = `
                                   <div>
                                     <div class="flex items-center justify-between">
                                       <div class="text-xs font-bold truncate">${displayEntry.course_name}</div>
                                       <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                isLabType
-                                  ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
-                                  : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
-                              }">${displayEntry.type || "Lecture"}</span>
+                                        isLabType
+                                          ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
+                                          : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
+                                      }">${displayEntry.type || "Lecture"}</span>
                                     </div>
                                     <div class="text-[10px] font-medium opacity-80 truncate">${displayEntry.course_code}</div>
                                   </div>
@@ -1347,319 +1419,324 @@ export default function ScheduleTimetableClient({
                                   </div>
                                 `;
 
-                              document.body.appendChild(dragPreview);
-                              if (e.dataTransfer.setDragImage) {
-                                e.dataTransfer.setDragImage(
-                                  dragPreview,
-                                  20,
-                                  20,
+                                document.body.appendChild(dragPreview);
+                                if (e.dataTransfer.setDragImage) {
+                                  e.dataTransfer.setDragImage(
+                                    dragPreview,
+                                    20,
+                                    20,
+                                  );
+                                }
+                                setTimeout(() => {
+                                  document.body.removeChild(dragPreview);
+                                }, 0);
+
+                                e.dataTransfer.setData(
+                                  "text/plain",
+                                  JSON.stringify({
+                                    type: "existing",
+                                    scheduleEntryId: scheduleEntryId,
+                                    section: displayEntry.section,
+                                    roomName: displayEntry.room_name,
+                                    subjectId: displayEntry.subject_id,
+                                    roomId: displayEntry.room_id,
+                                    teacherId: displayEntry.teacher_id,
+                                    entryType: displayEntry.type,
+                                    duration: durationMins,
+                                    originalDay: displayEntry.day,
+                                    originalStartTime: displayEntry.start_time,
+                                    originalEndTime: displayEntry.end_time,
+                                  } as DragPayload),
                                 );
-                              }
-                              setTimeout(() => {
-                                document.body.removeChild(dragPreview);
-                              }, 0);
-
-                              e.dataTransfer.setData(
-                                "text/plain",
-                                JSON.stringify({
-                                  type: "existing",
-                                  scheduleEntryId: scheduleEntryId,
-                                  section: displayEntry.section,
-                                  roomName: displayEntry.room_name,
-                                  subjectId: displayEntry.subject_id,
-                                  roomId: displayEntry.room_id,
-                                  teacherId: displayEntry.teacher_id,
-                                  entryType: displayEntry.type,
-                                  duration: durationMins,
-                                  originalDay: displayEntry.day,
-                                  originalStartTime: displayEntry.start_time,
-                                  originalEndTime: displayEntry.end_time,
-                                } as DragPayload),
-                              );
-                            }}
-                            onDragEnd={() => {
-                              setDraggedEntryId(null);
-                              setDragSourceInfo(null);
-                              setDragOverCell(null);
-                            }}
-                            onDragOver={(e) => {
-                              if (isGhost) {
-                                e.preventDefault();
-                                const dragDuration = durationMins;
-                                if (
-                                  !dragOverCell ||
-                                  dragOverCell.day !== day ||
-                                  dragOverCell.timeSlot !== timeSlot
-                                ) {
-                                  setDragOverCell({
-                                    day,
-                                    timeSlot,
-                                    duration: dragDuration,
-                                  });
+                              }}
+                              onDragEnd={() => {
+                                setDraggedEntryId(null);
+                                setDragSourceInfo(null);
+                                setDragOverCell(null);
+                              }}
+                              onDragOver={(e) => {
+                                if (isGhost) {
+                                  e.preventDefault();
+                                  const dragDuration = durationMins;
+                                  if (
+                                    !dragOverCell ||
+                                    dragOverCell.day !== day ||
+                                    dragOverCell.timeSlot !== timeSlot
+                                  ) {
+                                    setDragOverCell({
+                                      day,
+                                      timeSlot,
+                                      duration: dragDuration,
+                                    });
+                                  }
                                 }
-                              }
-                            }}
-                            onDrop={(e) => {
-                              if (isGhost) {
-                                e.preventDefault();
-                                const rawData =
-                                  e.dataTransfer.getData("text/plain");
-                                if (!rawData) return;
-                                try {
-                                  const parsed = JSON.parse(
-                                    rawData,
-                                  ) as DragPayload;
-                                  handleDropToSlot(day, timeSlot, parsed);
-                                } catch (err) {
-                                  console.error("Drop parse error", err);
+                              }}
+                              onDrop={(e) => {
+                                if (isGhost) {
+                                  e.preventDefault();
+                                  const rawData =
+                                    e.dataTransfer.getData("text/plain");
+                                  if (!rawData) return;
+                                  try {
+                                    const parsed = JSON.parse(
+                                      rawData,
+                                    ) as DragPayload;
+                                    handleDropToSlot(day, timeSlot, parsed);
+                                  } catch (err) {
+                                    console.error("Drop parse error", err);
+                                  }
                                 }
-                              }
-                            }}
-                            className={`relative overflow-hidden border-r p-0 align-top ${blockStyle} border font-sans ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
-                          >
-                            <div
-                              className="schedule-block-inner absolute inset-1.5 flex flex-col gap-1 overflow-hidden rounded bg-inherit p-2 shadow-xs"
-                              style={{ height: `${blockHeightPx - 12}px` }}
+                              }}
+                              className={`relative overflow-hidden border-r p-0 align-top ${blockStyle} border font-sans ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
                             >
-                              {isEditMode && !isGhost && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUnassignEntry(scheduleEntryId);
-                                  }}
-                                  title="Unassign / Return to Sidebar"
-                                  className="absolute top-1 right-1 z-20 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
-                                >
-                                  <HiX className="h-3.5 w-3.5" />
-                                </button>
-                              )}
+                              <div
+                                className="schedule-block-inner absolute inset-1.5 flex flex-col gap-1 overflow-hidden rounded bg-inherit p-2 shadow-xs"
+                                style={{ height: `${blockHeightPx - 12}px` }}
+                              >
+                                {isEditMode && !isGhost && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUnassignEntry(scheduleEntryId);
+                                    }}
+                                    title="Unassign / Return to Sidebar"
+                                    className="absolute top-1 right-1 z-20 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
+                                  >
+                                    <HiX className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
 
-                              {/* Header: Course name & Type badge */}
-                              <div>
-                                <div className="flex items-center justify-between pr-4">
-                                  <div className="truncate text-xs font-bold text-gray-900 dark:text-white">
-                                    {displayEntry.course_name}
+                                <div>
+                                  <div className="flex items-center justify-between pr-4">
+                                    <div className="truncate text-xs font-bold text-gray-900 dark:text-white">
+                                      {displayEntry.course_name}
+                                    </div>
+                                  </div>
+                                  <div className="truncate text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                                    {displayEntry.course_code}{" "}
+                                    {isGhost && "(Other Section/Room)"}
                                   </div>
                                 </div>
-                                <div className="truncate text-[10px] font-medium text-gray-600 dark:text-gray-300">
-                                  {displayEntry.course_code}{" "}
-                                  {isGhost && "(Other Section/Room)"}
+
+                                <div className="space-y-0.5 text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+                                  <div>
+                                    Teacher:{" "}
+                                    {displayEntry.teacher_code || "Unassigned"}
+                                  </div>
+                                  <div>Sec: {displayEntry.section}</div>
+                                  <div>
+                                    Room: {displayEntry.room_name || "TBA"}
+                                  </div>
+                                  <div className="font-mono">
+                                    {formatTime(displayEntry.start_time)} -{" "}
+                                    {formatTime(displayEntry.end_time)}
+                                  </div>
                                 </div>
                               </div>
+                            </td>
+                          );
+                        }
 
-                              {/* Details right below subject code */}
-                              <div className="space-y-0.5 text-[10px] font-semibold text-gray-700 dark:text-gray-300">
-                                <div>
-                                  Teacher:{" "}
-                                  {displayEntry.teacher_code || "Unassigned"}
+                        const matchedBreaksList = expandedBreaks.filter(
+                          (bp) => {
+                            if (bp.day.toLowerCase() !== day.toLowerCase())
+                              return false;
+                            const breakStartStr = formatMinutesToTimeStr(
+                              bp.start_time,
+                            );
+                            return breakStartStr === timeSlot;
+                          },
+                        );
+
+                        const matchedBreak =
+                          matchedBreaksList.length > 0
+                            ? matchedBreaksList.reduce((prev, current) =>
+                                current.end_time > prev.end_time
+                                  ? current
+                                  : prev,
+                              )
+                            : null;
+
+                        if (matchedBreak) {
+                          const durationMins =
+                            matchedBreak.end_time - matchedBreak.start_time;
+                          const rowSpan = Math.max(
+                            1,
+                            Math.round(durationMins / 30),
+                          );
+                          const breakHeightPx = rowSpan * 42;
+                          const breakStyle =
+                            "bg-amber-50/80 text-amber-950 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
+
+                          const hasMultipleBreaks =
+                            matchedBreaksList.length > 1;
+
+                          return (
+                            <td
+                              key={day}
+                              rowSpan={rowSpan}
+                              style={{
+                                height: "0px",
+                              }}
+                              className={`relative overflow-hidden border-r p-0 align-top ${breakStyle} border font-sans`}
+                            >
+                              <div
+                                className="absolute inset-1.5 flex flex-col items-center justify-center overflow-hidden rounded bg-inherit p-1 text-center shadow-xs sm:p-2"
+                                style={{ height: `${breakHeightPx - 12}px` }}
+                              >
+                                <FaCoffee className="mb-1 hidden h-4 w-4 shrink-0 text-amber-600 sm:inline-block dark:text-amber-400" />
+                                <div className="w-full truncate text-[11px] font-bold text-amber-900 sm:text-xs dark:text-amber-100">
+                                  {matchedBreak.break_description}
+                                  {hasMultipleBreaks && (
+                                    <div className="ml-1 text-[9px] opacity-75">
+                                      (+{matchedBreaksList.length - 1}{" "}
+                                      overlapping)
+                                    </div>
+                                  )}
                                 </div>
-                                <div>Sec: {displayEntry.section}</div>
-                                <div>
-                                  Room: {displayEntry.room_name || "TBA"}
-                                </div>
-                                <div className="font-mono">
-                                  {formatTime(displayEntry.start_time)} -{" "}
-                                  {formatTime(displayEntry.end_time)}
+                                <div className="mt-0.5 font-mono text-[9px] text-amber-700 sm:mt-1 sm:text-[10px] dark:text-amber-300">
+                                  {formatTime(matchedBreak.start_time)} -{" "}
+                                  {formatTime(matchedBreak.end_time)}
                                 </div>
                               </div>
-                            </div>
-                          </td>
+                            </td>
+                          );
+                        }
+
+                        const isCoveredByClass = filteredTimetableEntries.some(
+                          (entry) => {
+                            if (entry.day.toLowerCase() !== day.toLowerCase())
+                              return false;
+                            return (
+                              slotTotalMins > entry.start_time &&
+                              slotTotalMins < entry.end_time
+                            );
+                          },
                         );
-                      }
 
-                      // Check for Break Period Entry (Prioritize latest end time if overlapping)
-                      const matchedBreaksList = expandedBreaks.filter((bp) => {
-                        if (bp.day.toLowerCase() !== day.toLowerCase())
-                          return false;
-                        const breakStartStr = formatMinutesToTimeStr(
-                          bp.start_time,
+                        const isCoveredByGhost = changedSchedules.some(
+                          (entry) => {
+                            if (!entry.day || entry.start_time <= 0)
+                              return false;
+                            if (entry.day.toLowerCase() !== day.toLowerCase())
+                              return false;
+                            if (
+                              draggedEntryId &&
+                              entry.schedule_entry_id === draggedEntryId
+                            ) {
+                              return false;
+                            }
+                            const draggedEntry = changedSchedules.find(
+                              (e) => e.schedule_entry_id === draggedEntryId,
+                            );
+                            const isSameSection =
+                              draggedEntry &&
+                              entry.section.toLowerCase() ===
+                                draggedEntry.section.toLowerCase();
+
+                            const matchesActiveRoom =
+                              selectedTimetableRoom !== "ALL" &&
+                              entry.room_name?.toLowerCase() ===
+                                selectedTimetableRoom.toLowerCase();
+                            return (
+                              (isSameSection || matchesActiveRoom) &&
+                              slotTotalMins > entry.start_time &&
+                              slotTotalMins < entry.end_time
+                            );
+                          },
                         );
-                        return breakStartStr === timeSlot;
-                      });
 
-                      const matchedBreak = matchedBreaksList.length > 0
-                        ? matchedBreaksList.reduce((prev, current) =>
-                          current.end_time > prev.end_time ? current : prev
-                        )
-                        : null;
+                        const isCoveredByBreak = expandedBreaks.some((bp) => {
+                          if (bp.day.toLowerCase() !== day.toLowerCase())
+                            return false;
+                          return (
+                            slotTotalMins > bp.start_time &&
+                            slotTotalMins < bp.end_time
+                          );
+                        });
 
-                      if (matchedBreak) {
-                        const durationMins =
-                          matchedBreak.end_time - matchedBreak.start_time;
-                        const rowSpan = Math.max(
-                          1,
-                          Math.round(durationMins / 30),
-                        );
-                        const breakHeightPx = rowSpan * 42;
-                        const breakStyle =
-                          "bg-amber-50/80 text-amber-950 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
+                        if (
+                          isCoveredByClass ||
+                          isCoveredByGhost ||
+                          isCoveredByBreak
+                        ) {
+                          return null;
+                        }
 
-                        const hasMultipleBreaks = matchedBreaksList.length > 1;
+                        let isHighlighted = false;
+                        if (
+                          dragOverCell &&
+                          dragOverCell.day.toLowerCase() === day.toLowerCase()
+                        ) {
+                          const hoverStartMins = timeStrToMinutes(
+                            dragOverCell.timeSlot,
+                          );
+                          const hoverDuration = dragOverCell.duration || 60;
+                          const hoverEndMins = hoverStartMins + hoverDuration;
+
+                          if (
+                            slotTotalMins >= hoverStartMins &&
+                            slotTotalMins < hoverEndMins
+                          ) {
+                            isHighlighted = true;
+                          }
+                        }
 
                         return (
                           <td
                             key={day}
-                            rowSpan={rowSpan}
-                            style={{
-                              height: "0px",
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              const dragDuration =
+                                draggedDurationRef.current || 60;
+
+                              if (
+                                !dragOverCell ||
+                                dragOverCell.day !== day ||
+                                dragOverCell.timeSlot !== timeSlot ||
+                                dragOverCell.duration !== dragDuration
+                              ) {
+                                setDragOverCell({
+                                  day,
+                                  timeSlot,
+                                  duration: dragDuration,
+                                });
+                              }
                             }}
-                            className={`relative overflow-hidden border-r p-0 align-top ${breakStyle} border font-sans`}
-                          >
-                            <div
-                              className="absolute inset-1.5 flex flex-col items-center justify-center overflow-hidden rounded bg-inherit p-1 text-center shadow-xs sm:p-2"
-                              style={{ height: `${breakHeightPx - 12}px` }}
-                            >
-                              {/* Hide icon on mobile screens, show on sm and up */}
-                              <FaCoffee className="mb-1 hidden h-4 w-4 shrink-0 text-amber-600 sm:inline-block dark:text-amber-400" />
-                              <div className="w-full truncate text-[11px] font-bold text-amber-900 sm:text-xs dark:text-amber-100">
-                                {matchedBreak.break_description}
-                                {hasMultipleBreaks && (
-                                  <div className="ml-1 text-[9px] opacity-75">(+{matchedBreaksList.length - 1} overlapping)</div>
-                                )}
-                              </div>
-                              <div className="mt-0.5 font-mono text-[9px] text-amber-700 sm:mt-1 sm:text-[10px] dark:text-amber-300">
-                                {formatTime(matchedBreak.start_time)} -{" "}
-                                {formatTime(matchedBreak.end_time)}
-                              </div>
-                            </div>
-                          </td>
+                            onDragLeave={() => {
+                              if (
+                                dragOverCell?.day === day &&
+                                dragOverCell?.timeSlot === timeSlot
+                              ) {
+                                setDragOverCell(null);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              const rawData =
+                                e.dataTransfer.getData("text/plain");
+                              if (!rawData) return;
+                              try {
+                                const parsed = JSON.parse(
+                                  rawData,
+                                ) as DragPayload;
+                                handleDropToSlot(day, timeSlot, parsed);
+                              } catch (err) {
+                                console.error("Drop parse error", err);
+                              }
+                            }}
+                            className={`border-r p-2 text-center transition-colors ${
+                              isHighlighted
+                                ? "border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/60"
+                                : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
+                            }`}
+                          ></td>
                         );
-                      }
-
-                      const isCoveredByClass = filteredTimetableEntries.some(
-                        (entry) => {
-                          if (entry.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          return (
-                            slotTotalMins > entry.start_time &&
-                            slotTotalMins < entry.end_time
-                          );
-                        },
-                      );
-
-                      const isCoveredByGhost = changedSchedules.some(
-                        (entry) => {
-                          if (!entry.day || entry.start_time <= 0)
-                            return false;
-                          if (entry.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          if (
-                            draggedEntryId &&
-                            entry.schedule_entry_id === draggedEntryId
-                          ) {
-                            return false;
-                          }
-                          const draggedEntry = changedSchedules.find(
-                            (e) => e.schedule_entry_id === draggedEntryId,
-                          );
-                          const isSameSection =
-                            draggedEntry &&
-                            entry.section.toLowerCase() ===
-                            draggedEntry.section.toLowerCase();
-
-                          const matchesActiveRoom =
-                            selectedTimetableRoom !== "ALL" &&
-                            entry.room_name?.toLowerCase() ===
-                            selectedTimetableRoom.toLowerCase();
-                          return (
-                            (isSameSection || matchesActiveRoom) &&
-                            slotTotalMins > entry.start_time &&
-                            slotTotalMins < entry.end_time
-                          );
-                        },
-                      );
-
-                      const isCoveredByBreak = expandedBreaks.some((bp) => {
-                        if (bp.day.toLowerCase() !== day.toLowerCase())
-                          return false;
-                        return (
-                          slotTotalMins > bp.start_time &&
-                          slotTotalMins < bp.end_time
-                        );
-                      });
-
-                      if (
-                        isCoveredByClass ||
-                        isCoveredByGhost ||
-                        isCoveredByBreak
-                      ) {
-                        return null;
-                      }
-
-                      let isHighlighted = false;
-                      if (
-                        dragOverCell &&
-                        dragOverCell.day.toLowerCase() === day.toLowerCase()
-                      ) {
-                        const hoverStartMins = timeStrToMinutes(
-                          dragOverCell.timeSlot,
-                        );
-                        const hoverDuration = dragOverCell.duration || 60;
-                        const hoverEndMins = hoverStartMins + hoverDuration;
-
-                        if (
-                          slotTotalMins >= hoverStartMins &&
-                          slotTotalMins < hoverEndMins
-                        ) {
-                          isHighlighted = true;
-                        }
-                      }
-
-                      return (
-                        <td
-                          key={day}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            const dragDuration =
-                              draggedDurationRef.current || 60;
-
-                            if (
-                              !dragOverCell ||
-                              dragOverCell.day !== day ||
-                              dragOverCell.timeSlot !== timeSlot ||
-                              dragOverCell.duration !== dragDuration
-                            ) {
-                              setDragOverCell({
-                                day,
-                                timeSlot,
-                                duration: dragDuration,
-                              });
-                            }
-                          }}
-                          onDragLeave={() => {
-                            if (
-                              dragOverCell?.day === day &&
-                              dragOverCell?.timeSlot === timeSlot
-                            ) {
-                              setDragOverCell(null);
-                            }
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            const rawData =
-                              e.dataTransfer.getData("text/plain");
-                            if (!rawData) return;
-                            try {
-                              const parsed = JSON.parse(
-                                rawData,
-                              ) as DragPayload;
-                              handleDropToSlot(day, timeSlot, parsed);
-                            } catch (err) {
-                              console.error("Drop parse error", err);
-                            }
-                          }}
-                          className={`border-r p-2 text-center transition-colors ${
-                            isHighlighted
-                              ? "border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/60"
-                              : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
-                          }`}
-                        ></td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1835,11 +1912,26 @@ export default function ScheduleTimetableClient({
                                 <div className="font-bold">
                                   {subj.course_code}
                                 </div>
-                                <span
-                                  className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isLabType ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
-                                >
-                                  {subj.type || "Lecture"}
-                                </span>
+                                <div className="flex items-center gap-1">
+                                  <span
+                                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isLabType ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
+                                  >
+                                    {subj.type || "Lecture"}
+                                  </span>
+                                  {!isPlaced && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenSplitModal(subj);
+                                      }}
+                                      title="Split or merge/edit splits"
+                                      className="rounded bg-gray-200 p-1 text-gray-700 hover:bg-cyan-100 hover:text-cyan-700 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-cyan-900 dark:hover:text-cyan-200"
+                                    >
+                                      <HiScissors className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               <div className="truncate text-[10px]">
                                 {subj.course_name}
@@ -1879,6 +1971,163 @@ export default function ScheduleTimetableClient({
           </Accordion>
         </aside>
       )}
+
+      {/* --- SUBJECT SPLIT / MERGE MODAL --- */}
+      <Modal
+        show={splitModalData.show}
+        onClose={() =>
+          setSplitModalData({
+            show: false,
+            entry: null,
+            splitDurations: [60, 60],
+            matchingDuplicates: [],
+          })
+        }
+        size="md"
+        popup
+      >
+        <ModalHeader />
+        <ModalBody>
+          <div className="space-y-4">
+            <div className="text-center">
+              <HiScissors className="mx-auto mb-2 h-10 w-10 text-cyan-600 dark:text-cyan-400" />
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                Split Subject Block
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {splitModalData.entry?.course_code}:{" "}
+                {splitModalData.entry?.course_name} (Total Target:{" "}
+                {(computedTargetDuration / 60).toFixed(1)} hrs)
+              </p>
+            </div>
+
+            <div className="space-y-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
+              <div className="flex items-center justify-between text-xs font-semibold text-gray-700 dark:text-gray-300">
+                <span>
+                  Split Part Allocations (30 min increments, min 1 hr):
+                </span>
+                <span
+                  className={`font-mono ${currentSplitSum === computedTargetDuration ? "font-bold text-emerald-600 dark:text-emerald-400" : "font-bold text-amber-600 dark:text-amber-400"}`}
+                >
+                  Total: {(currentSplitSum / 60).toFixed(1)} /{" "}
+                  {(computedTargetDuration / 60).toFixed(1)} hrs
+                </span>
+              </div>
+
+              {splitModalData.splitDurations.map((durationMins, idx) => {
+                const otherSum = splitModalData.splitDurations.reduce(
+                  (acc, val, i) => (i === idx ? acc : acc + val),
+                  0,
+                );
+                const maxAvailableForThis = computedTargetDuration - otherSum;
+
+                return (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="w-16 text-xs font-bold text-gray-600 dark:text-gray-400">
+                      Part {idx + 1}:
+                    </span>
+                    <Select
+                      className="flex-1 text-xs"
+                      value={durationMins}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        const updated = [...splitModalData.splitDurations];
+                        updated[idx] = val;
+                        setSplitModalData({
+                          ...splitModalData,
+                          splitDurations: updated,
+                        });
+                      }}
+                    >
+                      {Array.from({
+                        length: Math.floor(computedTargetDuration / 30),
+                      }).map((_, i) => {
+                        const mins = (i + 1) * 30;
+                        if (mins < 60 || mins > maxAvailableForThis)
+                          return null;
+                        return (
+                          <option key={mins} value={mins}>
+                            {mins / 60} hr{mins > 60 ? "s" : ""} ({mins} mins)
+                          </option>
+                        );
+                      })}
+                    </Select>
+                    {splitModalData.splitDurations.length > 1 && (
+                      <Button
+                        color="failure"
+                        size="xs"
+                        onClick={() => {
+                          const updated = splitModalData.splitDurations.filter(
+                            (_, i) => i !== idx,
+                          );
+                          setSplitModalData({
+                            ...splitModalData,
+                            splitDurations: updated,
+                          });
+                        }}
+                      >
+                        <HiX className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+
+              <div className="flex justify-between pt-2">
+                {currentSplitSum < computedTargetDuration && (
+                  <Button
+                    color="gray"
+                    size="xs"
+                    onClick={() => {
+                      const remainder =
+                        computedTargetDuration - currentSplitSum;
+                      const addAmount = remainder >= 60 ? 60 : remainder;
+                      if (addAmount >= 60) {
+                        setSplitModalData({
+                          ...splitModalData,
+                          splitDurations: [
+                            ...splitModalData.splitDurations,
+                            addAmount,
+                          ],
+                        });
+                      }
+                    }}
+                  >
+                    + Add Split Part
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-center gap-4 pt-2">
+              <Button
+                color="cyan"
+                size="sm"
+                onClick={handleSaveSplits}
+                disabled={!isSplitValid}
+                className={`cursor-pointer bg-cyan-600 text-white hover:bg-cyan-700 ${!isSplitValid ? "cursor-not-allowed opacity-50" : ""}`}
+              >
+                Save & Update Splits
+              </Button>
+              <Button
+                color="alternative"
+                size="sm"
+                onClick={() =>
+                  setSplitModalData({
+                    show: false,
+                    entry: null,
+                    splitDurations: [60, 60],
+                    matchingDuplicates: [],
+                  })
+                }
+                className="cursor-pointer"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
 
       {/* --- CONFLICT WARNING MODAL --- */}
       <Modal
