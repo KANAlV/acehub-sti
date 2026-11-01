@@ -101,6 +101,7 @@ export interface SubjectUnitsRecord {
   subject_id: string;
   lecture_units: number;
   lab_units: number;
+  lab_type: string;
 }
 
 export async function fetchSubjectsUnitsByIds(
@@ -119,6 +120,7 @@ export async function fetchSubjectsUnitsByIds(
       subject_id: String(row.subject_id),
       lecture_units: Number(row.lecture_units) || 0,
       lab_units: Number(row.lab_units) || 0,
+      lab_type: String(row.lab_type) || "",
     }));
 
     return { success: true, data };
@@ -3744,29 +3746,26 @@ export async function fetchRoomTypeList(
   sortdir?: string,
   limit?: number,
   page?: number,
-) {
+): Promise<{ success: boolean; data?: RoomType[]; error?: string }> {
   try {
-    const pSearch = search ? `%${search}%` : null;
-    const pSortDir = sortdir?.toUpperCase() === "DESC" ? "DESC" : "ASC";
+    const pSearch = search || null;
+    const pSortDir = sortdir || "ASC";
     const pLimit = limit ?? 10;
     const pPage = page ?? 1;
-    const offset = Math.max(0, (pPage - 1) * pLimit);
 
     const data = await sql<RoomType[]>`
-      SELECT room_type_id, value 
-      FROM room_types
-      WHERE (${pSearch}::TEXT IS NULL OR value ILIKE ${pSearch})
-      ORDER BY 
-        CASE WHEN ${pSortDir} = 'ASC' THEN value END ASC,
-        CASE WHEN ${pSortDir} = 'DESC' THEN value END DESC
-      LIMIT ${pLimit} 
-      OFFSET ${offset};
+      SELECT * FROM get_room_type_list(
+        ${pSearch},
+        ${pSortDir},
+        ${pLimit},
+        ${pPage}
+      );
     `;
 
     return { success: true, data };
   } catch (error) {
     console.error("Failed to fetch room types list:", error);
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: (error as Error).message, data: [] };
   }
 }
 

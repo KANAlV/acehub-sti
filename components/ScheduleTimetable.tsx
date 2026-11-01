@@ -40,9 +40,14 @@ import {
   fetchBreakPeriods,
   fetchBreakPeriodsCount,
   fetchSubjectsUnitsByIds,
+  getRoomsForGeneration,
+  fetchRoomTypeList,
   TimetableEntryRecord,
   SubjectUnitsRecord,
+  RoomForGeneration,
+  RoomType,
 } from "@/app/actions/system";
+import { HiCheck } from "react-icons/hi2";
 
 interface ScheduleTimetableClientProps {
   scheduleName: string;
@@ -94,8 +99,8 @@ interface DragPayload {
 }
 
 export default function ScheduleTimetableClient({
-  scheduleName,
-}: ScheduleTimetableClientProps) {
+                                                  scheduleName,
+                                                }: ScheduleTimetableClientProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
 
@@ -107,6 +112,13 @@ export default function ScheduleTimetableClient({
     LocalTimetableEntry[]
   >([]);
 
+  // --- Rooms, Room Types & Subject Metadata Maps --- //
+  const [allRooms, setAllRooms] = useState<RoomForGeneration[]>([]);
+  const [roomTypesList, setRoomTypesList] = useState<RoomType[]>([]);
+  const [subjectUnitsMap, setSubjectUnitsMap] = useState<
+    Map<string, { lecture_units: number; lab_units: number; lab_type: string }>
+  >(new Map());
+
   const [error, setError] = useState<string | null>(null);
   const [scheduleID, setScheduleID] = useState<string | null>(null);
   const [scheduleExists, setScheduleExists] = useState<boolean>(true);
@@ -117,6 +129,14 @@ export default function ScheduleTimetableClient({
     show: boolean;
     message: string;
   }>({ show: false, message: "" });
+
+  // --- Confirmation Modal State for Lecture in Lab Room --- //
+  const [confirmModalData, setConfirmModalData] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ show: false, title: "", message: "", onConfirm: () => {} });
 
   // --- Dragging State & Highlight --- //
   const [draggedEntryId, setDraggedEntryId] = useState<string | null>(null);
@@ -209,6 +229,27 @@ export default function ScheduleTimetableClient({
     "08:30 PM",
   ];
 
+  // --- Strict Type-Safe Room Type Fetcher Matching IDs to fetched roomTypesList --- //
+  const roomTypeFetcher = (typeId: string | null | undefined): string => {
+    if (!typeId) return "Standard Room";
+    const cleanedId: string = typeId.trim().toLowerCase();
+
+    // 1. Direct lookup from roomTypesList by matching room_type_id
+    if (roomTypesList && roomTypesList.length > 0) {
+      const found = roomTypesList.find(
+        (rt: RoomType) => rt.room_type_id?.trim().toLowerCase() === cleanedId,
+      );
+      if (found) return found.value;
+    }
+
+    // 2. Return cleaned string if no match is found yet
+    return cleanedId;
+  };
+
+  const getRoomTypeName = (typeId: string | null | undefined): string => {
+    return roomTypeFetcher(typeId);
+  };
+
   // --- Break Period Count Fetcher --- //
   const getBreakPeriodCount = useCallback(async (search?: string | null) => {
     try {
@@ -237,7 +278,7 @@ export default function ScheduleTimetableClient({
         search,
         sortby,
         sortdir,
-        limit,
+        -1,
         page,
       );
 
@@ -254,6 +295,26 @@ export default function ScheduleTimetableClient({
 
   useEffect(() => {
     void getBreakPeriods();
+
+    // Fetch rooms and room types list via fetchRoomTypeList on mount
+    async function loadMasterData() {
+      try {
+        const [roomRes, roomTypesRes] = await Promise.all([
+          getRoomsForGeneration(),
+          fetchRoomTypeList(null, "ASC", -1),
+        ]);
+
+        if (roomRes.success && roomRes.data) {
+          setAllRooms(roomRes.data);
+        }
+        if (roomTypesRes.success && roomTypesRes.data) {
+          setRoomTypesList(roomTypesRes.data);
+        }
+      } catch (err) {
+        console.error("Error loading master data:", err);
+      }
+    }
+    void loadMasterData();
   }, [getBreakPeriods]);
 
   // 1. Fetch schedule ID by name on mount
@@ -303,10 +364,10 @@ export default function ScheduleTimetableClient({
             ),
           );
 
-          // Fetch official unit mappings for all unique subjects
+          // Fetch official unit mappings and lab_types for all unique subjects
           const unitsMap = new Map<
             string,
-            { lecture_units: number; lab_units: number }
+            { lecture_units: number; lab_units: number; lab_type: string }
           >();
           if (uniqueSubjectIds.length > 0) {
             const unitsRes = await fetchSubjectsUnitsByIds(uniqueSubjectIds);
@@ -315,10 +376,12 @@ export default function ScheduleTimetableClient({
                 unitsMap.set(subjRecord.subject_id, {
                   lecture_units: subjRecord.lecture_units || 0,
                   lab_units: subjRecord.lab_units || 0,
+                  lab_type: subjRecord.lab_type || "",
                 });
               });
             }
           }
+          setSubjectUnitsMap(unitsMap);
 
           // Map database records directly, using their type and respective unit duration
           const processedData = loadedData.map((entry) => {
@@ -467,7 +530,12 @@ export default function ScheduleTimetableClient({
       });
     });
 
-    return expanded;
+    // Sort breaks so latest end time takes priority during overlaps
+    return expanded.sort((a, b) => {
+      if (a.day !== b.day) return a.day.localeCompare(b.day);
+      if (a.start_time !== b.start_time) return a.start_time - b.start_time;
+      return b.end_time - a.end_time;
+    });
   };
 
   const expandedBreaks = getExpandedBreaks();
@@ -489,13 +557,6 @@ export default function ScheduleTimetableClient({
   const availableTimetableSections = Array.from(
     new Set(originalEntries.map((e) => e.section).filter(Boolean)),
   );
-  const availableTimetableRooms = Array.from(
-    new Set(
-      originalEntries
-        .map((e) => e.room_name)
-        .filter((r): r is string => Boolean(r)),
-    ),
-  );
 
   // --- Unassign / Return to Sidebar Handler --- //
   const handleUnassignEntry = (scheduleEntryId: string) => {
@@ -508,6 +569,37 @@ export default function ScheduleTimetableClient({
               day: "",
               start_time: 0,
               end_time: 0,
+            };
+          }
+          return e;
+        }) as LocalTimetableEntry[],
+    );
+  };
+
+  // --- Core Placement & Room Type Validation --- //
+  const executeDropPlacement = (
+    targetDay: string,
+    targetStartMins: number,
+    duration: number,
+    droppedData: DragPayload,
+    activeRoom: string | null | undefined,
+  ) => {
+    const targetEntryId = droppedData.scheduleEntryId;
+
+    setChangedSchedules(
+      (prev) =>
+        prev.map((e) => {
+          if (e.schedule_entry_id === targetEntryId) {
+            return {
+              ...e,
+              day: targetDay,
+              start_time: targetStartMins,
+              end_time: targetStartMins + duration,
+              originalDuration: duration,
+              room_name:
+                selectedTimetableRoom !== "ALL"
+                  ? selectedTimetableRoom
+                  : activeRoom || e.room_name,
             };
           }
           return e;
@@ -545,7 +637,7 @@ export default function ScheduleTimetableClient({
     }
 
     const targetEndMins = targetStartMins + duration;
-    const MAX_DAY_LIMIT = 20 * 60 + 30; // 8:30 PM start + 30 min slot = 9:00 PM max end (20:30 + 30m = 21:00 / 1260 mins)
+    const MAX_DAY_LIMIT = 20 * 60 + 30; // 8:30 PM start + 30 min slot = 9:00 PM max end
 
     // Check -0.5: Day Boundary Check (Strictly cannot end past 9:00 PM)
     if (targetEndMins > MAX_DAY_LIMIT + 30) {
@@ -554,6 +646,74 @@ export default function ScheduleTimetableClient({
         message: `Scheduling Conflict: Class cannot end past 9:00 PM (Attempted end time: ${formatTime(targetEndMins)}).`,
       });
       return;
+    }
+
+    // --- Room Type Validation & Warnings with Clean Names --- //
+    if (activeRoom && activeRoom !== "ALL" && droppedData.subjectId) {
+      const targetRoomObj = allRooms.find(
+        (r) => r.room_name?.toLowerCase() === activeRoom.toLowerCase(),
+      );
+      const subjectMeta = subjectUnitsMap.get(droppedData.subjectId);
+      const isLabBlock = droppedData.entryType?.toLowerCase() === "laboratory";
+
+      if (targetRoomObj && subjectMeta) {
+        const roomTypeUuid = targetRoomObj.room_type
+          ? String(targetRoomObj.room_type).trim()
+          : "";
+        const requiredLabTypeUuid = subjectMeta.lab_type
+          ? String(subjectMeta.lab_type).trim()
+          : "";
+
+        // Resolve friendly names using roomTypeFetcher matching fetchRoomTypeList data
+        const roomTypeName = roomTypeFetcher(roomTypeUuid);
+        const requiredLabTypeName = roomTypeFetcher(requiredLabTypeUuid);
+
+        if (isLabBlock) {
+          const isMatch =
+            roomTypeUuid === requiredLabTypeUuid ||
+            roomTypeName.toLowerCase() === requiredLabTypeName.toLowerCase();
+
+          if (requiredLabTypeUuid && roomTypeUuid && !isMatch) {
+            setConflictModalData({
+              show: true,
+              message: `Room Type Mismatch: Laboratory block requires room type [${requiredLabTypeName}], but room [${activeRoom}] is classified as [${roomTypeName}].`,
+            });
+            return;
+          }
+        } else {
+          // Lecture block placed in a lab room -> Show warning confirmation modal with clean names
+          const isLabRoom =
+            roomTypeName.toLowerCase().includes("lab") ||
+            roomTypeName.toLowerCase().includes("kitchen") ||
+            roomTypeName.toLowerCase().includes("bar") ||
+            roomTypeName.toLowerCase().includes("gym") ||
+            roomTypeName.toLowerCase().includes("avr");
+
+          if (isLabRoom && !roomTypeName.toLowerCase().includes("lecture")) {
+            setConfirmModalData({
+              show: true,
+              title: "Assign Lecture to Laboratory Room",
+              message: `Warning: You are assigning a Lecture class to room [${activeRoom}], which is designated as a Laboratory (${roomTypeName}). Do you wish to continue?`,
+              onConfirm: () => {
+                setConfirmModalData({
+                  show: false,
+                  title: "",
+                  message: "",
+                  onConfirm: () => {},
+                });
+                executeDropPlacement(
+                  targetDay,
+                  targetStartMins,
+                  duration,
+                  droppedData,
+                  activeRoom,
+                );
+              },
+            });
+            return;
+          }
+        }
+      }
     }
 
     // Check 0: Break Period Interruption Check
@@ -570,7 +730,7 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // Check 0.5: Ghost / Overlapping Room Entry Check (Grayed-out blocks from other sections in the same room)
+    // Check 0.5: Ghost / Overlapping Room Entry Check
     const ghostOverlapConflict = changedSchedules.find((entry) => {
       if (!entry.day || entry.start_time <= 0) return false;
       if (entry.day.toLowerCase() !== targetDay.toLowerCase()) return false;
@@ -587,7 +747,6 @@ export default function ScheduleTimetableClient({
         droppedData.roomName &&
         entry.room_name?.toLowerCase() === droppedData.roomName.toLowerCase();
 
-      // If it's in the same room and not part of the currently filtered active view section
       if (
         (matchesActiveRoom || matchesDraggedRoom) &&
         entry.section.toLowerCase() !== droppedData.section.toLowerCase()
@@ -607,7 +766,7 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // Check 1: Direct Block Overlap Check (Excluding self so dropping back to original slot or overlapping self doesn't block)
+    // Check 1: Direct Block Overlap Check (Scoped strictly to the active room)
     const blockOverlapConflict = changedSchedules.find((e) => {
       if (!e.day || e.start_time <= 0) return false;
       if (e.day.toLowerCase() !== targetDay.toLowerCase()) return false;
@@ -617,13 +776,23 @@ export default function ScheduleTimetableClient({
       )
         return false;
 
+      const entryRoom = e.room_name?.trim().toLowerCase() || "";
+      const currentActiveRoom = activeRoom?.trim().toLowerCase() || "";
+
+      const isSameRoom =
+        selectedTimetableRoom === "ALL" ||
+        !currentActiveRoom ||
+        entryRoom === currentActiveRoom;
+
+      if (!isSameRoom) return false;
+
       return targetStartMins < e.end_time && targetEndMins > e.start_time;
     });
 
     if (blockOverlapConflict) {
       setConflictModalData({
         show: true,
-        message: `Scheduling Conflict: Time slot is already occupied by another class block [${blockOverlapConflict.course_code}: ${blockOverlapConflict.course_name}] (${formatTime(blockOverlapConflict.start_time)} - ${formatTime(blockOverlapConflict.end_time)}).`,
+        message: `Scheduling Conflict: Room [${activeRoom || blockOverlapConflict.room_name || "TBA"}] is already occupied during this time slot by [${blockOverlapConflict.course_code}: ${blockOverlapConflict.course_name}] (${formatTime(blockOverlapConflict.start_time)} - ${formatTime(blockOverlapConflict.end_time)}).`,
       });
       return;
     }
@@ -679,27 +848,13 @@ export default function ScheduleTimetableClient({
       }
     }
 
-    if (targetEntryId) {
-      setChangedSchedules(
-        (prev) =>
-          prev.map((e) => {
-            if (e.schedule_entry_id === targetEntryId) {
-              return {
-                ...e,
-                day: targetDay,
-                start_time: targetStartMins,
-                end_time: targetStartMins + duration,
-                originalDuration: duration,
-                room_name:
-                  selectedTimetableRoom !== "ALL"
-                    ? selectedTimetableRoom
-                    : e.room_name,
-              };
-            }
-            return e;
-          }) as LocalTimetableEntry[],
-      );
-    }
+    executeDropPlacement(
+      targetDay,
+      targetStartMins,
+      duration,
+      droppedData,
+      activeRoom,
+    );
   };
 
   if (isLoading) {
@@ -767,6 +922,10 @@ export default function ScheduleTimetableClient({
               size="sm"
               className="cursor-pointer"
               onClick={() => setIsEditMode(!isEditMode)}
+              hidden={
+                JSON.stringify(changedSchedules) !==
+                JSON.stringify(originalEntries)
+              }
             >
               <HiPencil className="mr-1.5 h-4 w-4" />
               {isEditMode ? "Close Editor" : "Edit Timetable"}
@@ -785,20 +944,30 @@ export default function ScheduleTimetableClient({
         {/* Discard Changes Bar */}
         {JSON.stringify(changedSchedules) !==
           JSON.stringify(originalEntries) && (
-          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 shadow-sm dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 shadow-sm dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
             <span className="font-medium">
               You have unsaved changes in this session.
             </span>
-            <Button
-              color="alternative"
-              size="xs"
-              onClick={handleDiscardChanges}
-              className="flex items-center gap-1 border-amber-300 bg-white hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-800 dark:hover:bg-gray-700"
-            >
-              <HiRefresh className="h-3.5 w-3.5" /> Discard Changes
-            </Button>
-          </div>
-        )}
+              <div className={"flex space-x-2"}>
+                {/* TODO: Add Saving */}
+                <Button
+                  color="green"
+                  size="xs"
+                  className="flex items-center gap-1"
+                >
+                  <HiCheck className="h-3.5 w-3.5" /> Save Changes
+                </Button>
+                <Button
+                  color="alternative"
+                  size="xs"
+                  onClick={handleDiscardChanges}
+                  className="flex items-center gap-1 border-amber-300 bg-white hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                >
+                  <HiRefresh className="h-3.5 w-3.5" /> Discard Changes
+                </Button>
+              </div>
+            </div>
+          )}
 
         {/* Legend & Controls Bar */}
         <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 dark:bg-gray-800">
@@ -853,7 +1022,7 @@ export default function ScheduleTimetableClient({
                 Section:
               </span>
               <Select
-                className="w-full sm:w-44"
+                className="max-h-40 w-full overflow-y-auto sm:w-44"
                 value={selectedTimetableSection}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -877,7 +1046,7 @@ export default function ScheduleTimetableClient({
                 Room:
               </span>
               <Select
-                className="w-full sm:w-44"
+                className="max-h-40 w-full overflow-y-auto sm:w-44 [&_select]:max-h-40 [&_select]:overflow-y-auto"
                 value={selectedTimetableRoom}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -888,9 +1057,9 @@ export default function ScheduleTimetableClient({
                 }}
               >
                 <option value="ALL">-- All Rooms --</option>
-                {availableTimetableRooms.map((roomName) => (
-                  <option key={roomName} value={roomName}>
-                    {roomName}
+                {allRooms.map((room) => (
+                  <option key={room.room_id} value={room.room_name ?? ""}>
+                    {room.room_name}
                   </option>
                 ))}
               </Select>
@@ -901,268 +1070,273 @@ export default function ScheduleTimetableClient({
         {/* Main Display Container */}
         {displayFormat === "timetable" ? (
           <div className="max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            <table className="w-full border-collapse text-left text-xs">
+            <table className="w-full min-w-[850px] border-collapse text-left text-xs">
               <thead>
-                <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                  <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
-                    Time
+              <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+                  Time
+                </th>
+                {daysOfWeek.map((day) => (
+                  <th
+                    key={day}
+                    className="min-w-[120px] border-r border-b p-3 text-center font-bold"
+                  >
+                      <span className="sm:hidden">
+                        {day.substring(0, 3).toUpperCase()}
+                      </span>
+                    <span className="hidden sm:inline">
+                        {day.toUpperCase()}
+                      </span>
                   </th>
-                  {daysOfWeek.map((day) => (
-                    <th
-                      key={day}
-                      className="border-r border-b p-3 text-center font-bold"
-                    >
-                      {day.toUpperCase()}
-                    </th>
-                  ))}
-                </tr>
+                ))}
+              </tr>
               </thead>
               <tbody>
-                {timeSlotsGrid.map((timeSlot, tIdx) => {
-                  const slotTotalMins = timeStrToMinutes(timeSlot);
+              {timeSlotsGrid.map((timeSlot, tIdx) => {
+                const slotTotalMins = timeStrToMinutes(timeSlot);
 
-                  return (
-                    <tr key={tIdx} className="border-b dark:border-gray-800">
-                      <td className="sticky left-0 z-10 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                        {timeSlot}
-                      </td>
-                      {daysOfWeek.map((day) => {
-                        const matchedEntry = filteredTimetableEntries.find(
-                          (entry) => {
-                            if (entry.day.toLowerCase() !== day.toLowerCase())
-                              return false;
-                            const entryStartStr = formatMinutesToTimeStr(
-                              entry.start_time,
-                            );
-                            return entryStartStr === timeSlot;
-                          },
+                return (
+                  <tr
+                    key={tIdx}
+                    className="h-11 border-b dark:border-gray-800"
+                  >
+                    <td className="sticky left-0 z-10 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                      {timeSlot}
+                    </td>
+                    {daysOfWeek.map((day) => {
+                      const matchedEntry = filteredTimetableEntries.find(
+                        (entry) => {
+                          if (entry.day.toLowerCase() !== day.toLowerCase())
+                            return false;
+                          const entryStartStr = formatMinutesToTimeStr(
+                            entry.start_time,
+                          );
+                          return entryStartStr === timeSlot;
+                        },
+                      );
+
+                      const ghostEntry = !matchedEntry
+                        ? changedSchedules.find((entry) => {
+                          if (!entry.day || entry.start_time <= 0)
+                            return false;
+                          if (entry.day.toLowerCase() !== day.toLowerCase())
+                            return false;
+                          const entryStartStr = formatMinutesToTimeStr(
+                            entry.start_time,
+                          );
+                          if (entryStartStr !== timeSlot) return false;
+
+                          // Exclude the item currently being dragged
+                          if (
+                            draggedEntryId &&
+                            entry.schedule_entry_id === draggedEntryId
+                          ) {
+                            return false;
+                          }
+
+                          // Check if it belongs to the same section as the item being dragged
+                          const draggedEntry = changedSchedules.find(
+                            (e) => e.schedule_entry_id === draggedEntryId,
+                          );
+                          const isSameSection =
+                            draggedEntry &&
+                            entry.section.toLowerCase() ===
+                            draggedEntry.section.toLowerCase();
+
+                          const matchesActiveRoom =
+                            selectedTimetableRoom !== "ALL" &&
+                            entry.room_name?.toLowerCase() ===
+                            selectedTimetableRoom.toLowerCase();
+
+                          return isSameSection || matchesActiveRoom;
+                        })
+                        : null;
+
+                      const displayEntry = matchedEntry || ghostEntry;
+
+                      // Check if this displayed entry is currently being dragged
+                      const isBeingDragged =
+                        displayEntry &&
+                        displayEntry.schedule_entry_id === draggedEntryId;
+
+                      if (isBeingDragged) {
+                        const durationMins =
+                          displayEntry.end_time - displayEntry.start_time ||
+                          displayEntry.originalDuration ||
+                          60;
+                        const rowSpan = Math.max(
+                          1,
+                          Math.round(durationMins / 30),
                         );
 
-                        const ghostEntry = !matchedEntry
-                          ? changedSchedules.find((entry) => {
-                              if (!entry.day || entry.start_time <= 0)
-                                return false;
-                              if (entry.day.toLowerCase() !== day.toLowerCase())
-                                return false;
-                              const entryStartStr = formatMinutesToTimeStr(
-                                entry.start_time,
-                              );
-                              if (entryStartStr !== timeSlot) return false;
-
-                              // Exclude the item currently being dragged
-                              if (
-                                draggedEntryId &&
-                                entry.schedule_entry_id === draggedEntryId
-                              ) {
-                                return false;
-                              }
-
-                              // Check if it belongs to the same section as the item being dragged
-                              const draggedEntry = changedSchedules.find(
-                                (e) => e.schedule_entry_id === draggedEntryId,
-                              );
-                              const isSameSection =
-                                draggedEntry &&
-                                entry.section.toLowerCase() ===
-                                  draggedEntry.section.toLowerCase();
-
-                              const matchesActiveRoom =
-                                selectedTimetableRoom !== "ALL" &&
-                                entry.room_name?.toLowerCase() ===
-                                  selectedTimetableRoom.toLowerCase();
-
-                              return isSameSection || matchesActiveRoom;
-                            })
-                          : null;
-
-                        const displayEntry = matchedEntry || ghostEntry;
-
-                        // Check if this displayed entry is currently being dragged
-                        const isBeingDragged =
-                          displayEntry &&
-                          displayEntry.schedule_entry_id === draggedEntryId;
-
-                        if (isBeingDragged) {
-                          const durationMins =
-                            displayEntry.end_time - displayEntry.start_time ||
-                            displayEntry.originalDuration ||
-                            60;
-                          const rowSpan = Math.max(
-                            1,
-                            Math.round(durationMins / 30),
-                          );
-                          const srcHeightPx = rowSpan * 42;
-
-                          return (
-                            <td
-                              key={day}
-                              rowSpan={rowSpan}
-                              style={{
-                                height: `${srcHeightPx}px`,
-                                position: "relative",
+                        return (
+                          <td
+                            key={day}
+                            rowSpan={rowSpan}
+                            style={{
+                              height: "0px",
+                            }}
+                            onDragEnd={() => {
+                              setDraggedEntryId(null);
+                              setDragSourceInfo(null);
+                              setDragOverCell(null);
+                            }}
+                            className="relative overflow-hidden border-r border-dashed border-cyan-400 bg-cyan-50/50 p-0 align-top dark:bg-cyan-950/20"
+                          >
+                            {/* ONLY the top 30-min slot acts as the drop target to allow nudging the rest of the span */}
+                            <div
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                if (
+                                  !dragOverCell ||
+                                  dragOverCell.day !== day ||
+                                  dragOverCell.timeSlot !== timeSlot
+                                ) {
+                                  setDragOverCell({
+                                    day,
+                                    timeSlot,
+                                    duration: durationMins,
+                                  });
+                                }
                               }}
-                              onDragEnd={() => {
-                                setDraggedEntryId(null);
-                                setDragSourceInfo(null);
-                                setDragOverCell(null);
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                const rawData =
+                                  e.dataTransfer.getData("text/plain");
+                                if (!rawData) return;
+                                try {
+                                  const parsed = JSON.parse(
+                                    rawData,
+                                  ) as DragPayload;
+                                  handleDropToSlot(day, timeSlot, parsed);
+                                } catch (err) {
+                                  console.error("Drop parse error", err);
+                                }
                               }}
-                              className="border-r border-dashed border-cyan-400 bg-cyan-50/50 p-0 align-top dark:bg-cyan-950/20"
+                              className="absolute inset-x-0 top-0 z-20 flex h-[42px] items-center justify-center gap-1 border-b border-dashed border-cyan-400 bg-cyan-100/70 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200"
                             >
-                              {/* ONLY the top 30-min slot acts as the drop target to allow nudging the rest of the span */}
-                              <div
-                                onDragOver={(e) => {
-                                  e.preventDefault();
-                                  if (
-                                    !dragOverCell ||
-                                    dragOverCell.day !== day ||
-                                    dragOverCell.timeSlot !== timeSlot
-                                  ) {
-                                    setDragOverCell({
-                                      day,
-                                      timeSlot,
-                                      duration: durationMins,
-                                    });
-                                  }
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  const rawData =
-                                    e.dataTransfer.getData("text/plain");
-                                  if (!rawData) return;
-                                  try {
-                                    const parsed = JSON.parse(
-                                      rawData,
-                                    ) as DragPayload;
-                                    handleDropToSlot(day, timeSlot, parsed);
-                                  } catch (err) {
-                                    console.error("Drop parse error", err);
-                                  }
-                                }}
-                                className="absolute inset-x-0 top-0 z-20 flex h-[42px] items-center justify-center gap-1 border-b border-dashed border-cyan-400 bg-cyan-100/70 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200"
-                              >
-                                <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
-                                <span>Original Position (Drop here)</span>
-                              </div>
+                              <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
+                              <span>Original Position (Drop here)</span>
+                            </div>
 
-                              {/* The remaining lower cells of the original position are free normal drop cells for nudging */}
-                              <div
-                                className="absolute inset-x-0 top-[42px] bottom-0 p-2 text-center"
-                                onDragOver={(e) => {
-                                  e.preventDefault();
+                            {/* The remaining lower cells of the original position are free normal drop cells for nudging */}
+                            <div
+                              className="absolute inset-x-0 top-[42px] bottom-0 p-2 text-center"
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                const nextSlotTime = formatMinutesToTimeStr(
+                                  timeStrToMinutes(timeSlot) + 30,
+                                );
+                                if (
+                                  !dragOverCell ||
+                                  dragOverCell.day !== day ||
+                                  dragOverCell.timeSlot !== nextSlotTime
+                                ) {
+                                  setDragOverCell({
+                                    day,
+                                    timeSlot: nextSlotTime,
+                                    duration: durationMins,
+                                  });
+                                }
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                const rawData =
+                                  e.dataTransfer.getData("text/plain");
+                                if (!rawData) return;
+                                try {
+                                  const parsed = JSON.parse(
+                                    rawData,
+                                  ) as DragPayload;
                                   const nextSlotTime = formatMinutesToTimeStr(
                                     timeStrToMinutes(timeSlot) + 30,
                                   );
-                                  if (
-                                    !dragOverCell ||
-                                    dragOverCell.day !== day ||
-                                    dragOverCell.timeSlot !== nextSlotTime
-                                  ) {
-                                    setDragOverCell({
-                                      day,
-                                      timeSlot: nextSlotTime,
-                                      duration: durationMins,
-                                    });
-                                  }
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  const rawData =
-                                    e.dataTransfer.getData("text/plain");
-                                  if (!rawData) return;
-                                  try {
-                                    const parsed = JSON.parse(
-                                      rawData,
-                                    ) as DragPayload;
-                                    const nextSlotTime = formatMinutesToTimeStr(
-                                      timeStrToMinutes(timeSlot) + 30,
-                                    );
-                                    handleDropToSlot(day, nextSlotTime, parsed);
-                                  } catch (err) {
-                                    console.error("Drop parse error", err);
-                                  }
-                                }}
-                              ></div>
-                            </td>
-                          );
+                                  handleDropToSlot(day, nextSlotTime, parsed);
+                                } catch (err) {
+                                  console.error("Drop parse error", err);
+                                }
+                              }}
+                            ></div>
+                          </td>
+                        );
+                      }
+
+                      if (displayEntry) {
+                        const durationMins =
+                          displayEntry.end_time - displayEntry.start_time ||
+                          displayEntry.originalDuration ||
+                          60;
+
+                        const rowSpan = Math.max(
+                          1,
+                          Math.round(durationMins / 30),
+                        );
+                        const blockHeightPx = rowSpan * 42;
+
+                        const isGhost = !matchedEntry && !!ghostEntry;
+                        const isLabType =
+                          displayEntry.type?.toLowerCase() === "laboratory";
+
+                        let blockStyle =
+                          "bg-blue-50/80 text-blue-950 border-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800";
+                        if (isGhost) {
+                          blockStyle =
+                            "bg-gray-100 text-gray-400 border-gray-200 opacity-50 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700";
+                        } else if (isLabType) {
+                          blockStyle =
+                            "bg-emerald-50/80 text-emerald-950 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
                         }
 
-                        if (displayEntry) {
-                          const durationMins =
-                            displayEntry.end_time - displayEntry.start_time ||
-                            displayEntry.originalDuration ||
-                            60;
+                        const scheduleEntryId =
+                          displayEntry.schedule_entry_id;
 
-                          const rowSpan = Math.max(
-                            1,
-                            Math.round(durationMins / 30),
-                          );
-                          const blockHeightPx = rowSpan * 42;
+                        return (
+                          <td
+                            key={day}
+                            rowSpan={rowSpan}
+                            style={{
+                              height: "0px",
+                            }}
+                            draggable={isEditMode && !isGhost}
+                            onDragStart={(e) => {
+                              hasDroppedRef.current = false;
+                              setDraggedEntryId(scheduleEntryId);
+                              draggedDurationRef.current = durationMins;
+                              setDragSourceInfo({
+                                day: displayEntry.day,
+                                start_time: displayEntry.start_time,
+                                duration: durationMins,
+                                course_code: displayEntry.course_code,
+                              });
+                              if (displayEntry.room_name) {
+                                setSelectedTimetableRoom(
+                                  displayEntry.room_name,
+                                );
+                              }
 
-                          const isGhost = !matchedEntry && !!ghostEntry;
-                          const isLabType =
-                            displayEntry.type?.toLowerCase() === "laboratory";
+                              // Create a cleanly isolated drag preview element
+                              const dragPreview =
+                                document.createElement("div");
+                              dragPreview.style.position = "absolute";
+                              dragPreview.style.top = "-9999px";
+                              dragPreview.style.left = "-9999px";
+                              dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
+                              dragPreview.style.height = `${blockHeightPx - 12}px`;
+                              dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans ${
+                                isLabType
+                                  ? "bg-emerald-100 text-emerald-950 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:border-emerald-700"
+                                  : "bg-blue-100 text-blue-950 border border-blue-300 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-700"
+                              }`;
 
-                          let blockStyle =
-                            "bg-blue-50/80 text-blue-950 border-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800";
-                          if (isGhost) {
-                            blockStyle =
-                              "bg-gray-100 text-gray-400 border-gray-200 opacity-50 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700";
-                          } else if (isLabType) {
-                            blockStyle =
-                              "bg-emerald-50/80 text-emerald-950 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
-                          }
-
-                          const scheduleEntryId =
-                            displayEntry.schedule_entry_id;
-
-                          return (
-                            <td
-                              key={day}
-                              rowSpan={rowSpan}
-                              style={{
-                                height: `${blockHeightPx}px`,
-                                position: "relative",
-                              }}
-                              draggable={isEditMode && !isGhost}
-                              onDragStart={(e) => {
-                                hasDroppedRef.current = false;
-                                setDraggedEntryId(scheduleEntryId);
-                                draggedDurationRef.current = durationMins;
-                                setDragSourceInfo({
-                                  day: displayEntry.day,
-                                  start_time: displayEntry.start_time,
-                                  duration: durationMins,
-                                  course_code: displayEntry.course_code,
-                                });
-                                if (displayEntry.room_name) {
-                                  setSelectedTimetableRoom(
-                                    displayEntry.room_name,
-                                  );
-                                }
-
-                                // Create a cleanly isolated drag preview element
-                                const dragPreview =
-                                  document.createElement("div");
-                                dragPreview.style.position = "absolute";
-                                dragPreview.style.top = "-9999px";
-                                dragPreview.style.left = "-9999px";
-                                dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
-                                dragPreview.style.height = `${blockHeightPx - 12}px`;
-                                dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans ${
-                                  isLabType
-                                    ? "bg-emerald-100 text-emerald-950 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:border-emerald-700"
-                                    : "bg-blue-100 text-blue-950 border border-blue-300 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-700"
-                                }`;
-
-                                dragPreview.innerHTML = `
+                              dragPreview.innerHTML = `
                                   <div>
                                     <div class="flex items-center justify-between">
                                       <div class="text-xs font-bold truncate">${displayEntry.course_name}</div>
                                       <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                        isLabType
-                                          ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
-                                          : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
-                                      }">${displayEntry.type || "Lecture"}</span>
+                                isLabType
+                                  ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
+                                  : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
+                              }">${displayEntry.type || "Lecture"}</span>
                                     </div>
                                     <div class="text-[10px] font-medium opacity-80 truncate">${displayEntry.course_code}</div>
                                   </div>
@@ -1173,309 +1347,319 @@ export default function ScheduleTimetableClient({
                                   </div>
                                 `;
 
-                                document.body.appendChild(dragPreview);
-                                if (e.dataTransfer.setDragImage) {
-                                  e.dataTransfer.setDragImage(
-                                    dragPreview,
-                                    20,
-                                    20,
-                                  );
-                                }
-                                setTimeout(() => {
-                                  document.body.removeChild(dragPreview);
-                                }, 0);
-
-                                e.dataTransfer.setData(
-                                  "text/plain",
-                                  JSON.stringify({
-                                    type: "existing",
-                                    scheduleEntryId: scheduleEntryId,
-                                    section: displayEntry.section,
-                                    roomName: displayEntry.room_name,
-                                    subjectId: displayEntry.subject_id,
-                                    roomId: displayEntry.room_id,
-                                    teacherId: displayEntry.teacher_id,
-                                    entryType: displayEntry.type,
-                                    duration: durationMins,
-                                    originalDay: displayEntry.day,
-                                    originalStartTime: displayEntry.start_time,
-                                    originalEndTime: displayEntry.end_time,
-                                  } as DragPayload),
+                              document.body.appendChild(dragPreview);
+                              if (e.dataTransfer.setDragImage) {
+                                e.dataTransfer.setDragImage(
+                                  dragPreview,
+                                  20,
+                                  20,
                                 );
-                              }}
-                              onDragEnd={() => {
-                                setDraggedEntryId(null);
-                                setDragSourceInfo(null);
-                                setDragOverCell(null);
-                              }}
-                              onDragOver={(e) => {
-                                if (isGhost) {
-                                  e.preventDefault();
-                                  const dragDuration = durationMins;
-                                  if (
-                                    !dragOverCell ||
-                                    dragOverCell.day !== day ||
-                                    dragOverCell.timeSlot !== timeSlot
-                                  ) {
-                                    setDragOverCell({
-                                      day,
-                                      timeSlot,
-                                      duration: dragDuration,
-                                    });
-                                  }
-                                }
-                              }}
-                              onDrop={(e) => {
-                                if (isGhost) {
-                                  e.preventDefault();
-                                  const rawData =
-                                    e.dataTransfer.getData("text/plain");
-                                  if (!rawData) return;
-                                  try {
-                                    const parsed = JSON.parse(
-                                      rawData,
-                                    ) as DragPayload;
-                                    handleDropToSlot(day, timeSlot, parsed);
-                                  } catch (err) {
-                                    console.error("Drop parse error", err);
-                                  }
-                                }
-                              }}
-                              className={`border-r p-0 align-top ${blockStyle} border font-sans ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
-                            >
-                              <div
-                                className="schedule-block-inner absolute inset-1.5 flex flex-col gap-1 overflow-hidden rounded bg-inherit p-2 shadow-xs"
-                                style={{ height: `${blockHeightPx - 12}px` }}
-                              >
-                                {isEditMode && !isGhost && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUnassignEntry(scheduleEntryId);
-                                    }}
-                                    title="Unassign / Return to Sidebar"
-                                    className="absolute top-1 right-1 z-20 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
-                                  >
-                                    <HiX className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
+                              }
+                              setTimeout(() => {
+                                document.body.removeChild(dragPreview);
+                              }, 0);
 
-                                {/* Header: Course name & Type badge */}
+                              e.dataTransfer.setData(
+                                "text/plain",
+                                JSON.stringify({
+                                  type: "existing",
+                                  scheduleEntryId: scheduleEntryId,
+                                  section: displayEntry.section,
+                                  roomName: displayEntry.room_name,
+                                  subjectId: displayEntry.subject_id,
+                                  roomId: displayEntry.room_id,
+                                  teacherId: displayEntry.teacher_id,
+                                  entryType: displayEntry.type,
+                                  duration: durationMins,
+                                  originalDay: displayEntry.day,
+                                  originalStartTime: displayEntry.start_time,
+                                  originalEndTime: displayEntry.end_time,
+                                } as DragPayload),
+                              );
+                            }}
+                            onDragEnd={() => {
+                              setDraggedEntryId(null);
+                              setDragSourceInfo(null);
+                              setDragOverCell(null);
+                            }}
+                            onDragOver={(e) => {
+                              if (isGhost) {
+                                e.preventDefault();
+                                const dragDuration = durationMins;
+                                if (
+                                  !dragOverCell ||
+                                  dragOverCell.day !== day ||
+                                  dragOverCell.timeSlot !== timeSlot
+                                ) {
+                                  setDragOverCell({
+                                    day,
+                                    timeSlot,
+                                    duration: dragDuration,
+                                  });
+                                }
+                              }
+                            }}
+                            onDrop={(e) => {
+                              if (isGhost) {
+                                e.preventDefault();
+                                const rawData =
+                                  e.dataTransfer.getData("text/plain");
+                                if (!rawData) return;
+                                try {
+                                  const parsed = JSON.parse(
+                                    rawData,
+                                  ) as DragPayload;
+                                  handleDropToSlot(day, timeSlot, parsed);
+                                } catch (err) {
+                                  console.error("Drop parse error", err);
+                                }
+                              }
+                            }}
+                            className={`relative overflow-hidden border-r p-0 align-top ${blockStyle} border font-sans ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
+                          >
+                            <div
+                              className="schedule-block-inner absolute inset-1.5 flex flex-col gap-1 overflow-hidden rounded bg-inherit p-2 shadow-xs"
+                              style={{ height: `${blockHeightPx - 12}px` }}
+                            >
+                              {isEditMode && !isGhost && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUnassignEntry(scheduleEntryId);
+                                  }}
+                                  title="Unassign / Return to Sidebar"
+                                  className="absolute top-1 right-1 z-20 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
+                                >
+                                  <HiX className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+
+                              {/* Header: Course name & Type badge */}
+                              <div>
+                                <div className="flex items-center justify-between pr-4">
+                                  <div className="truncate text-xs font-bold text-gray-900 dark:text-white">
+                                    {displayEntry.course_name}
+                                  </div>
+                                </div>
+                                <div className="truncate text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                                  {displayEntry.course_code}{" "}
+                                  {isGhost && "(Other Section/Room)"}
+                                </div>
+                              </div>
+
+                              {/* Details right below subject code */}
+                              <div className="space-y-0.5 text-[10px] font-semibold text-gray-700 dark:text-gray-300">
                                 <div>
-                                  <div className="flex items-center justify-between pr-4">
-                                    <div className="truncate text-xs font-bold text-gray-900 dark:text-white">
-                                      {displayEntry.course_name}
-                                    </div>
-                                    <span
-                                      className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isLabType ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
-                                    >
-                                      {displayEntry.type || "Lecture"}
-                                    </span>
-                                  </div>
-                                  <div className="truncate text-[10px] font-medium text-gray-600 dark:text-gray-300">
-                                    {displayEntry.course_code}{" "}
-                                    {isGhost && "(Other Section/Room)"}
-                                  </div>
+                                  Teacher:{" "}
+                                  {displayEntry.teacher_code || "Unassigned"}
                                 </div>
-
-                                {/* Details right below subject code */}
-                                <div className="space-y-0.5 text-[10px] font-semibold text-gray-700 dark:text-gray-300">
-                                  <div>Sec: {displayEntry.section}</div>
-                                  <div>
-                                    Room: {displayEntry.room_name || "TBA"}
-                                  </div>
-                                  <div className="font-mono">
-                                    {formatTime(displayEntry.start_time)} -{" "}
-                                    {formatTime(displayEntry.end_time)}
-                                  </div>
+                                <div>Sec: {displayEntry.section}</div>
+                                <div>
+                                  Room: {displayEntry.room_name || "TBA"}
+                                </div>
+                                <div className="font-mono">
+                                  {formatTime(displayEntry.start_time)} -{" "}
+                                  {formatTime(displayEntry.end_time)}
                                 </div>
                               </div>
-                            </td>
-                          );
-                        }
-
-                        // Check for Break Period Entry
-                        const matchedBreak = expandedBreaks.find((bp) => {
-                          if (bp.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          const breakStartStr = formatMinutesToTimeStr(
-                            bp.start_time,
-                          );
-                          return breakStartStr === timeSlot;
-                        });
-
-                        if (matchedBreak) {
-                          const durationMins =
-                            matchedBreak.end_time - matchedBreak.start_time;
-                          const rowSpan = Math.max(
-                            1,
-                            Math.round(durationMins / 30),
-                          );
-                          const breakHeightPx = rowSpan * 42;
-                          const breakStyle =
-                            "bg-amber-50/80 text-amber-950 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
-
-                          return (
-                            <td
-                              key={day}
-                              rowSpan={rowSpan}
-                              style={{
-                                height: `${breakHeightPx}px`,
-                                position: "relative",
-                              }}
-                              className={`border-r p-0 align-top ${breakStyle} border font-sans`}
-                            >
-                              <div
-                                className="absolute inset-1.5 flex flex-col items-center justify-center overflow-hidden rounded bg-inherit p-2 text-center shadow-xs"
-                                style={{ height: `${breakHeightPx - 12}px` }}
-                              >
-                                <FaCoffee className="mb-1 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                                <div className="w-full truncate text-xs font-bold text-amber-900 dark:text-amber-100">
-                                  {matchedBreak.break_description}
-                                </div>
-                                <div className="mt-1 font-mono text-[10px] text-amber-700 dark:text-amber-300">
-                                  {formatTime(matchedBreak.start_time)} -{" "}
-                                  {formatTime(matchedBreak.end_time)}
-                                </div>
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        const isCoveredByClass = filteredTimetableEntries.some(
-                          (entry) => {
-                            if (entry.day.toLowerCase() !== day.toLowerCase())
-                              return false;
-                            return (
-                              slotTotalMins > entry.start_time &&
-                              slotTotalMins < entry.end_time
-                            );
-                          },
+                            </div>
+                          </td>
                         );
+                      }
 
-                        const isCoveredByGhost = changedSchedules.some(
-                          (entry) => {
-                            if (!entry.day || entry.start_time <= 0)
-                              return false;
-                            if (entry.day.toLowerCase() !== day.toLowerCase())
-                              return false;
-                            if (
-                              draggedEntryId &&
-                              entry.schedule_entry_id === draggedEntryId
-                            ) {
-                              return false;
-                            }
-                            const draggedEntry = changedSchedules.find(
-                              (e) => e.schedule_entry_id === draggedEntryId,
-                            );
-                            const isSameSection =
-                              draggedEntry &&
-                              entry.section.toLowerCase() ===
-                                draggedEntry.section.toLowerCase();
-
-                            const matchesActiveRoom =
-                              selectedTimetableRoom !== "ALL" &&
-                              entry.room_name?.toLowerCase() ===
-                                selectedTimetableRoom.toLowerCase();
-                            return (
-                              (isSameSection || matchesActiveRoom) &&
-                              slotTotalMins > entry.start_time &&
-                              slotTotalMins < entry.end_time
-                            );
-                          },
+                      // Check for Break Period Entry (Prioritize latest end time if overlapping)
+                      const matchedBreaksList = expandedBreaks.filter((bp) => {
+                        if (bp.day.toLowerCase() !== day.toLowerCase())
+                          return false;
+                        const breakStartStr = formatMinutesToTimeStr(
+                          bp.start_time,
                         );
+                        return breakStartStr === timeSlot;
+                      });
 
-                        const isCoveredByBreak = expandedBreaks.some((bp) => {
-                          if (bp.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          return (
-                            slotTotalMins > bp.start_time &&
-                            slotTotalMins < bp.end_time
-                          );
-                        });
+                      const matchedBreak = matchedBreaksList.length > 0
+                        ? matchedBreaksList.reduce((prev, current) =>
+                          current.end_time > prev.end_time ? current : prev
+                        )
+                        : null;
 
-                        if (
-                          isCoveredByClass ||
-                          isCoveredByGhost ||
-                          isCoveredByBreak
-                        ) {
-                          return null;
-                        }
+                      if (matchedBreak) {
+                        const durationMins =
+                          matchedBreak.end_time - matchedBreak.start_time;
+                        const rowSpan = Math.max(
+                          1,
+                          Math.round(durationMins / 30),
+                        );
+                        const breakHeightPx = rowSpan * 42;
+                        const breakStyle =
+                          "bg-amber-50/80 text-amber-950 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
 
-                        let isHighlighted = false;
-                        if (
-                          dragOverCell &&
-                          dragOverCell.day.toLowerCase() === day.toLowerCase()
-                        ) {
-                          const hoverStartMins = timeStrToMinutes(
-                            dragOverCell.timeSlot,
-                          );
-                          const hoverDuration = dragOverCell.duration || 60;
-                          const hoverEndMins = hoverStartMins + hoverDuration;
-
-                          if (
-                            slotTotalMins >= hoverStartMins &&
-                            slotTotalMins < hoverEndMins
-                          ) {
-                            isHighlighted = true;
-                          }
-                        }
+                        const hasMultipleBreaks = matchedBreaksList.length > 1;
 
                         return (
                           <td
                             key={day}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              const dragDuration =
-                                draggedDurationRef.current || 60;
-
-                              if (
-                                !dragOverCell ||
-                                dragOverCell.day !== day ||
-                                dragOverCell.timeSlot !== timeSlot ||
-                                dragOverCell.duration !== dragDuration
-                              ) {
-                                setDragOverCell({
-                                  day,
-                                  timeSlot,
-                                  duration: dragDuration,
-                                });
-                              }
+                            rowSpan={rowSpan}
+                            style={{
+                              height: "0px",
                             }}
-                            onDragLeave={() => {
-                              if (
-                                dragOverCell?.day === day &&
-                                dragOverCell?.timeSlot === timeSlot
-                              ) {
-                                setDragOverCell(null);
-                              }
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              const rawData =
-                                e.dataTransfer.getData("text/plain");
-                              if (!rawData) return;
-                              try {
-                                const parsed = JSON.parse(
-                                  rawData,
-                                ) as DragPayload;
-                                handleDropToSlot(day, timeSlot, parsed);
-                              } catch (err) {
-                                console.error("Drop parse error", err);
-                              }
-                            }}
-                            className={`border-r p-2 text-center transition-colors ${
-                              isHighlighted
-                                ? "border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/60"
-                                : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
-                            }`}
-                          ></td>
+                            className={`relative overflow-hidden border-r p-0 align-top ${breakStyle} border font-sans`}
+                          >
+                            <div
+                              className="absolute inset-1.5 flex flex-col items-center justify-center overflow-hidden rounded bg-inherit p-1 text-center shadow-xs sm:p-2"
+                              style={{ height: `${breakHeightPx - 12}px` }}
+                            >
+                              {/* Hide icon on mobile screens, show on sm and up */}
+                              <FaCoffee className="mb-1 hidden h-4 w-4 shrink-0 text-amber-600 sm:inline-block dark:text-amber-400" />
+                              <div className="w-full truncate text-[11px] font-bold text-amber-900 sm:text-xs dark:text-amber-100">
+                                {matchedBreak.break_description}
+                                {hasMultipleBreaks && (
+                                  <div className="ml-1 text-[9px] opacity-75">(+{matchedBreaksList.length - 1} overlapping)</div>
+                                )}
+                              </div>
+                              <div className="mt-0.5 font-mono text-[9px] text-amber-700 sm:mt-1 sm:text-[10px] dark:text-amber-300">
+                                {formatTime(matchedBreak.start_time)} -{" "}
+                                {formatTime(matchedBreak.end_time)}
+                              </div>
+                            </div>
+                          </td>
                         );
-                      })}
-                    </tr>
-                  );
-                })}
+                      }
+
+                      const isCoveredByClass = filteredTimetableEntries.some(
+                        (entry) => {
+                          if (entry.day.toLowerCase() !== day.toLowerCase())
+                            return false;
+                          return (
+                            slotTotalMins > entry.start_time &&
+                            slotTotalMins < entry.end_time
+                          );
+                        },
+                      );
+
+                      const isCoveredByGhost = changedSchedules.some(
+                        (entry) => {
+                          if (!entry.day || entry.start_time <= 0)
+                            return false;
+                          if (entry.day.toLowerCase() !== day.toLowerCase())
+                            return false;
+                          if (
+                            draggedEntryId &&
+                            entry.schedule_entry_id === draggedEntryId
+                          ) {
+                            return false;
+                          }
+                          const draggedEntry = changedSchedules.find(
+                            (e) => e.schedule_entry_id === draggedEntryId,
+                          );
+                          const isSameSection =
+                            draggedEntry &&
+                            entry.section.toLowerCase() ===
+                            draggedEntry.section.toLowerCase();
+
+                          const matchesActiveRoom =
+                            selectedTimetableRoom !== "ALL" &&
+                            entry.room_name?.toLowerCase() ===
+                            selectedTimetableRoom.toLowerCase();
+                          return (
+                            (isSameSection || matchesActiveRoom) &&
+                            slotTotalMins > entry.start_time &&
+                            slotTotalMins < entry.end_time
+                          );
+                        },
+                      );
+
+                      const isCoveredByBreak = expandedBreaks.some((bp) => {
+                        if (bp.day.toLowerCase() !== day.toLowerCase())
+                          return false;
+                        return (
+                          slotTotalMins > bp.start_time &&
+                          slotTotalMins < bp.end_time
+                        );
+                      });
+
+                      if (
+                        isCoveredByClass ||
+                        isCoveredByGhost ||
+                        isCoveredByBreak
+                      ) {
+                        return null;
+                      }
+
+                      let isHighlighted = false;
+                      if (
+                        dragOverCell &&
+                        dragOverCell.day.toLowerCase() === day.toLowerCase()
+                      ) {
+                        const hoverStartMins = timeStrToMinutes(
+                          dragOverCell.timeSlot,
+                        );
+                        const hoverDuration = dragOverCell.duration || 60;
+                        const hoverEndMins = hoverStartMins + hoverDuration;
+
+                        if (
+                          slotTotalMins >= hoverStartMins &&
+                          slotTotalMins < hoverEndMins
+                        ) {
+                          isHighlighted = true;
+                        }
+                      }
+
+                      return (
+                        <td
+                          key={day}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            const dragDuration =
+                              draggedDurationRef.current || 60;
+
+                            if (
+                              !dragOverCell ||
+                              dragOverCell.day !== day ||
+                              dragOverCell.timeSlot !== timeSlot ||
+                              dragOverCell.duration !== dragDuration
+                            ) {
+                              setDragOverCell({
+                                day,
+                                timeSlot,
+                                duration: dragDuration,
+                              });
+                            }
+                          }}
+                          onDragLeave={() => {
+                            if (
+                              dragOverCell?.day === day &&
+                              dragOverCell?.timeSlot === timeSlot
+                            ) {
+                              setDragOverCell(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const rawData =
+                              e.dataTransfer.getData("text/plain");
+                            if (!rawData) return;
+                            try {
+                              const parsed = JSON.parse(
+                                rawData,
+                              ) as DragPayload;
+                              handleDropToSlot(day, timeSlot, parsed);
+                            } catch (err) {
+                              console.error("Drop parse error", err);
+                            }
+                          }}
+                          className={`border-r p-2 text-center transition-colors ${
+                            isHighlighted
+                              ? "border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/60"
+                              : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
+                          }`}
+                        ></td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
               </tbody>
             </table>
           </div>
@@ -1529,7 +1713,7 @@ export default function ScheduleTimetableClient({
                         {item.room_name || "TBA"}
                       </TableCell>
                       <TableCell className="text-gray-500 dark:text-gray-400">
-                        {item.teacher_name || "Unassigned"}
+                        {item.teacher_code || "Unassigned"}
                       </TableCell>
                     </TableRow>
                   ))
@@ -1558,7 +1742,7 @@ export default function ScheduleTimetableClient({
             </h3>
             <button
               onClick={() => setIsEditMode(false)}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-white"
+              className="text-gray-400 hover:text-gray-600 md:hidden dark:hover:text-white"
             >
               <HiX className="h-5 w-5" />
             </button>
@@ -1660,6 +1844,9 @@ export default function ScheduleTimetableClient({
                               <div className="truncate text-[10px]">
                                 {subj.course_name}
                               </div>
+                              <div className="mt-0.5 text-[9px] font-medium text-gray-600 dark:text-gray-400">
+                                Teacher: {subj.teacher_code || "Unassigned"}
+                              </div>
                               <div className="mt-1 flex items-center justify-between text-[9px]">
                                 <span className="font-mono text-gray-500">
                                   {itemDuration / 60} hr
@@ -1718,6 +1905,59 @@ export default function ScheduleTimetableClient({
             >
               Understand & Go Back
             </Button>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* --- CONFIRMATION MODAL FOR LECTURE IN LAB ROOM --- */}
+      <Modal
+        show={confirmModalData.show}
+        onClose={() =>
+          setConfirmModalData({
+            show: false,
+            title: "",
+            message: "",
+            onConfirm: () => {},
+          })
+        }
+        size="md"
+        popup
+      >
+        <ModalHeader />
+        <ModalBody>
+          <div className="text-center">
+            <HiOutlineExclamationCircle className="mx-auto mb-4 h-14 w-14 text-amber-500 dark:text-amber-400" />
+            <h3 className="mb-2 text-lg font-bold text-gray-900 dark:text-white">
+              {confirmModalData.title}
+            </h3>
+            <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
+              {confirmModalData.message}
+            </p>
+            <div className="flex justify-center gap-4">
+              <Button
+                color="purple"
+                size="sm"
+                onClick={confirmModalData.onConfirm}
+                className="cursor-pointer"
+              >
+                Yes, Continue
+              </Button>
+              <Button
+                color="alternative"
+                size="sm"
+                onClick={() =>
+                  setConfirmModalData({
+                    show: false,
+                    title: "",
+                    message: "",
+                    onConfirm: () => {},
+                  })
+                }
+                className="cursor-pointer"
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         </ModalBody>
       </Modal>
