@@ -35,6 +35,7 @@ import {
   HiDotsVertical,
   HiUserAdd,
   HiExclamationCircle,
+  HiClock,
 } from "react-icons/hi";
 import { FaCalendarDay, FaList } from "react-icons/fa6";
 import {
@@ -45,6 +46,8 @@ import {
   fetchSubjectsUnitsByIds,
   getRoomsForGeneration,
   fetchRoomTypeList,
+  fetchFacultyLoadConfig,
+  Configuration,
   TimetableEntryRecord,
   SubjectUnitsRecord,
   RoomForGeneration,
@@ -117,6 +120,12 @@ export default function ScheduleTimetableClient({
     LocalTimetableEntry[]
   >([]);
 
+  // --- Timetable Controls --- //
+  const [currentRoom, setCurrentRoom] = useState("ALL");
+
+  // --- Config & Limits State --- //
+  const [config, setConfig] = useState<Configuration | null>(null);
+
   // --- Rooms, Room Types & Subject Metadata Maps --- //
   const [allRooms, setAllRooms] = useState<RoomForGeneration[]>([]);
   const [roomTypesList, setRoomTypesList] = useState<RoomType[]>([]);
@@ -159,7 +168,7 @@ export default function ScheduleTimetableClient({
     matchingDuplicates: [],
   });
 
-  // --- Confirmation Modal State for Lecture in Lab Room & Break Overrides --- //
+  // --- Confirmation Modal State for Lecture in Lab Room, Break Overrides & 4-Hour Rules --- //
   const [confirmModalData, setConfirmModalData] = useState<{
     show: boolean;
     title: string;
@@ -328,9 +337,10 @@ export default function ScheduleTimetableClient({
 
     async function loadMasterData() {
       try {
-        const [roomRes, roomTypesRes] = await Promise.all([
+        const [roomRes, roomTypesRes, configRes] = await Promise.all([
           getRoomsForGeneration(),
           fetchRoomTypeList(null, "ASC", -1),
+          fetchFacultyLoadConfig(),
         ]);
 
         if (roomRes.success && roomRes.data) {
@@ -338,6 +348,9 @@ export default function ScheduleTimetableClient({
         }
         if (roomTypesRes.success && roomTypesRes.data) {
           setRoomTypesList(roomTypesRes.data);
+        }
+        if (configRes.success && configRes.data && configRes.data.length > 0) {
+          setConfig(configRes.data[0]);
         }
       } catch (err) {
         console.error("Error loading master data:", err);
@@ -598,6 +611,7 @@ export default function ScheduleTimetableClient({
             return {
               ...e,
               day: "",
+              room_name: "",
               start_time: 0,
               end_time: 0,
             };
@@ -674,6 +688,134 @@ export default function ScheduleTimetableClient({
         message: `Scheduling Conflict: Class cannot end past 9:00 PM (Attempted end time: ${formatTime(targetEndMins)}).`,
       });
       return;
+    }
+
+    // --- Teacher 4-Hour Straight Teaching & Absolute Load Check on Drop --- //
+    const assignedTeacherId = droppedData.teacherId;
+    if (assignedTeacherId) {
+      // --- Teacher Double-Booking Check on Drop --- //
+      const teacherOverlap = changedSchedules.find((e) => {
+        if (!e.day || e.start_time <= 0) return false;
+        if (e.teacher_id !== assignedTeacherId) return false;
+        if (e.day.toLowerCase() !== targetDay.toLowerCase()) return false;
+        if (
+          droppedData.scheduleEntryId &&
+          e.schedule_entry_id === droppedData.scheduleEntryId
+        )
+          return false;
+
+        return targetStartMins < e.end_time && targetEndMins > e.start_time;
+      });
+
+      if (teacherOverlap) {
+        setConflictModalData({
+          show: true,
+          message: `Teacher Conflict: Instructor is already booked during this time slot for Section [${teacherOverlap.section}] (${teacherOverlap.course_code}) from ${formatTime(teacherOverlap.start_time)} to ${formatTime(teacherOverlap.end_time)}.`,
+        });
+        return;
+      }
+
+      const teacherEntries = changedSchedules.filter(
+        (e) =>
+          e.teacher_id === assignedTeacherId &&
+          e.day &&
+          e.start_time > 0 &&
+          e.schedule_entry_id !== targetEntryId,
+      );
+
+      // Add proposed placement to simulate
+      const simulatedTeacherEntries = [
+        ...teacherEntries,
+        {
+          ...droppedData,
+          schedule_entry_id: targetEntryId || "temp",
+          teacher_id: assignedTeacherId,
+          day: targetDay,
+          start_time: targetStartMins,
+          end_time: targetEndMins,
+          lecture_units: Number(
+            droppedData.duration ? droppedData.duration / 60 : 1,
+          ),
+          lab_units: 0,
+        } as unknown as LocalTimetableEntry,
+      ];
+
+      // 1. Check Absolute Load Limit
+      const facultyLoadLimit = config?.faculty_load?.full_time ?? 21;
+      const overloadMax = config?.overload_max ?? 3;
+      const absoluteMaxLoad = facultyLoadLimit + overloadMax;
+
+      const totalTeacherLoad = simulatedTeacherEntries.reduce((sum, item) => {
+        return (
+          sum + Number(item.lecture_units || 0) + Number(item.lab_units || 0)
+        );
+      }, 0);
+
+      if (totalTeacherLoad > absoluteMaxLoad) {
+        setConflictModalData({
+          show: true,
+          message: `Hard Limit Violation: Moving this block causes the assigned teacher's total load (${totalTeacherLoad} units) to exceed the absolute maximum allowed limit (${absoluteMaxLoad} units). The block has been unassigned/returned.`,
+        });
+        // Auto-remove or unassign latest block
+        if (targetEntryId) handleUnassignEntry(targetEntryId);
+        return;
+      }
+
+      // 2. Check 4-Hour Consecutive Teaching Limit
+      const dayBlocks = simulatedTeacherEntries
+        .filter(
+          (e) =>
+            e.day?.toLowerCase() === targetDay.toLowerCase() &&
+            e.start_time > 0,
+        )
+        .sort((a, b) => a.start_time - b.start_time);
+
+      let consecutiveMinutes =
+        dayBlocks.length > 0
+          ? dayBlocks[0].end_time - dayBlocks[0].start_time
+          : 0;
+      let hasConsecutiveViolation = false;
+
+      for (let i = 1; i < dayBlocks.length; i++) {
+        const prev = dayBlocks[i - 1];
+        const curr = dayBlocks[i];
+        const gap = curr.start_time - prev.end_time;
+
+        if (gap < 30) {
+          consecutiveMinutes += curr.end_time - curr.start_time;
+        } else {
+          consecutiveMinutes = curr.end_time - curr.start_time;
+        }
+
+        if (consecutiveMinutes > 240 && dayBlocks.length > 1) {
+          hasConsecutiveViolation = true;
+          break;
+        }
+      }
+
+      if (hasConsecutiveViolation) {
+        setConfirmModalData({
+          show: true,
+          title: "Continuous Teaching Limit Exceeded",
+          message: `Warning: Placing this block creates more than 4 hours of consecutive teaching on ${targetDay} without a 30-minute break. Do you wish to override and proceed?`,
+          onConfirm: () => {
+            setConfirmModalData({
+              show: false,
+              title: "",
+              message: "",
+              onConfirm: () => {},
+            });
+            executeDropPlacement(
+              targetDay,
+              targetStartMins,
+              duration,
+              droppedData,
+              activeRoom,
+            );
+          },
+        });
+        return;
+      }
     }
 
     if (activeRoom && activeRoom !== "ALL" && droppedData.subjectId) {
@@ -1021,6 +1163,7 @@ export default function ScheduleTimetableClient({
 
   return (
     <div className="relative flex gap-6">
+      {/* --- Main Div --- */}
       <div className="flex-1 space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -1191,9 +1334,13 @@ export default function ScheduleTimetableClient({
                   setSelectedTimetableRoom(val);
                 }}
               >
-                <option value="ALL">-- All Rooms --</option>
+                <option value={currentRoom}>-- All Rooms --</option>
                 {allRooms.map((room) => (
-                  <option key={room.room_id} value={room.room_name ?? ""}>
+                  <option
+                    key={room.room_id}
+                    onClick={() => setCurrentRoom(room.room_name!)}
+                    value={room.room_name ?? ""}
+                  >
                     {room.room_name}
                   </option>
                 ))}
@@ -1270,6 +1417,7 @@ export default function ScheduleTimetableClient({
                               const draggedEntry = changedSchedules.find(
                                 (e) => e.schedule_entry_id === draggedEntryId,
                               );
+
                               const isSameSection =
                                 draggedEntry &&
                                 entry.section.toLowerCase() ===
@@ -1280,7 +1428,27 @@ export default function ScheduleTimetableClient({
                                 entry.room_name?.toLowerCase() ===
                                   selectedTimetableRoom.toLowerCase();
 
-                              return isSameSection || matchesActiveRoom;
+                              const activeTeachers = new Set(
+                                filteredTimetableEntries
+                                  .map((e) => e.teacher_id)
+                                  .filter(Boolean),
+                              );
+                              const matchesTeacher =
+                                entry.teacher_id &&
+                                activeTeachers.has(entry.teacher_id);
+
+                              // --- ADDED: Check if the ghost entry belongs to the same teacher as the item being dragged ---
+                              const isSameTeacher =
+                                draggedEntry &&
+                                draggedEntry.teacher_id &&
+                                entry.teacher_id === draggedEntry.teacher_id;
+
+                              return (
+                                isSameSection ||
+                                matchesActiveRoom ||
+                                matchesTeacher ||
+                                isSameTeacher // <--- This ensures teacher conflicts/loads show up as ghost blocks
+                              );
                             })
                           : null;
 
@@ -1396,6 +1564,68 @@ export default function ScheduleTimetableClient({
                             displayEntry.originalDuration ||
                             60;
 
+                          const hasEntryConflict = (
+                            entryA: LocalTimetableEntry,
+                          ) => {
+                            if (
+                              !entryA.day ||
+                              !entryA.start_time ||
+                              entryA.start_time <= 0
+                            )
+                              return false;
+
+                            for (const entryB of changedSchedules) {
+                              if (
+                                entryB.schedule_entry_id ===
+                                entryA.schedule_entry_id
+                              )
+                                continue;
+                              if (
+                                !entryB.day ||
+                                !entryB.start_time ||
+                                entryB.start_time <= 0
+                              )
+                                continue;
+                              if (
+                                entryB.day.toLowerCase() !==
+                                entryA.day.toLowerCase()
+                              )
+                                continue;
+
+                              const isOverlapping =
+                                entryA.start_time < entryB.end_time &&
+                                entryA.end_time > entryB.start_time;
+
+                              if (!isOverlapping) continue;
+
+                              // 1. Section Overlap Conflict
+                              if (
+                                entryA.section.toLowerCase() ===
+                                entryB.section.toLowerCase()
+                              ) {
+                                return true;
+                              }
+                              // 2. Room Overlap Conflict
+                              if (
+                                entryA.room_name &&
+                                entryB.room_name &&
+                                entryA.room_name.toLowerCase() ===
+                                  entryB.room_name.toLowerCase()
+                              ) {
+                                return true;
+                              }
+                              // 3. Teacher Double-Booking Conflict
+                              if (
+                                entryA.teacher_id &&
+                                entryB.teacher_id &&
+                                entryA.teacher_id === entryB.teacher_id
+                              ) {
+                                return true;
+                              }
+                            }
+                            return false;
+                          };
+
                           const rowSpan = Math.max(
                             1,
                             Math.round(durationMins / 30),
@@ -1405,12 +1635,16 @@ export default function ScheduleTimetableClient({
                           const isGhost = !matchedEntry && !!ghostEntry;
                           const isLabType =
                             displayEntry.type?.toLowerCase() === "laboratory";
+                          const hasConflict = hasEntryConflict(displayEntry);
 
                           let blockStyle =
                             "bg-blue-50/80 text-blue-950 border-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800";
                           if (isGhost) {
                             blockStyle =
                               "bg-gray-100 text-gray-400 border-gray-200 opacity-50 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700";
+                          } else if (hasConflict) {
+                            blockStyle =
+                              "bg-red-50/90 text-red-950 border-red-300 dark:bg-red-950/50 dark:text-red-200 dark:border-red-700";
                           } else if (isLabType) {
                             blockStyle =
                               "bg-emerald-50/80 text-emerald-950 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
@@ -1451,29 +1685,33 @@ export default function ScheduleTimetableClient({
                                 dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
                                 dragPreview.style.height = `${blockHeightPx - 12}px`;
                                 dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans ${
-                                  isLabType
-                                    ? "bg-emerald-100 text-emerald-950 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:border-emerald-700"
-                                    : "bg-blue-100 text-blue-950 border border-blue-300 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-700"
+                                  hasConflict
+                                    ? "bg-red-100 text-red-950 border border-red-300 dark:bg-red-950 dark:text-red-100 dark:border-red-700"
+                                    : isLabType
+                                      ? "bg-emerald-100 text-emerald-950 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:border-emerald-700"
+                                      : "bg-blue-100 text-blue-950 border border-blue-300 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-700"
                                 }`;
 
                                 dragPreview.innerHTML = `
-                                  <div>
-                                    <div class="flex items-center justify-between">
-                                      <div class="text-xs font-bold truncate">${displayEntry.course_name}</div>
-                                      <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                        isLabType
-                                          ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
-                                          : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
-                                      }">${displayEntry.type || "Lecture"}</span>
-                                    </div>
-                                    <div class="text-[10px] font-medium opacity-80 truncate">${displayEntry.course_code}</div>
-                                  </div>
-                                  <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
-                                    <div>Sec: ${displayEntry.section}</div>
-                                    <div>Room: ${displayEntry.room_name || "TBA"}</div>
-                                    <div class="font-mono">${formatTime(displayEntry.start_time)} - ${formatTime(displayEntry.end_time)}</div>
-                                  </div>
-                                `;
+                    <div>
+                      <div class="flex items-center justify-between">
+                        <div class="text-xs font-bold truncate">${displayEntry.course_name}</div>
+                        <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                          hasConflict
+                            ? "bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-200"
+                            : isLabType
+                              ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
+                              : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
+                        }">${displayEntry.type || "Lecture"}</span>
+                      </div>
+                      <div class="text-[10px] font-medium opacity-80 truncate">${displayEntry.course_code}</div>
+                    </div>
+                    <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
+                      <div>Sec: ${displayEntry.section}</div>
+                      <div>Room: ${displayEntry.room_name || "TBA"}</div>
+                      <div class="font-mono">${formatTime(displayEntry.start_time)} - ${formatTime(displayEntry.end_time)}</div>
+                    </div>
+                  `;
 
                                 document.body.appendChild(dragPreview);
                                 if (e.dataTransfer.setDragImage) {
@@ -1617,6 +1855,7 @@ export default function ScheduleTimetableClient({
                             ) {
                               return false;
                             }
+
                             const draggedEntry = changedSchedules.find(
                               (e) => e.schedule_entry_id === draggedEntryId,
                             );
@@ -1629,10 +1868,47 @@ export default function ScheduleTimetableClient({
                               selectedTimetableRoom !== "ALL" &&
                               entry.room_name?.toLowerCase() ===
                                 selectedTimetableRoom.toLowerCase();
+
+                            const activeTeachers = new Set(
+                              filteredTimetableEntries
+                                .map((e) => e.teacher_id)
+                                .filter(Boolean),
+                            );
+                            const matchesTeacher =
+                              entry.teacher_id &&
+                              activeTeachers.has(entry.teacher_id);
+
+                            // --- ADDED: Match teacher id with dragged entry --- //
+                            const isSameTeacher =
+                              draggedEntry &&
+                              draggedEntry.teacher_id &&
+                              entry.teacher_id === draggedEntry.teacher_id;
+
+                            const matchesGhostFilter =
+                              isSameSection ||
+                              matchesActiveRoom ||
+                              matchesTeacher ||
+                              isSameTeacher;
+
+                            if (!matchesGhostFilter) return false;
+
+                            // Calculate duration to know how many rows this ghost block spans downwards
+                            const durationMins =
+                              entry.end_time - entry.start_time ||
+                              entry.originalDuration ||
+                              60;
+                            const ghostRowSpan = Math.max(
+                              1,
+                              Math.round(durationMins / 30),
+                            );
+                            const ghostStartSlotMins = entry.start_time;
+                            const ghostEndSlotMins =
+                              ghostStartSlotMins + ghostRowSpan * 30;
+
+                            // Return true if this grid slot falls strictly *underneath* the ghost block's vertical span
                             return (
-                              (isSameSection || matchesActiveRoom) &&
-                              slotTotalMins > entry.start_time &&
-                              slotTotalMins < entry.end_time
+                              slotTotalMins > ghostStartSlotMins &&
+                              slotTotalMins < ghostEndSlotMins
                             );
                           },
                         );
@@ -1878,11 +2154,120 @@ export default function ScheduleTimetableClient({
                   !e.day || e.start_time === undefined || e.start_time <= 0,
               ).length;
 
+              // --- Helper to check if any entry in this section has a timetable conflict (Teacher, Room, or Section overlap) ---
+              const hasSectionConflict = (() => {
+                for (const entryA of sectionEntries) {
+                  if (
+                    !entryA.day ||
+                    !entryA.start_time ||
+                    entryA.start_time <= 0
+                  )
+                    continue;
+
+                  for (const entryB of changedSchedules) {
+                    if (entryB.schedule_entry_id === entryA.schedule_entry_id)
+                      continue;
+                    if (
+                      !entryB.day ||
+                      !entryB.start_time ||
+                      entryB.start_time <= 0
+                    )
+                      continue;
+                    if (entryB.day.toLowerCase() !== entryA.day.toLowerCase())
+                      continue;
+
+                    const isOverlapping =
+                      entryA.start_time < entryB.end_time &&
+                      entryA.end_time > entryB.start_time;
+
+                    if (!isOverlapping) continue;
+
+                    // 1. Section Overlap Conflict
+                    if (
+                      entryA.section.toLowerCase() ===
+                      entryB.section.toLowerCase()
+                    ) {
+                      return true;
+                    }
+
+                    // 2. Room Overlap Conflict
+                    if (
+                      entryA.room_name &&
+                      entryB.room_name &&
+                      entryA.room_name.toLowerCase() ===
+                        entryB.room_name.toLowerCase()
+                    ) {
+                      return true;
+                    }
+
+                    // 3. Teacher Double-Booking Conflict
+                    if (
+                      entryA.teacher_id &&
+                      entryB.teacher_id &&
+                      entryA.teacher_id === entryB.teacher_id
+                    ) {
+                      return true;
+                    }
+                  }
+                }
+                return false;
+              })();
+
+              // --- Helper to check if any teacher in this section exceeds 4h straight teaching ---
+              const hasSectionConsecutiveTeachingViolation = (() => {
+                const teachersInSec = Array.from(
+                  new Set(
+                    sectionEntries.map((e) => e.teacher_id).filter(Boolean),
+                  ),
+                );
+
+                for (const tId of teachersInSec) {
+                  const teacherAllEntries = changedSchedules.filter(
+                    (e) => e.teacher_id === tId && e.day && e.start_time > 0,
+                  );
+
+                  const days = [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                  ];
+                  for (const d of days) {
+                    const dayBlocks = teacherAllEntries
+                      .filter((e) => e.day?.toLowerCase() === d.toLowerCase())
+                      .sort((a, b) => a.start_time - b.start_time);
+
+                    if (dayBlocks.length <= 1) continue;
+
+                    let consecutiveMinutes =
+                      dayBlocks[0].end_time - dayBlocks[0].start_time;
+                    for (let i = 1; i < dayBlocks.length; i++) {
+                      const prev = dayBlocks[i - 1];
+                      const curr = dayBlocks[i];
+                      const gap = curr.start_time - prev.end_time;
+
+                      if (gap < 30) {
+                        consecutiveMinutes += curr.end_time - curr.start_time;
+                      } else {
+                        consecutiveMinutes = curr.end_time - curr.start_time;
+                      }
+
+                      if (consecutiveMinutes > 240) {
+                        return true;
+                      }
+                    }
+                  }
+                }
+                return false;
+              })();
+
               return (
                 <AccordionPanel key={sIdx}>
                   <AccordionTitle className="rounded-lg bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-800 dark:bg-gray-800 dark:text-gray-200">
                     <div className="flex w-full items-center justify-between pr-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-mono text-cyan-700 dark:text-cyan-400">
                           {secCode}
                         </span>
@@ -1893,17 +2278,32 @@ export default function ScheduleTimetableClient({
                         )}
                         {(() => {
                           const noTeacherCount = sectionEntries.filter(
-                              (e) => !e.teacher_code
+                            (e) => !e.teacher_code,
                           ).length;
 
                           if (noTeacherCount === 0) return null;
 
                           return (
-                              <Badge color="failure" size="xs">
-                                {noTeacherCount} Missing Teacher{noTeacherCount > 1 ? "s" : ""}
-                              </Badge>
+                            <Badge color="failure" size="xs">
+                              {noTeacherCount} Missing Teacher
+                              {noTeacherCount > 1 ? "s" : ""}
+                            </Badge>
                           );
                         })()}
+                        {hasSectionConflict && (
+                          <Badge
+                            color="failure"
+                            size="xs"
+                            icon={HiExclamationTriangle}
+                          >
+                            Conflict Detected
+                          </Badge>
+                        )}
+                        {hasSectionConsecutiveTeachingViolation && (
+                          <Badge color="warning" size="xs" icon={HiClock}>
+                            Fatigue Risk
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </AccordionTitle>
@@ -1922,10 +2322,108 @@ export default function ScheduleTimetableClient({
                             );
                           });
 
+                          // --- 1. Individual Subject-Level Conflict Check --- //
+                          const hasSubjConflict = (() => {
+                            if (
+                              !subj.day ||
+                              !subj.start_time ||
+                              subj.start_time <= 0
+                            )
+                              return false;
+                            for (const entryB of changedSchedules) {
+                              if (
+                                entryB.schedule_entry_id ===
+                                subj.schedule_entry_id
+                              )
+                                continue;
+                              if (
+                                !entryB.day ||
+                                !entryB.start_time ||
+                                entryB.start_time <= 0
+                              )
+                                continue;
+                              if (
+                                entryB.day.toLowerCase() !==
+                                subj.day.toLowerCase()
+                              )
+                                continue;
+
+                              const isOverlapping =
+                                subj.start_time < entryB.end_time &&
+                                subj.end_time > entryB.start_time;
+
+                              if (!isOverlapping) continue;
+
+                              if (
+                                subj.section.toLowerCase() ===
+                                entryB.section.toLowerCase()
+                              )
+                                return true;
+                              if (
+                                subj.room_name &&
+                                entryB.room_name &&
+                                subj.room_name.toLowerCase() ===
+                                  entryB.room_name.toLowerCase()
+                              )
+                                return true;
+                              if (
+                                subj.teacher_id &&
+                                entryB.teacher_id &&
+                                subj.teacher_id === entryB.teacher_id
+                              )
+                                return true;
+                            }
+                            return false;
+                          })();
+
+                          // --- 2. Individual Subject-Level Teacher Fatigue Risk Check (>4h straight) --- //
+                          const hasSubjFatigueRisk = (() => {
+                            if (
+                              !subj.teacher_id ||
+                              !subj.day ||
+                              !subj.start_time ||
+                              subj.start_time <= 0
+                            )
+                              return false;
+                            const teacherAllEntries = changedSchedules.filter(
+                              (e) =>
+                                e.teacher_id === subj.teacher_id &&
+                                e.day &&
+                                e.start_time > 0,
+                            );
+                            const dayBlocks = teacherAllEntries
+                              .filter(
+                                (e) =>
+                                  e.day?.toLowerCase() ===
+                                  subj.day?.toLowerCase(),
+                              )
+                              .sort((a, b) => a.start_time - b.start_time);
+
+                            if (dayBlocks.length <= 1) return false;
+
+                            let consecutiveMinutes =
+                              dayBlocks[0].end_time - dayBlocks[0].start_time;
+                            for (let i = 1; i < dayBlocks.length; i++) {
+                              const prev = dayBlocks[i - 1];
+                              const curr = dayBlocks[i];
+                              const gap = curr.start_time - prev.end_time;
+
+                              if (gap < 30) {
+                                consecutiveMinutes +=
+                                  curr.end_time - curr.start_time;
+                              } else {
+                                consecutiveMinutes =
+                                  curr.end_time - curr.start_time;
+                              }
+
+                              if (consecutiveMinutes > 240) return true;
+                            }
+                            return false;
+                          })();
+
                           const itemDuration = subj.originalDuration || 60;
                           const isLabType =
                             subj.type?.toLowerCase() === "laboratory";
-
                           const isMenuOpen =
                             activeMenuEntryId === scheduleEntryId;
 
@@ -1933,8 +2431,18 @@ export default function ScheduleTimetableClient({
                             <div
                               key={subIdx}
                               draggable={!isPlaced}
+                              onClick={() => {
+                                // Only execute the navigation/filter action if there is an active conflict
+                                if (hasSubjConflict || hasSubjFatigueRisk) {
+                                  if (subj.room_name) {
+                                    setSelectedTimetableRoom(subj.room_name);
+                                  }
+                                  setSelectedTimetableSection(secCode);
+                                }
+                              }}
                               onDragStart={(e) => {
                                 draggedDurationRef.current = itemDuration;
+                                setDraggedEntryId(scheduleEntryId); // <--- Set active dragged ID so ghosts appear
                                 e.dataTransfer.setData(
                                   "text/plain",
                                   JSON.stringify({
@@ -1952,19 +2460,30 @@ export default function ScheduleTimetableClient({
                                   } as DragPayload),
                                 );
                               }}
+                              onDragEnd={() => {
+                                setDraggedEntryId(null);
+                                setDragSourceInfo(null);
+                                setDragOverCell(null);
+                              }}
                               className={`relative rounded border p-2 text-xs transition-all ${
-                                isPlaced
-                                  ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500"
-                                  : `cursor-grab ${isLabType ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/20" : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/20"} text-gray-800 dark:text-gray-200`
+                                hasSubjConflict
+                                  ? "cursor-pointer border-red-200 bg-red-100/60 text-red-700 dark:border-red-700 dark:bg-red-900/60 dark:text-red-200"
+                                  : hasSubjFatigueRisk
+                                    ? "cursor-pointer border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
+                                    : isPlaced
+                                      ? "cursor-not-allowed border-gray-200 bg-gray-100/60 text-gray-400 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500"
+                                      : `cursor-grab ${isLabType ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/20" : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/20"} text-gray-800 dark:text-gray-200`
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <div className="font-bold">
+                                <div
+                                  className={`${isPlaced && "opacity-60"} font-bold`}
+                                >
                                   {subj.course_code}
                                 </div>
                                 <div className="relative flex items-center gap-1">
                                   <span
-                                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isLabType ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
+                                    className={`${isPlaced && "opacity-60"} rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isLabType ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
                                   >
                                     {subj.type || "Lecture"}
                                   </span>
@@ -1978,7 +2497,7 @@ export default function ScheduleTimetableClient({
                                         isMenuOpen ? null : scheduleEntryId,
                                       );
                                     }}
-                                    className="rounded p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"
+                                    className="rounded p-1 text-gray-700 hover:bg-gray-200 dark:text-white dark:hover:bg-gray-500"
                                   >
                                     <HiDotsVertical className="h-3.5 w-3.5" />
                                   </button>
@@ -1986,7 +2505,6 @@ export default function ScheduleTimetableClient({
                                   {/* Relative Dismissible Action Popup Box */}
                                   {isMenuOpen && (
                                     <>
-                                      {/* Transparent backdrop to catch outside clicks and dismiss */}
                                       <div
                                         className="fixed inset-0 z-30"
                                         onClick={(e) => {
@@ -1994,21 +2512,18 @@ export default function ScheduleTimetableClient({
                                           setActiveMenuEntryId(null);
                                         }}
                                       ></div>
-
                                       <div className="absolute top-6 right-0 z-40 w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                                        {!isPlaced && (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenSplitModal(subj);
-                                            }}
-                                            className="flex w-full items-center px-3 py-1.5 text-left text-[11px] font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                                          >
-                                            <HiScissors className="mr-2 h-3.5 w-3.5 text-cyan-600" />{" "}
-                                            Split Block
-                                          </button>
-                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenSplitModal(subj);
+                                          }}
+                                          className="flex w-full items-center px-3 py-1.5 text-left text-[11px] font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                                        >
+                                          <HiScissors className="mr-2 h-3.5 w-3.5 text-cyan-600" />{" "}
+                                          Split Block
+                                        </button>
                                         <button
                                           type="button"
                                           onClick={(e) => {
@@ -2029,19 +2544,33 @@ export default function ScheduleTimetableClient({
                                   )}
                                 </div>
                               </div>
-                              <div className="truncate text-[10px]">
+                              <div
+                                className={`${isPlaced && "opacity-60"} truncate text-[10px]`}
+                              >
                                 {subj.course_name}
                               </div>
-                              <div className="mt-0.5 text-[9px] font-medium text-gray-600 dark:text-gray-400">
+                              <div
+                                className={`${isPlaced && "opacity-60"} mt-0.5 text-[9px] font-medium ${hasSubjConflict ? "text-red-600 dark:text-red-400" : hasSubjFatigueRisk ? "text-amber-600 dark:text-amber-400" : "text-gray-600 dark:text-gray-400"}`}
+                              >
                                 Teacher: {subj.teacher_code || "Unassigned"}
                               </div>
                               <div className="mt-1 flex items-center justify-between text-[9px]">
-                                <span className="font-mono text-gray-500">
+                                <span
+                                  className={`${isPlaced && "opacity-60"} font-mono text-gray-500`}
+                                >
                                   {itemDuration / 60} hr
                                   {itemDuration > 60 ? "s" : ""}{" "}
                                   {subj.room_name ? `• ${subj.room_name}` : ""}
                                 </span>
-                                {isPlaced ? (
+                                {hasSubjConflict ? (
+                                  <span className="font-semibold text-red-600 dark:text-red-400">
+                                    ⚠️ Conflict Detected
+                                  </span>
+                                ) : hasSubjFatigueRisk ? (
+                                  <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                    ⚠ Fatigue Risk
+                                  </span>
+                                ) : isPlaced ? (
                                   <span className="font-semibold text-emerald-600 dark:text-emerald-400">
                                     ✓ Placed
                                   </span>
@@ -2325,14 +2854,14 @@ export default function ScheduleTimetableClient({
               <Button
                 color="alternative"
                 size="sm"
-                onClick={() =>
+                onClick={() => {
                   setConfirmModalData({
                     show: false,
                     title: "",
                     message: "",
                     onConfirm: () => {},
-                  })
-                }
+                  });
+                }}
                 className="cursor-pointer"
               >
                 Cancel

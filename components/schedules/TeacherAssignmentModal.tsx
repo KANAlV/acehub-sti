@@ -64,6 +64,8 @@ export default function TeacherAssignmentModal({
   );
   const [isTeacherLoading, setIsTeacherLoading] = useState<boolean>(false);
   const [showOverrideModal, setShowOverrideModal] = useState<boolean>(false);
+  const [overrideWarningMessage, setOverrideWarningMessage] =
+    useState<string>("");
   const [applyToAllSections, setApplyToAllSections] = useState<boolean>(true);
   const [config, setConfig] = useState<Configuration | null>(null);
 
@@ -173,6 +175,9 @@ export default function TeacherAssignmentModal({
     selectedTeacher?.employment_type,
   );
 
+  const overloadMax = Number(config?.overload_max ?? 3);
+  const absoluteMaxLoad = facultyLoadLimit + overloadMax;
+
   // Safe AQ matching check
   const requiredAqs = subjectRequirement?.required_aqs || [];
   const teacherAqs: string[] = Array.isArray(selectedTeacher?.aqs)
@@ -280,7 +285,38 @@ export default function TeacherAssignmentModal({
 
   const handleConfirmClick = () => {
     if (!selectedTeacher) return;
+
+    // Check Hard Limit Violation first (Load exceeds absoluteMax)
+    if (projectedLoad > absoluteMaxLoad) {
+      setOverrideWarningMessage(
+        `Hard Limit Violation: Projected load (${projectedLoad.toFixed(1)} units) exceeds the absolute maximum allowed limit (${absoluteMaxLoad} units). Assignment cannot proceed.`,
+      );
+      setShowOverrideModal(true);
+      return;
+    }
+
+    const warningReasons: string[] = [];
+
     if (!isFullyMatched) {
+      warningReasons.push(
+        "missing required Academic Qualifications (AQ) or a valid passed FCCE record",
+      );
+    }
+    if (projectedLoad > facultyLoadLimit) {
+      warningReasons.push(
+        `exceeds standard faculty load limit (${facultyLoadLimit} units)`,
+      );
+    }
+    if (projectedPreps > prepLimit) {
+      warningReasons.push(
+        `exceeds standard preparation limit (${prepLimit} preps)`,
+      );
+    }
+
+    if (warningReasons.length > 0) {
+      setOverrideWarningMessage(
+        `The selected instructor ${selectedTeacher.full_name} is ${warningReasons.join(" and ")}. Do you still wish to override and proceed?`,
+      );
       setShowOverrideModal(true);
     } else {
       onAssignTeacher(selectedTeacher, applyToAllSections);
@@ -303,65 +339,19 @@ export default function TeacherAssignmentModal({
               </p>
             </div>
 
-            {/* Search Teacher Input */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                Search Teacher
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={teacherSearchQuery}
-                  onChange={(e) => setTeacherSearchQuery(e.target.value)}
-                  placeholder="Type at least 2 characters (e.g., Jo)..."
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-xs text-gray-900 focus:border-cyan-500 focus:ring-cyan-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-
-              {teacherSearchQuery.trim().length >= 2 && !selectedTeacher && (
-                <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
-                  {isTeacherLoading ? (
-                    <div className="p-3 text-center text-xs text-gray-500">
-                      Searching...
-                    </div>
-                  ) : teacherList.length > 0 ? (
-                    teacherList.map((tch) => (
-                      <div
-                        key={tch.teacher_id}
-                        onClick={() => {
-                          setSelectedTeacher(tch);
-                          setTeacherSearchQuery(tch.full_name);
-                        }}
-                        className="cursor-pointer px-3 py-2 text-xs hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
-                      >
-                        <div className="font-bold">{tch.full_name}</div>
-                        <div className="text-[10px] text-gray-400">
-                          {tch.department || "No Department"}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-3 text-center text-xs text-gray-400">
-                      No teachers found
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* Selected Subject Card */}
             {subjectRequirement && (
-              <div className="rounded-xl border border-blue-900/40 bg-blue-950/80 p-3.5 text-white shadow-sm">
-                <div className="flex items-center justify-between text-[10px] font-bold tracking-wider text-blue-300 uppercase">
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-3.5 text-blue-950 shadow-sm dark:border-blue-900/40 dark:bg-blue-950/80 dark:text-white">
+                <div className="flex items-center justify-between text-[10px] font-bold tracking-wider text-blue-700 uppercase dark:text-blue-300">
                   <span>Selected Subject for Assignment</span>
-                  <span className="rounded bg-blue-900/80 px-2 py-0.5 text-blue-200">
+                  <span className="rounded bg-blue-200 px-2 py-0.5 text-blue-900 dark:bg-blue-900/80 dark:text-blue-200">
                     {subjectRequirement.program_code}
                   </span>
                 </div>
-                <div className="mt-1 text-sm font-bold text-white">
+                <div className="mt-1 text-sm font-bold text-gray-900 dark:text-white">
                   {subjectRequirement.course_name}
                 </div>
-                <div className="mt-0.5 text-xs text-blue-200">
+                <div className="mt-0.5 text-xs text-gray-600 dark:text-blue-200">
                   {subjectRequirement.course_code} •{" "}
                   {subjectRequirement.lecture_units} Lec /{" "}
                   {subjectRequirement.lab_units} Lab Units •{" "}
@@ -370,19 +360,69 @@ export default function TeacherAssignmentModal({
               </div>
             )}
 
+            {/* Search Teacher Input */}
+            {!selectedTeacher && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  Search Teacher
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={teacherSearchQuery}
+                    onChange={(e) => setTeacherSearchQuery(e.target.value)}
+                    placeholder="Type at least 2 characters (e.g., Jo)..."
+                    className="w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-xs text-gray-900 focus:border-cyan-500 focus:ring-cyan-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                  />
+                </div>
+
+                {teacherSearchQuery.trim().length >= 2 && !selectedTeacher && (
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-md dark:border-gray-700 dark:bg-gray-800">
+                    {isTeacherLoading ? (
+                      <div className="p-3 text-center text-xs text-gray-500">
+                        Searching...
+                      </div>
+                    ) : teacherList.length > 0 ? (
+                      teacherList.map((tch) => (
+                        <div
+                          key={tch.teacher_id}
+                          onClick={() => {
+                            setSelectedTeacher(tch);
+                            setTeacherSearchQuery(tch.full_name);
+                          }}
+                          className="cursor-pointer px-3 py-2 text-xs hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+                        >
+                          <div className="font-bold">{tch.full_name}</div>
+                          <div className="text-[10px] text-gray-400">
+                            {tch.department || "No Department"}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-3 text-center text-xs text-gray-400">
+                        No teachers found
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Selected Teacher Card */}
             {selectedTeacher && (
               <div
-                className={`rounded-xl border p-3.5 text-white shadow-sm transition-all ${
+                className={`rounded-xl border p-3.5 shadow-sm transition-all ${
                   isFullyMatched
-                    ? "border-emerald-700/50 bg-emerald-950/90"
-                    : "border-amber-700/50 bg-amber-950/90"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-700/50 dark:bg-emerald-950/90 dark:text-white"
+                    : "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/90 dark:text-white"
                 }`}
               >
                 <div className="flex items-center justify-between text-[10px] font-bold tracking-wider uppercase">
                   <span
                     className={
-                      isFullyMatched ? "text-emerald-300" : "text-amber-300"
+                      isFullyMatched
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : "text-amber-700 dark:text-amber-300"
                     }
                   >
                     Selected Teacher for Assignment
@@ -392,17 +432,19 @@ export default function TeacherAssignmentModal({
                       setSelectedTeacher(null);
                       setTeacherSearchQuery("");
                     }}
-                    className="text-xs text-gray-300 underline hover:text-white"
+                    className="text-xs underline hover:opacity-80"
                   >
                     Change
                   </button>
                 </div>
-                <div className="mt-1 text-sm font-bold text-white">
+                <div className="mt-1 text-sm font-bold">
                   {selectedTeacher.full_name} ({selectedTeacher.teacher_code})
                 </div>
                 <div
-                  className={`mt-0.5 text-xs ${
-                    isFullyMatched ? "text-emerald-200" : "text-amber-200"
+                  className={`mt-0.5 text-xs opacity-90 ${
+                    isFullyMatched
+                      ? "text-emerald-800 dark:text-emerald-200"
+                      : "text-amber-800 dark:text-amber-200"
                   }`}
                 >
                   {selectedTeacher.department || "General"} •{" "}
@@ -413,8 +455,8 @@ export default function TeacherAssignmentModal({
 
             {/* Scope Toggle: Section vs Entire Subject */}
             {selectedTeacher && (
-              <div className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-800 p-3 text-xs text-white">
-                <span className="font-semibold text-gray-300">
+              <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+                <span className="font-semibold text-gray-700 dark:text-gray-300">
                   Assignment Scope:
                 </span>
                 <label className="relative inline-flex cursor-pointer items-center">
@@ -424,8 +466,8 @@ export default function TeacherAssignmentModal({
                     onChange={(e) => setApplyToAllSections(e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="peer h-5 w-9 rounded-full bg-gray-600 peer-checked:bg-cyan-600 peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
-                  <span className="ml-2 font-medium text-gray-200">
+                  <div className="peer h-5 w-9 rounded-full bg-gray-300 peer-checked:bg-cyan-600 peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white dark:bg-gray-600"></div>
+                  <span className="ml-2 font-medium text-gray-700 dark:text-gray-200">
                     {applyToAllSections
                       ? "All Sections (Entire Subject)"
                       : "This Section Only"}
@@ -434,108 +476,108 @@ export default function TeacherAssignmentModal({
               </div>
             )}
 
-            {/* Dynamic Workload & Preparation Stats Widget (Hidden when no teacher selected) */}
+            {/* Dynamic Workload & Preparation Stats Widget */}
             {selectedTeacher && (
-              <div className="flex items-center justify-around rounded-xl border border-gray-700 bg-gray-900 p-3 text-white">
+              <div className="flex items-center justify-around rounded-xl border border-gray-200 bg-white p-3 text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
                 <div className="text-center">
-                  <div className="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">
+                  <div className="text-[10px] font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
                     Proj. Prep
                   </div>
-                  <div className="mt-0.5 text-base font-bold text-emerald-400">
+                  <div
+                    className={`mt-0.5 text-base font-bold ${
+                      projectedPreps > prepLimit
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-emerald-600 dark:text-emerald-400"
+                    }`}
+                  >
                     {projectedPreps} / {prepLimit}
                   </div>
                 </div>
-                <div className="h-8 w-px bg-gray-700" />
+                <div className="h-8 w-px bg-gray-200 dark:bg-gray-700" />
                 <div className="text-center">
-                  <div className="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">
+                  <div className="text-[10px] font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
                     Proj. Load
                   </div>
-                  <div className="mt-0.5 text-base font-bold text-cyan-400">
+                  <div
+                    className={`mt-0.5 text-base font-bold ${
+                      projectedLoad > facultyLoadLimit
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-cyan-600 dark:text-cyan-400"
+                    }`}
+                  >
                     {Number(projectedLoad).toFixed(1)} / {facultyLoadLimit}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* FCCE Status Alert Box */}
-            <div
-              className={`rounded-lg border p-3 shadow-xs ${
-                hasFcceRecord
-                  ? "border-emerald-900/50 bg-emerald-950/60 text-emerald-200"
-                  : "border-red-900/50 bg-red-950/60 text-red-200"
-              }`}
-            >
+            {/* Academic Qualifications (AQ) Status Alert Box */}
+            {selectedTeacher && (
               <div
-                className={`text-xs font-bold tracking-wide uppercase ${
-                  hasFcceRecord ? "text-emerald-300" : "text-red-300"
+                className={`rounded-lg border p-3 shadow-xs ${
+                  hasAllAqsMatch
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/60 dark:text-emerald-200"
+                    : "border-red-200 bg-red-50 text-red-950 dark:border-red-900/50 dark:bg-red-950/60 dark:text-red-200"
                 }`}
               >
-                {hasFcceRecord
-                  ? `Passed FCCE Found for "${subjectRequirement?.course_name || "Course"}"`
-                  : `No Passed FCCE Found for "${subjectRequirement?.course_name || "Course"}"`}
-              </div>
-              <div
-                className={`mt-0.5 text-[11px] ${
-                  hasFcceRecord ? "text-emerald-300/80" : "text-red-300/80"
-                }`}
-              >
-                {hasFcceRecord
-                  ? "The selected teacher has a matching passed FCCE record for this specific course."
-                  : "The teacher does not have a passed FCCE record matching this course name."}
-              </div>
-            </div>
-
-            {/* Required AQ(s) Alert Box */}
-            {subjectRequirement?.required_aqs &&
-              subjectRequirement.required_aqs.length > 0 && (
                 <div
-                  className={`rounded-lg border p-3 shadow-xs ${
+                  className={`text-xs font-bold tracking-wide uppercase ${
                     hasAllAqsMatch
-                      ? "border-emerald-900/50 bg-emerald-950/60 text-emerald-200"
-                      : "border-red-900/50 bg-red-950/60 text-red-200"
+                      ? "text-emerald-700 dark:text-emerald-300"
+                      : "text-red-700 dark:text-red-300"
                   }`}
                 >
-                  <div
-                    className={`text-xs font-bold tracking-wide uppercase ${
-                      hasAllAqsMatch ? "text-emerald-300" : "text-red-300"
-                    }`}
-                  >
-                    {hasAllAqsMatch
-                      ? "Required AQ(s) Matched"
-                      : "Missing Required AQ(s)"}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span
-                      className={`text-[10px] font-semibold ${
-                        hasAllAqsMatch
-                          ? "text-emerald-300/90"
-                          : "text-red-300/90"
-                      }`}
-                    >
-                      AQ List:
-                    </span>
-                    {subjectRequirement.required_aqs.map(
-                      (aq: string, idx: number) => {
-                        const isMatched = teacherAqs.some(
-                          (t) => t.toLowerCase() === aq.toLowerCase(),
-                        );
-                        return (
-                          <span
-                            key={idx}
-                            className={`rounded px-2 py-0.5 text-[10px] font-bold ${
-                              isMatched
-                                ? "border border-emerald-500/50 bg-emerald-900/80 text-emerald-100"
-                                : "bg-red-900/80 text-red-100"
-                            }`}
-                          >
-                            {aq} {isMatched ? "✓" : ""}
-                          </span>
-                        );
-                      },
-                    )}
-                  </div>
+                  {hasAllAqsMatch
+                    ? "Academic Qualifications (AQ) Met"
+                    : "Academic Qualifications (AQ) Mismatch"}
                 </div>
-              )}
+                <div
+                  className={`mt-0.5 text-[11px] opacity-90 ${
+                    hasAllAqsMatch
+                      ? "text-emerald-800 dark:text-emerald-300/80"
+                      : "text-red-800 dark:text-red-300/80"
+                  }`}
+                >
+                  {hasAllAqsMatch
+                    ? `The teacher holds all required AQs: [${requiredAqs.join(", ")}].`
+                    : `Required AQs: [${requiredAqs.length > 0 ? requiredAqs.join(", ") : "None specified"}]. Teacher AQs: [${teacherAqs.length > 0 ? teacherAqs.join(", ") : "None"}].`}
+                </div>
+              </div>
+            )}
+
+            {/* FCCE Status Alert Box */}
+            {selectedTeacher && (
+              <div
+                className={`rounded-lg border p-3 shadow-xs ${
+                  hasFcceRecord
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/60 dark:text-emerald-200"
+                    : "border-red-200 bg-red-50 text-red-950 dark:border-red-900/50 dark:bg-red-950/60 dark:text-red-200"
+                }`}
+              >
+                <div
+                  className={`text-xs font-bold tracking-wide uppercase ${
+                    hasFcceRecord
+                      ? "text-emerald-700 dark:text-emerald-300"
+                      : "text-red-700 dark:text-red-300"
+                  }`}
+                >
+                  {hasFcceRecord
+                    ? `Passed FCCE Found for "${subjectRequirement?.course_name || "Course"}"`
+                    : `No Passed FCCE Found for "${subjectRequirement?.course_name || "Course"}"`}
+                </div>
+                <div
+                  className={`mt-0.5 text-[11px] opacity-90 ${
+                    hasFcceRecord
+                      ? "text-emerald-800 dark:text-emerald-300/80"
+                      : "text-red-800 dark:text-red-300/80"
+                  }`}
+                >
+                  {hasFcceRecord
+                    ? "The selected teacher has a matching passed FCCE record for this specific course."
+                    : "The teacher does not have a passed FCCE record matching this course name."}
+                </div>
+              </div>
+            )}
 
             {/* Modal Actions */}
             <div className="flex justify-end gap-3 pt-3">
@@ -563,7 +605,7 @@ export default function TeacherAssignmentModal({
         </ModalBody>
       </Modal>
 
-      {/* Override Warning Modal */}
+      {/* Override Warning / Hard Limit Modal */}
       <Modal
         show={showOverrideModal}
         onClose={() => setShowOverrideModal(false)}
@@ -573,40 +615,44 @@ export default function TeacherAssignmentModal({
         <ModalHeader />
         <ModalBody>
           <div className="text-center">
-            <HiOutlineExclamationCircle className="mx-auto mb-4 h-14 w-14 text-amber-500 dark:text-amber-400" />
+            <HiOutlineExclamationCircle
+              className={`mx-auto mb-4 h-14 w-14 ${
+                projectedLoad > absoluteMaxLoad
+                  ? "text-red-500 dark:text-red-400"
+                  : "text-amber-500 dark:text-amber-400"
+              }`}
+            />
             <h3 className="mb-2 text-lg font-bold text-gray-900 dark:text-white">
-              Qualification or FCCE Mismatch
+              {projectedLoad > absoluteMaxLoad
+                ? "Hard Limit Exceeded"
+                : "Workload or Schedule Constraint Mismatch"}
             </h3>
             <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
-              The selected instructor{" "}
-              <span className="font-semibold">
-                {selectedTeacher?.full_name}
-              </span>{" "}
-              is missing required Academic Qualifications (AQ) or a valid passed
-              FCCE record for this specific course. Do you still wish to
-              override and proceed?
+              {overrideWarningMessage}
             </p>
             <div className="flex justify-center gap-4">
-              <Button
-                color="purple"
-                size="sm"
-                onClick={() => {
-                  setShowOverrideModal(false);
-                  if (selectedTeacher) {
-                    onAssignTeacher(selectedTeacher, applyToAllSections);
-                  }
-                }}
-                className="cursor-pointer"
-              >
-                Yes, Override & Assign
-              </Button>
+              {projectedLoad <= absoluteMaxLoad && (
+                <Button
+                  color="purple"
+                  size="sm"
+                  onClick={() => {
+                    setShowOverrideModal(false);
+                    if (selectedTeacher) {
+                      onAssignTeacher(selectedTeacher, applyToAllSections);
+                    }
+                  }}
+                  className="cursor-pointer"
+                >
+                  Yes, Override & Assign
+                </Button>
+              )}
               <Button
                 color="alternative"
                 size="sm"
                 onClick={() => setShowOverrideModal(false)}
                 className="cursor-pointer"
               >
-                Go Back
+                {projectedLoad > absoluteMaxLoad ? "Back" : "Go Back"}
               </Button>
             </div>
           </div>
