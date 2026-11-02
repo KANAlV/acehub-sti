@@ -687,7 +687,7 @@ export default function HelpPage() {
                     <h1 className="text-3xl font-bold">AceHub Help Guide</h1>
                 </div>
                 <p className="text-blue-100 text-sm max-w-3xl">
-                    Select any system page from the sidebar navigation below to view its primary functions, authorized user roles, key features, and granular step-by-step instructions with exact button click targets.
+                    Select any system page from the sidebar navigation below to view its primary functions, authorized user roles, key features, and granular step-by-step instructions with exact guides on button click targets.
                 </p>
 
                 {/* Live Search Bar */}
