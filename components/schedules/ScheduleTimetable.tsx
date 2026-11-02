@@ -32,9 +32,11 @@ import {
   HiRefresh,
   HiLocationMarker,
   HiScissors,
+  HiDotsVertical,
+  HiUserAdd,
+  HiExclamationCircle,
 } from "react-icons/hi";
 import { FaCalendarDay, FaList } from "react-icons/fa6";
-import { FaCoffee } from "react-icons/fa";
 import {
   fetchScheduleByName,
   fetchTimetableEntriesByScheduleId,
@@ -48,7 +50,9 @@ import {
   RoomForGeneration,
   RoomType,
 } from "@/app/actions/system";
-import { HiCheck } from "react-icons/hi2";
+import { HiCheck, HiExclamationTriangle } from "react-icons/hi2";
+import TeacherAssignmentModal from "@/components/schedules/TeacherAssignmentModal";
+import { GiCoffeeCup } from "react-icons/gi";
 
 interface ScheduleTimetableClientProps {
   scheduleName: string;
@@ -131,6 +135,17 @@ export default function ScheduleTimetableClient({
     message: string;
   }>({ show: false, message: "" });
 
+  // --- Item-Level Action Menu Popup State (Dismissible by clicking outside) --- //
+  const [activeMenuEntryId, setActiveMenuEntryId] = useState<string | null>(
+    null,
+  );
+
+  // --- Teacher Assignment Modal State --- //
+  const [teacherAssignModalData, setTeacherAssignModalData] = useState<{
+    show: boolean;
+    entry: LocalTimetableEntry | null;
+  }>({ show: false, entry: null });
+
   // --- Split Modal State & Duplicate Scanning --- //
   const [splitModalData, setSplitModalData] = useState<{
     show: boolean;
@@ -144,7 +159,7 @@ export default function ScheduleTimetableClient({
     matchingDuplicates: [],
   });
 
-  // --- Confirmation Modal State for Lecture in Lab Room --- //
+  // --- Confirmation Modal State for Lecture in Lab Room & Break Overrides --- //
   const [confirmModalData, setConfirmModalData] = useState<{
     show: boolean;
     title: string;
@@ -242,6 +257,9 @@ export default function ScheduleTimetableClient({
     "08:00 PM",
     "08:30 PM",
   ];
+
+  const GRID_START_MINS = 7 * 60; // 7:00 AM in minutes
+  const ROW_HEIGHT_PX = 44; // matches h-11 (44px)
 
   // --- Strict Type-Safe Room Type Fetcher Matching IDs to fetched roomTypesList --- //
   const roomTypeFetcher = (typeId: string | null | undefined): string => {
@@ -563,6 +581,15 @@ export default function ScheduleTimetableClient({
     new Set(originalEntries.map((e) => e.section).filter(Boolean)),
   );
 
+  // --- Computed Metrics for Warning Badges Outside Editor --- //
+  const unassignedBlocksCount = changedSchedules.filter(
+    (e) => !e.day || e.start_time === undefined || e.start_time <= 0,
+  ).length;
+
+  const unassignedTeacherBlocksCount = changedSchedules.filter(
+    (e) => !e.teacher_id,
+  ).length;
+
   const handleUnassignEntry = (scheduleEntryId: string) => {
     setChangedSchedules(
       (prev) =>
@@ -720,9 +747,25 @@ export default function ScheduleTimetableClient({
     });
 
     if (breakConflict) {
-      setConflictModalData({
+      setConfirmModalData({
         show: true,
-        message: `Scheduling Conflict: Cannot place classes during break period [${breakConflict.break_description}] (${formatTime(breakConflict.start_time)} - ${formatTime(breakConflict.end_time)}).`,
+        title: "Break Period Conflict Override",
+        message: `Warning: Attempting to place class during break period [${breakConflict.break_description}] (${formatTime(breakConflict.start_time)} - ${formatTime(breakConflict.end_time)}). Do you wish to override and assign over this break?`,
+        onConfirm: () => {
+          setConfirmModalData({
+            show: false,
+            title: "",
+            message: "",
+            onConfirm: () => {},
+          });
+          executeDropPlacement(
+            targetDay,
+            targetStartMins,
+            duration,
+            droppedData,
+            activeRoom,
+          );
+        },
       });
       return;
     }
@@ -852,6 +895,7 @@ export default function ScheduleTimetableClient({
 
   // --- Handlers for Subject Splitting & Automatic Duplicate Merging --- //
   const handleOpenSplitModal = (subj: LocalTimetableEntry) => {
+    setActiveMenuEntryId(null);
     const existingDuplicates = changedSchedules.filter(
       (e) =>
         e.section.toLowerCase() === subj.section.toLowerCase() &&
@@ -905,7 +949,6 @@ export default function ScheduleTimetableClient({
     setChangedSchedules((prev) => {
       let workingList = [...prev];
 
-      // Automatically apply to all matching duplicates across the schedule
       const duplicateIds = splitModalData.matchingDuplicates.map(
         (d) => d.schedule_entry_id,
       );
@@ -989,9 +1032,21 @@ export default function ScheduleTimetableClient({
             >
               <HiArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to Schedules
             </Button>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Timetable: {scheduleName}
-            </h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Timetable: {scheduleName}
+              </h1>
+              {unassignedBlocksCount > 0 && (
+                <Badge color="warning" size="sm" icon={HiExclamationCircle}>
+                  {unassignedBlocksCount} Unassigned Rooms
+                </Badge>
+              )}
+              {unassignedTeacherBlocksCount > 0 && (
+                <Badge color="failure" size="sm" icon={HiExclamationTriangle}>
+                  {unassignedTeacherBlocksCount} Missing Teachers
+                </Badge>
+              )}
+            </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               Comprehensive overview of class schedules, rooms, and sections.
             </p>
@@ -1014,6 +1069,7 @@ export default function ScheduleTimetableClient({
               color="blue"
               size="sm"
               className="cursor-pointer bg-cyan-600 text-white hover:bg-cyan-700"
+              hidden={isEditMode}
             >
               <HiOutlineExternalLink className="mr-1.5 h-4 w-4" />
               Export Timetable
@@ -1148,7 +1204,7 @@ export default function ScheduleTimetableClient({
 
         {displayFormat === "timetable" ? (
           <div className="max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            <table className="w-full min-w-[850px] border-collapse text-left text-xs">
+            <table className="w-full min-w-212.5 border-collapse text-left text-xs">
               <thead>
                 <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
                   <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
@@ -1157,7 +1213,7 @@ export default function ScheduleTimetableClient({
                   {daysOfWeek.map((day) => (
                     <th
                       key={day}
-                      className="min-w-[120px] border-r border-b p-3 text-center font-bold"
+                      className="min-w-30 border-r border-b p-3 text-center font-bold"
                     >
                       <span className="sm:hidden">
                         {day.substring(0, 3).toUpperCase()}
@@ -1287,14 +1343,14 @@ export default function ScheduleTimetableClient({
                                     console.error("Drop parse error", err);
                                   }
                                 }}
-                                className="absolute inset-x-0 top-0 z-25 flex h-[42px] items-center justify-center gap-1 border-b border-dashed border-cyan-400 bg-cyan-100/70 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200"
+                                className="absolute inset-x-0 top-0 z-35 flex h-11 items-center justify-center gap-1 border-b border-dashed border-cyan-400 bg-cyan-100/70 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200"
                               >
                                 <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
                                 <span>Original Position (Drop here)</span>
                               </div>
 
                               <div
-                                className="absolute inset-x-0 top-[42px] bottom-0 p-2 text-center"
+                                className="absolute inset-x-0 top-11 bottom-0 p-2 text-center"
                                 onDragOver={(e) => {
                                   e.preventDefault();
                                   const nextSlotTime = formatMinutesToTimeStr(
@@ -1344,7 +1400,7 @@ export default function ScheduleTimetableClient({
                             1,
                             Math.round(durationMins / 30),
                           );
-                          const blockHeightPx = rowSpan * 42;
+                          const blockHeightPx = rowSpan * ROW_HEIGHT_PX;
 
                           const isGhost = !matchedEntry && !!ghostEntry;
                           const isLabType =
@@ -1487,7 +1543,7 @@ export default function ScheduleTimetableClient({
                                   }
                                 }
                               }}
-                              className={`relative overflow-hidden border-r p-0 align-top ${blockStyle} border font-sans ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
+                              className={`relative z-20 overflow-hidden border-r p-0 align-top ${blockStyle} border font-sans ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
                             >
                               <div
                                 className="schedule-block-inner absolute inset-1.5 flex flex-col gap-1 overflow-hidden rounded bg-inherit p-2 shadow-xs"
@@ -1501,7 +1557,7 @@ export default function ScheduleTimetableClient({
                                       handleUnassignEntry(scheduleEntryId);
                                     }}
                                     title="Unassign / Return to Sidebar"
-                                    className="absolute top-1 right-1 z-20 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
+                                    className="absolute top-1 right-1 z-30 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
                                   >
                                     <HiX className="h-3.5 w-3.5" />
                                   </button>
@@ -1532,72 +1588,6 @@ export default function ScheduleTimetableClient({
                                     {formatTime(displayEntry.start_time)} -{" "}
                                     {formatTime(displayEntry.end_time)}
                                   </div>
-                                </div>
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        const matchedBreaksList = expandedBreaks.filter(
-                          (bp) => {
-                            if (bp.day.toLowerCase() !== day.toLowerCase())
-                              return false;
-                            const breakStartStr = formatMinutesToTimeStr(
-                              bp.start_time,
-                            );
-                            return breakStartStr === timeSlot;
-                          },
-                        );
-
-                        const matchedBreak =
-                          matchedBreaksList.length > 0
-                            ? matchedBreaksList.reduce((prev, current) =>
-                                current.end_time > prev.end_time
-                                  ? current
-                                  : prev,
-                              )
-                            : null;
-
-                        if (matchedBreak) {
-                          const durationMins =
-                            matchedBreak.end_time - matchedBreak.start_time;
-                          const rowSpan = Math.max(
-                            1,
-                            Math.round(durationMins / 30),
-                          );
-                          const breakHeightPx = rowSpan * 42;
-                          const breakStyle =
-                            "bg-amber-50/80 text-amber-950 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
-
-                          const hasMultipleBreaks =
-                            matchedBreaksList.length > 1;
-
-                          return (
-                            <td
-                              key={day}
-                              rowSpan={rowSpan}
-                              style={{
-                                height: "0px",
-                              }}
-                              className={`relative overflow-hidden border-r p-0 align-top ${breakStyle} border font-sans`}
-                            >
-                              <div
-                                className="absolute inset-1.5 flex flex-col items-center justify-center overflow-hidden rounded bg-inherit p-1 text-center shadow-xs sm:p-2"
-                                style={{ height: `${breakHeightPx - 12}px` }}
-                              >
-                                <FaCoffee className="mb-1 hidden h-4 w-4 shrink-0 text-amber-600 sm:inline-block dark:text-amber-400" />
-                                <div className="w-full truncate text-[11px] font-bold text-amber-900 sm:text-xs dark:text-amber-100">
-                                  {matchedBreak.break_description}
-                                  {hasMultipleBreaks && (
-                                    <div className="ml-1 text-[9px] opacity-75">
-                                      (+{matchedBreaksList.length - 1}{" "}
-                                      overlapping)
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="mt-0.5 font-mono text-[9px] text-amber-700 sm:mt-1 sm:text-[10px] dark:text-amber-300">
-                                  {formatTime(matchedBreak.start_time)} -{" "}
-                                  {formatTime(matchedBreak.end_time)}
                                 </div>
                               </div>
                             </td>
@@ -1647,22 +1637,18 @@ export default function ScheduleTimetableClient({
                           },
                         );
 
-                        const isCoveredByBreak = expandedBreaks.some((bp) => {
+                        if (isCoveredByClass || isCoveredByGhost) {
+                          return null;
+                        }
+
+                        const matchedBreak = expandedBreaks.find((bp) => {
                           if (bp.day.toLowerCase() !== day.toLowerCase())
                             return false;
                           return (
-                            slotTotalMins > bp.start_time &&
+                            slotTotalMins >= bp.start_time &&
                             slotTotalMins < bp.end_time
                           );
                         });
-
-                        if (
-                          isCoveredByClass ||
-                          isCoveredByGhost ||
-                          isCoveredByBreak
-                        ) {
-                          return null;
-                        }
 
                         let isHighlighted = false;
                         if (
@@ -1726,12 +1712,64 @@ export default function ScheduleTimetableClient({
                                 console.error("Drop parse error", err);
                               }
                             }}
-                            className={`border-r p-2 text-center transition-colors ${
+                            className={`relative border-r p-1 text-center transition-colors ${
                               isHighlighted
-                                ? "border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/60"
-                                : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
+                                ? "z-25 border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/65"
+                                : matchedBreak
+                                  ? "border-amber-200 bg-amber-50/80 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                                  : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
                             }`}
-                          ></td>
+                          >
+                            {matchedBreak &&
+                              slotTotalMins === matchedBreak.start_time && (
+                                <div
+                                  className="absolute inset-1.5 z-10 flex flex-col items-center justify-center overflow-hidden rounded bg-amber-100/90 p-1 text-center shadow-xs dark:bg-amber-900/80"
+                                  style={{
+                                    height: `${((matchedBreak.end_time - matchedBreak.start_time) / 30) * ROW_HEIGHT_PX - 12}px`,
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    const dragDuration =
+                                      draggedDurationRef.current || 60;
+                                    if (
+                                      !dragOverCell ||
+                                      dragOverCell.day !== day ||
+                                      dragOverCell.timeSlot !== timeSlot ||
+                                      dragOverCell.duration !== dragDuration
+                                    ) {
+                                      setDragOverCell({
+                                        day,
+                                        timeSlot,
+                                        duration: dragDuration,
+                                      });
+                                    }
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const rawData =
+                                      e.dataTransfer.getData("text/plain");
+                                    if (!rawData) return;
+                                    try {
+                                      const parsed = JSON.parse(
+                                        rawData,
+                                      ) as DragPayload;
+                                      handleDropToSlot(day, timeSlot, parsed);
+                                    } catch (err) {
+                                      console.error("Drop parse error", err);
+                                    }
+                                  }}
+                                >
+                                  <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-amber-900 dark:text-amber-100">
+                                    <GiCoffeeCup />
+                                    <div>{matchedBreak.break_description}</div>
+                                  </div>
+                                  <div className="font-mono text-[9px] text-amber-700 dark:text-amber-300">
+                                    {formatTime(matchedBreak.start_time)} -{" "}
+                                    {formatTime(matchedBreak.end_time)}
+                                  </div>
+                                </div>
+                              )}
+                          </td>
                         );
                       })}
                     </tr>
@@ -1810,7 +1848,7 @@ export default function ScheduleTimetableClient({
         )}
       </div>
 
-      {/* --- EDIT SIDE-PANEL DRAWER --- */}
+      {/* --- EDIT SIDE-PANEL DRAWER (USING RELATIVE POPUP MODAL) --- */}
       {isEditMode && (
         <aside className="fixed inset-y-0 right-0 w-80 shrink-0 overflow-y-auto border-l border-gray-200 bg-white p-4 shadow-2xl lg:static lg:h-auto lg:shadow-none dark:border-gray-700 dark:bg-gray-900">
           <div className="mb-4 flex items-center justify-between border-b border-gray-200 pb-3 dark:border-gray-700">
@@ -1825,9 +1863,8 @@ export default function ScheduleTimetableClient({
             </button>
           </div>
           <p className="mb-3 text-[11px] text-gray-500 dark:text-gray-400">
-            Drag items into timetable slots. To transfer to another room,
-            unassign the block, select the target room from the top dropdown,
-            and drag it in.
+            Drag items into timetable slots. Click the three dots on any card to
+            open the action popup.
           </p>
 
           <Accordion collapseAll className="space-y-2 border-none">
@@ -1850,14 +1887,24 @@ export default function ScheduleTimetableClient({
                           {secCode}
                         </span>
                         {unassignedCount > 0 && (
-                          <Badge color="failure" size="xs">
-                            {unassignedCount} missing
+                          <Badge color="warning" size="xs">
+                            {unassignedCount} Needs Room
                           </Badge>
                         )}
+                        {(() => {
+                          const noTeacherCount = sectionEntries.filter(
+                              (e) => !e.teacher_code
+                          ).length;
+
+                          if (noTeacherCount === 0) return null;
+
+                          return (
+                              <Badge color="failure" size="xs">
+                                {noTeacherCount} Missing Teacher{noTeacherCount > 1 ? "s" : ""}
+                              </Badge>
+                          );
+                        })()}
                       </div>
-                      <Badge color="gray" size="xs">
-                        {sectionEntries.length} Items
-                      </Badge>
                     </div>
                   </AccordionTitle>
                   <AccordionContent className="bg-white p-2 dark:bg-gray-900">
@@ -1878,6 +1925,9 @@ export default function ScheduleTimetableClient({
                           const itemDuration = subj.originalDuration || 60;
                           const isLabType =
                             subj.type?.toLowerCase() === "laboratory";
+
+                          const isMenuOpen =
+                            activeMenuEntryId === scheduleEntryId;
 
                           return (
                             <div
@@ -1902,7 +1952,7 @@ export default function ScheduleTimetableClient({
                                   } as DragPayload),
                                 );
                               }}
-                              className={`rounded border p-2 text-xs transition-all ${
+                              className={`relative rounded border p-2 text-xs transition-all ${
                                 isPlaced
                                   ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500"
                                   : `cursor-grab ${isLabType ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/20" : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/20"} text-gray-800 dark:text-gray-200`
@@ -1912,24 +1962,70 @@ export default function ScheduleTimetableClient({
                                 <div className="font-bold">
                                   {subj.course_code}
                                 </div>
-                                <div className="flex items-center gap-1">
+                                <div className="relative flex items-center gap-1">
                                   <span
                                     className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isLabType ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
                                   >
                                     {subj.type || "Lecture"}
                                   </span>
-                                  {!isPlaced && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleOpenSplitModal(subj);
-                                      }}
-                                      title="Split or merge/edit splits"
-                                      className="rounded bg-gray-200 p-1 text-gray-700 hover:bg-cyan-100 hover:text-cyan-700 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-cyan-900 dark:hover:text-cyan-200"
-                                    >
-                                      <HiScissors className="h-3 w-3" />
-                                    </button>
+
+                                  {/* Three Dots Button Trigger */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveMenuEntryId(
+                                        isMenuOpen ? null : scheduleEntryId,
+                                      );
+                                    }}
+                                    className="rounded p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"
+                                  >
+                                    <HiDotsVertical className="h-3.5 w-3.5" />
+                                  </button>
+
+                                  {/* Relative Dismissible Action Popup Box */}
+                                  {isMenuOpen && (
+                                    <>
+                                      {/* Transparent backdrop to catch outside clicks and dismiss */}
+                                      <div
+                                        className="fixed inset-0 z-30"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveMenuEntryId(null);
+                                        }}
+                                      ></div>
+
+                                      <div className="absolute top-6 right-0 z-40 w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                                        {!isPlaced && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleOpenSplitModal(subj);
+                                            }}
+                                            className="flex w-full items-center px-3 py-1.5 text-left text-[11px] font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                                          >
+                                            <HiScissors className="mr-2 h-3.5 w-3.5 text-cyan-600" />{" "}
+                                            Split Block
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveMenuEntryId(null);
+                                            setTeacherAssignModalData({
+                                              show: true,
+                                              entry: subj,
+                                            });
+                                          }}
+                                          className="flex w-full items-center px-3 py-1.5 text-left text-[11px] font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                                        >
+                                          <HiUserAdd className="mr-2 h-3.5 w-3.5 text-purple-600" />{" "}
+                                          Assign Teacher
+                                        </button>
+                                      </div>
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -1971,6 +2067,41 @@ export default function ScheduleTimetableClient({
           </Accordion>
         </aside>
       )}
+
+      {/* --- TEACHER ASSIGNMENT MODAL COMPONENT --- */}
+      <TeacherAssignmentModal
+        show={teacherAssignModalData.show}
+        onClose={() => setTeacherAssignModalData({ show: false, entry: null })}
+        entry={teacherAssignModalData.entry}
+        changedSchedules={changedSchedules}
+        onAssignTeacher={(selectedTeacher, applyToAllSections) => {
+          const currentEntry = teacherAssignModalData.entry;
+          if (!currentEntry) return;
+
+          setChangedSchedules((prev) =>
+            prev.map((e) => {
+              const matchesSubject =
+                e.subject_id === currentEntry.subject_id ||
+                e.course_code === currentEntry.course_code;
+
+              const matchesSection =
+                applyToAllSections || e.section === currentEntry.section;
+
+              if (matchesSubject && matchesSection) {
+                return {
+                  ...e,
+                  teacher_id: selectedTeacher.teacher_id,
+                  teacher_code:
+                    selectedTeacher.teacher_code || selectedTeacher.full_name,
+                };
+              }
+              return e;
+            }),
+          );
+
+          setTeacherAssignModalData({ show: false, entry: null });
+        }}
+      />
 
       {/* --- SUBJECT SPLIT / MERGE MODAL --- */}
       <Modal
@@ -2158,7 +2289,7 @@ export default function ScheduleTimetableClient({
         </ModalBody>
       </Modal>
 
-      {/* --- CONFIRMATION MODAL FOR LECTURE IN LAB ROOM --- */}
+      {/* --- CONFIRMATION MODAL FOR LECTURE IN LAB ROOM & BREAK OVERRIDES --- */}
       <Modal
         show={confirmModalData.show}
         onClose={() =>

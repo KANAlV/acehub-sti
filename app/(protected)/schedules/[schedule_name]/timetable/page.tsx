@@ -1,4 +1,4 @@
-import ScheduleTimetableClient from "@/components/ScheduleTimetable";
+import ScheduleTimetableClient from "@/components/schedules/ScheduleTimetable";
 
 interface PageProps {
   params: Promise<{

@@ -134,6 +134,33 @@ export async function fetchSubjectsUnitsByIds(
   }
 }
 
+export async function fetchSubjectRequirementById(
+  subjectId: string
+): Promise<{
+  success: boolean;
+  data: SubjectRequirementRecord | null;
+  error?: string;
+}> {
+  try {
+    const result = await sql`
+      SELECT * FROM subject_requirement_by_id(${subjectId})
+    `;
+
+    if (!result || result.length === 0) {
+      return { success: true, data: null };
+    }
+
+    return { success: true, data: result[0] as SubjectRequirementRecord };
+  } catch (error) {
+    console.error("Failed to fetch subject requirement by ID:", error);
+    return {
+      success: false,
+      data: null,
+      error: (error as Error).message || "Failed to fetch subject requirement.",
+    };
+  }
+}
+
 /*************
  * SCHEDULES *
  *************/
@@ -306,16 +333,14 @@ export async function fetchSubjectRequirements(
 
 // Teachers
 export async function getTeachersWithAqAndFcce(params: {
-  aySem?: string | null;
   search?: string | null;
 })
 {
-  const { aySem = null, search = null } = params;
+  const { search = null } = params;
 
   try {
     const data = await sql`
       SELECT * FROM teachers_with_aq_and_fcce_read(
-        ${aySem || null},
         ${search || null}
       );
     `;
