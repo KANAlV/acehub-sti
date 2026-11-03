@@ -1284,7 +1284,7 @@ export default function ScheduleTimetableClient({
                 <span>Laboratory</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950"></span>
+                <span className="inline-block h-3 w-3 rounded border border-violet-300 bg-violet-100 dark:border-violet-700 dark:bg-violet-950"></span>
                 <span>Break Periods</span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -1350,7 +1350,219 @@ export default function ScheduleTimetableClient({
         </div>
 
         {displayFormat === "timetable" ? (
-          <div className="max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="relative max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            {/* --- UNIFIED ABSOLUTE OVERLAY ENGINE FOR CONFLICTS ONLY --- */}
+            {(() => {
+              const DAY_COLUMNS = [
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+              ];
+
+              // 1. Filter ONLY entries that have an actual conflict (Section, Room, or Teacher overlap)
+              const conflictingEntries = changedSchedules.filter((entry) => {
+                if (!entry.day || entry.start_time <= 0) return false;
+                const matchesSection =
+                  selectedTimetableSection === "ALL" ||
+                  entry.section === selectedTimetableSection;
+                const matchesRoom =
+                  selectedTimetableRoom === "ALL" ||
+                  entry.room_name === selectedTimetableRoom;
+                if (!matchesSection || !matchesRoom) return false;
+
+                return changedSchedules.some((other) => {
+                  if (other.schedule_entry_id === entry.schedule_entry_id)
+                    return false;
+                  if (!other.day || other.start_time <= 0) return false;
+                  if (other.day.toLowerCase() !== entry.day?.toLowerCase())
+                    return false;
+                  if (
+                    entry.start_time >= other.end_time ||
+                    entry.end_time <= other.start_time
+                  )
+                    return false;
+
+                  return (
+                    entry.section.toLowerCase() ===
+                      other.section.toLowerCase() ||
+                    (entry.room_name &&
+                      other.room_name &&
+                      entry.room_name.toLowerCase() ===
+                        other.room_name.toLowerCase()) ||
+                    (entry.teacher_id &&
+                      other.teacher_id &&
+                      entry.teacher_id === other.teacher_id)
+                  );
+                });
+              });
+
+              if (conflictingEntries.length === 0) return null;
+
+              // 2. Cluster connected overlapping conflicts together
+              const processedIds = new Set<string>();
+              const conflictGroups: Array<{
+                type: "group" | "single";
+                day: string;
+                minStart: number;
+                maxEnd: number;
+                blocks: LocalTimetableEntry[];
+              }> = [];
+
+              conflictingEntries.forEach((entry) => {
+                if (processedIds.has(entry.schedule_entry_id)) return;
+
+                const cluster = [entry];
+                processedIds.add(entry.schedule_entry_id);
+
+                let added = true;
+                while (added) {
+                  added = false;
+                  conflictingEntries.forEach((other) => {
+                    if (processedIds.has(other.schedule_entry_id)) return;
+                    if (other.day?.toLowerCase() !== entry.day?.toLowerCase())
+                      return;
+
+                    const overlapsCluster = cluster.some(
+                      (b) =>
+                        other.start_time < b.end_time &&
+                        other.end_time > b.start_time,
+                    );
+
+                    if (overlapsCluster) {
+                      cluster.push(other);
+                      processedIds.add(other.schedule_entry_id);
+                      added = true;
+                    }
+                  });
+                }
+
+                const minStart = Math.min(...cluster.map((b) => b.start_time));
+                const maxEnd = Math.max(...cluster.map((b) => b.end_time));
+
+                conflictGroups.push({
+                  type: cluster.length > 1 ? "group" : "single",
+                  day: entry.day.toLowerCase(),
+                  minStart,
+                  maxEnd,
+                  blocks: cluster,
+                });
+              });
+
+              if (conflictGroups.length === 0) return null;
+
+              return conflictGroups.map((item, idx) => {
+                const dayIndex = DAY_COLUMNS.indexOf(item.day);
+                if (dayIndex === -1) return null;
+
+                const topOffsetPx =
+                  ((item.minStart - GRID_START_MINS) / 30) * ROW_HEIGHT_PX;
+                const durationMins = item.maxEnd - item.minStart;
+                const heightPx = Math.max(
+                  ROW_HEIGHT_PX,
+                  (durationMins / 30) * ROW_HEIGHT_PX,
+                );
+
+                const block = item.blocks[0];
+                const scheduleEntryId = block.schedule_entry_id;
+
+                return (
+                  <div
+                    key={idx}
+                    className="absolute z-40 flex flex-col gap-1 rounded-lg border-2 border-red-500 bg-red-950/95 p-2 text-xs text-red-100 shadow-xl backdrop-blur-xs transition-all dark:border-red-600 dark:bg-red-950"
+                    style={{
+                      top: `${topOffsetPx + 45}px`, // Accounts for table header height
+                      left: `calc(96px + (${dayIndex} * ((100% - 96px) / 6)))`,
+                      width: `calc((100% - 96px) / 6 - 6px)`,
+                      height: `${heightPx}px`,
+                      pointerEvents: "auto",
+                    }}
+                  >
+                    {item.type === "group" ? (
+                      <>
+                        <div className="flex items-center justify-between border-b border-red-800/80 pb-1">
+                          <span className="text-[10px] font-bold tracking-wider text-red-300 uppercase">
+                            ⚠️ Overlapping Conflict ({item.blocks.length})
+                          </span>
+                        </div>
+                        <div className="flex-1 space-y-1.5 overflow-y-auto">
+                          {item.blocks.map((b, bIdx) => (
+                            <div
+                              key={bIdx}
+                              className="relative rounded border border-red-700/60 bg-red-900/70 p-1.5 text-[11px]"
+                            >
+                              {isEditMode && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUnassignEntry(b.schedule_entry_id);
+                                  }}
+                                  title="Unassign / Return to Sidebar"
+                                  className="absolute top-1 right-1 z-30 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
+                                >
+                                  <HiX className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              <div className="truncate pr-4 font-bold text-white">
+                                {b.course_name}
+                              </div>
+                              <div className="text-[10px] text-red-200">
+                                {b.course_code} • Sec: {b.section}
+                              </div>
+                              <div className="font-mono text-[10px] text-red-300">
+                                {formatTime(b.start_time)} -{" "}
+                                {formatTime(b.end_time)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      /* Single conflicting block overlay with unassign X button */
+                      <div className="relative flex h-full flex-col justify-between overflow-hidden">
+                        {isEditMode && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUnassignEntry(scheduleEntryId);
+                            }}
+                            title="Unassign / Return to Sidebar"
+                            className="absolute top-1 right-1 z-30 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
+                          >
+                            <HiX className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <div>
+                          <div className="flex items-center justify-between pr-4">
+                            <div className="truncate font-bold text-white">
+                              {block.course_name}
+                            </div>
+                          </div>
+                          <div className="truncate text-[10px] font-medium opacity-90">
+                            {block.course_code}
+                          </div>
+                        </div>
+                        <div className="space-y-0.5 text-[10px] font-semibold opacity-90">
+                          <div>
+                            Teacher: {block.teacher_code || "Unassigned"}
+                          </div>
+                          <div>Sec: {block.section}</div>
+                          <div>Room: {block.room_name || "TBA"}</div>
+                          <div className="font-mono">
+                            {formatTime(block.start_time)} -{" "}
+                            {formatTime(block.end_time)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
             <table className="w-full min-w-212.5 border-collapse text-left text-xs">
               <thead>
                 <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
@@ -1643,8 +1855,7 @@ export default function ScheduleTimetableClient({
                             blockStyle =
                               "bg-gray-100 text-gray-400 border-gray-200 opacity-50 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700";
                           } else if (hasConflict) {
-                            blockStyle =
-                              "bg-red-50/90 text-red-950 border-red-300 dark:bg-red-950/50 dark:text-red-200 dark:border-red-700";
+                            blockStyle = "hidden";
                           } else if (isLabType) {
                             blockStyle =
                               "bg-emerald-50/80 text-emerald-950 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
@@ -1693,25 +1904,26 @@ export default function ScheduleTimetableClient({
                                 }`;
 
                                 dragPreview.innerHTML = `
-                    <div>
-                      <div class="flex items-center justify-between">
-                        <div class="text-xs font-bold truncate">${displayEntry.course_name}</div>
-                        <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                          hasConflict
-                            ? "bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-200"
-                            : isLabType
-                              ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
-                              : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
-                        }">${displayEntry.type || "Lecture"}</span>
-                      </div>
-                      <div class="text-[10px] font-medium opacity-80 truncate">${displayEntry.course_code}</div>
-                    </div>
-                    <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
-                      <div>Sec: ${displayEntry.section}</div>
-                      <div>Room: ${displayEntry.room_name || "TBA"}</div>
-                      <div class="font-mono">${formatTime(displayEntry.start_time)} - ${formatTime(displayEntry.end_time)}</div>
-                    </div>
-                  `;
+                                  <div>
+                                    <div class="flex items-center justify-between">
+                                      <div class="text-xs font-bold truncate">${displayEntry.course_name}</div>
+                                      <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                                        /* TODO: Add hasSectionConsecutiveTeachingViolation function here.
+                                          hasSectionConsecutiveTeachingViolation
+                                          ? "bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200"
+                                          : */ isLabType
+                                            ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
+                                            : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
+                                      }">${displayEntry.type || "Lecture"}</span>
+                                    </div>
+                                    <div class="text-[10px] font-medium opacity-80 truncate">${displayEntry.course_code}</div>
+                                  </div>
+                                  <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
+                                    <div>Sec: ${displayEntry.section}</div>
+                                    <div>Room: ${displayEntry.room_name || "TBA"}</div>
+                                    <div class="font-mono">${formatTime(displayEntry.start_time)} - ${formatTime(displayEntry.end_time)}</div>
+                                  </div>
+                                `;
 
                                 document.body.appendChild(dragPreview);
                                 if (e.dataTransfer.setDragImage) {
@@ -1992,14 +2204,14 @@ export default function ScheduleTimetableClient({
                               isHighlighted
                                 ? "z-25 border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/65"
                                 : matchedBreak
-                                  ? "border-amber-200 bg-amber-50/80 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                                  ? "border-violet-200 bg-violet-50/80 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
                                   : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
                             }`}
                           >
                             {matchedBreak &&
                               slotTotalMins === matchedBreak.start_time && (
                                 <div
-                                  className="absolute inset-1.5 z-10 flex flex-col items-center justify-center overflow-hidden rounded bg-amber-100/90 p-1 text-center shadow-xs dark:bg-amber-900/80"
+                                  className="absolute inset-1.5 z-10 flex flex-col items-center justify-center overflow-hidden rounded bg-violet-100/90 p-1 text-center shadow-xs dark:bg-violet-900/80"
                                   style={{
                                     height: `${((matchedBreak.end_time - matchedBreak.start_time) / 30) * ROW_HEIGHT_PX - 12}px`,
                                   }}
@@ -2035,11 +2247,11 @@ export default function ScheduleTimetableClient({
                                     }
                                   }}
                                 >
-                                  <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-amber-900 dark:text-amber-100">
+                                  <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-violet-900 dark:text-violet-100">
                                     <GiCoffeeCup />
                                     <div>{matchedBreak.break_description}</div>
                                   </div>
-                                  <div className="font-mono text-[9px] text-amber-700 dark:text-amber-300">
+                                  <div className="font-mono text-[9px] text-violet-700 dark:text-violet-300">
                                     {formatTime(matchedBreak.start_time)} -{" "}
                                     {formatTime(matchedBreak.end_time)}
                                   </div>
