@@ -12,8 +12,6 @@ export default async function ScheduleTimetable({ params }: PageProps) {
   const scheduleName = decodeURIComponent(resolvedParams.schedule_name);
 
   return (
-    <main className="p-6">
-      <ScheduleTimetableClient scheduleName={scheduleName} />
-    </main>
+    <ScheduleTimetableClient scheduleName={scheduleName} />
   );
 }
