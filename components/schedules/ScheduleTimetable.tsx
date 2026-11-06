@@ -4,18 +4,11 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Button,
-  ButtonGroup,
   Card,
   Modal,
   ModalBody,
   ModalHeader,
   Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeadCell,
-  TableRow,
   Select,
   Accordion,
   AccordionPanel,
@@ -39,7 +32,6 @@ import {
   HiExclamationCircle,
   HiClock,
 } from "react-icons/hi";
-import { FaCalendarDay, FaList } from "react-icons/fa6";
 import {
   fetchScheduleByName,
   fetchTimetableEntriesByScheduleId,
@@ -109,8 +101,8 @@ interface DragPayload {
 }
 
 export default function ScheduleTimetableClient({
-  scheduleName,
-}: ScheduleTimetableClientProps) {
+                                                  scheduleName,
+                                                }: ScheduleTimetableClientProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
 
@@ -205,9 +197,6 @@ export default function ScheduleTimetableClient({
   const [breakPeriodCount, setBreakPeriodCount] = useState(0);
 
   // --- Display & Filter States --- //
-  const [displayFormat, setDisplayFormat] = useState<"timetable" | "table">(
-    "timetable",
-  );
   const [selectedTimetableSection, setSelectedTimetableSection] =
     useState<string>("ALL");
   const [selectedTimetableRoom, setSelectedTimetableRoom] =
@@ -277,7 +266,7 @@ export default function ScheduleTimetableClient({
   const GRID_START_MINS = 7 * 60; // 7:00 AM in minutes
   const ROW_HEIGHT_PX = 44; // matches h-11 (44px)
 
-  // --- Strict Type-Safe Room Type Fetcher Matching IDs to fetched roomTypesList --- //
+  // --- Strict Type-Safe Room Type Fetcher --- //
   const roomTypeFetcher = (typeId: string | null | undefined): string => {
     if (!typeId) return "Standard Room";
     const cleanedId: string = typeId.trim().toLowerCase();
@@ -290,10 +279,6 @@ export default function ScheduleTimetableClient({
     }
 
     return cleanedId;
-  };
-
-  const getRoomTypeName = (typeId: string | null | undefined): string => {
-    return roomTypeFetcher(typeId);
   };
 
   // --- Break Period Count Fetcher --- //
@@ -311,7 +296,6 @@ export default function ScheduleTimetableClient({
     }
   }, []);
 
-  // --- Break Periods Implementation Function --- //
   const getBreakPeriods = useCallback(
     async (
       search?: string | null,
@@ -366,7 +350,6 @@ export default function ScheduleTimetableClient({
     void loadMasterData();
   }, [getBreakPeriods]);
 
-  // 1. Fetch schedule ID by name on mount
   useEffect(() => {
     document.title = "AceHub | Timetable";
 
@@ -394,7 +377,6 @@ export default function ScheduleTimetableClient({
     }
   }, [scheduleName]);
 
-  // 2. Fetch timetable entries and official subject units once scheduleID is resolved
   useEffect(() => {
     async function loadTimetableEntries() {
       if (!scheduleID) return;
@@ -431,7 +413,7 @@ export default function ScheduleTimetableClient({
           setSubjectUnitsMap(unitsMap);
 
           const processedData = loadedData.map((entry) => {
-            let computedDuration = 60; // default fallback
+            let computedDuration = 60;
             const isLab = entry.type?.toLowerCase() === "laboratory";
 
             if (entry.subject_id && unitsMap.has(entry.subject_id)) {
@@ -601,7 +583,6 @@ export default function ScheduleTimetableClient({
     new Set(originalEntries.map((e) => e.section).filter(Boolean)),
   );
 
-  // --- Computed Metrics for Warning Badges Outside Editor --- //
   const unassignedBlocksCount = changedSchedules.filter(
     (e) => !e.day || e.start_time === undefined || e.start_time <= 0,
   ).length;
@@ -698,10 +679,10 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    // --- Teacher 4-Hour Straight Teaching & Absolute Load Check on Drop --- //
+    // --- Teacher 4-Hour Straight Teaching & Absolute Load Check on Drop ---
     const assignedTeacherId = droppedData.teacherId;
     if (assignedTeacherId) {
-      // --- Teacher Double-Booking Check on Drop --- //
+      // --- Teacher Double-Booking Check on Drop ---
       const teacherOverlap = changedSchedules.find((e) => {
         if (!e.day || e.start_time <= 0) return false;
         if (e.teacher_id !== assignedTeacherId) return false;
@@ -732,7 +713,6 @@ export default function ScheduleTimetableClient({
           e.schedule_entry_id !== targetEntryId,
       );
 
-      // Add proposed placement to simulate
       const simulatedTeacherEntries = [
         ...teacherEntries,
         {
@@ -749,7 +729,6 @@ export default function ScheduleTimetableClient({
         } as unknown as LocalTimetableEntry,
       ];
 
-      // 1. Check Absolute Load Limit
       const facultyLoadLimit = config?.faculty_load?.full_time ?? 21;
       const overloadMax = config?.overload_max ?? 3;
       const absoluteMaxLoad = facultyLoadLimit + overloadMax;
@@ -761,17 +740,15 @@ export default function ScheduleTimetableClient({
       }, 0);
 
       if (totalTeacherLoad > absoluteMaxLoad) {
-        ({
+        setConflictModalData({
           show: true,
           title: `Hard Limit Violation`,
-          message: `Moving this block exceeds the teachers's absolute maximum load limit (${totalTeacherLoad}/${absoluteMaxLoad} units). The block has been unassigned.`,
+          message: `Moving this block exceeds the teacher's absolute maximum load limit (${totalTeacherLoad}/${absoluteMaxLoad} units). The block has been unassigned.`,
         });
-        // Auto-remove or unassign latest block
         if (targetEntryId) handleUnassignEntry(targetEntryId);
         return;
       }
 
-      // 2. Check 4-Hour Consecutive Teaching Limit
       const dayBlocks = simulatedTeacherEntries
         .filter(
           (e) =>
@@ -923,124 +900,6 @@ export default function ScheduleTimetableClient({
       return;
     }
 
-    const ghostOverlapConflict = changedSchedules.find((entry) => {
-      if (!entry.day || entry.start_time <= 0) return false;
-      if (entry.day.toLowerCase() !== targetDay.toLowerCase()) return false;
-      if (
-        droppedData.scheduleEntryId &&
-        entry.schedule_entry_id === droppedData.scheduleEntryId
-      )
-        return false;
-
-      const matchesActiveRoom =
-        selectedTimetableRoom !== "ALL" &&
-        entry.room_name?.toLowerCase() === selectedTimetableRoom.toLowerCase();
-      const matchesDraggedRoom =
-        droppedData.roomName &&
-        entry.room_name?.toLowerCase() === droppedData.roomName.toLowerCase();
-
-      if (
-        (matchesActiveRoom || matchesDraggedRoom) &&
-        entry.section.toLowerCase() !== droppedData.section.toLowerCase()
-      ) {
-        return (
-          targetStartMins < entry.end_time && targetEndMins > entry.start_time
-        );
-      }
-      return false;
-    });
-
-    if (ghostOverlapConflict) {
-      setConflictModalData({
-        show: true,
-        title: `Scheduling Conflict`,
-        message: `Room is already occupied by another section's class block [Section ${ghostOverlapConflict.section} - ${ghostOverlapConflict.course_code}] (${formatTime(ghostOverlapConflict.start_time)} - ${formatTime(ghostOverlapConflict.end_time)}).`,
-      });
-      return;
-    }
-
-    const blockOverlapConflict = changedSchedules.find((e) => {
-      if (!e.day || e.start_time <= 0) return false;
-      if (e.day.toLowerCase() !== targetDay.toLowerCase()) return false;
-      if (
-        droppedData.scheduleEntryId &&
-        e.schedule_entry_id === droppedData.scheduleEntryId
-      )
-        return false;
-
-      const entryRoom = e.room_name?.trim().toLowerCase() || "";
-      const currentActiveRoom = activeRoom?.trim().toLowerCase() || "";
-
-      const isSameRoom =
-        selectedTimetableRoom === "ALL" ||
-        !currentActiveRoom ||
-        entryRoom === currentActiveRoom;
-
-      if (!isSameRoom) return false;
-
-      return targetStartMins < e.end_time && targetEndMins > e.start_time;
-    });
-
-    if (blockOverlapConflict) {
-      setConflictModalData({
-        show: true,
-        title: `Scheduling Conflict`,
-        message: `Room [${activeRoom || blockOverlapConflict.room_name || "TBA"}] is already occupied during this time slot by [${blockOverlapConflict.course_code}: ${blockOverlapConflict.course_name}] (${formatTime(blockOverlapConflict.start_time)} - ${formatTime(blockOverlapConflict.end_time)}).`,
-      });
-      return;
-    }
-
-    const sectionConflict = changedSchedules.find((e) => {
-      if (!e.day || e.start_time <= 0) return false;
-      if (
-        droppedData.scheduleEntryId &&
-        e.schedule_entry_id === droppedData.scheduleEntryId
-      )
-        return false;
-      if (e.section.toLowerCase() !== droppedData.section.toLowerCase())
-        return false;
-      if (e.day.toLowerCase() !== targetDay.toLowerCase()) return false;
-
-      return targetStartMins < e.end_time && targetEndMins > e.start_time;
-    });
-
-    if (sectionConflict) {
-      setConflictModalData({
-        show: true,
-        title: `Conflict Detected`,
-        message: `Section [${droppedData.section}] is already occupied by ${sectionConflict.course_code} (${sectionConflict.course_name}) on ${targetDay} from ${formatTime(sectionConflict.start_time)} to ${formatTime(sectionConflict.end_time)}.`,
-      });
-      return;
-    }
-
-    if (activeRoom && activeRoom !== "ALL") {
-      const roomConflict = changedSchedules.find((e) => {
-        if (!e.day || e.start_time <= 0) return false;
-        if (
-          droppedData.scheduleEntryId &&
-          e.schedule_entry_id === droppedData.scheduleEntryId
-        )
-          return false;
-        if (
-          !e.room_name ||
-          e.room_name.toLowerCase() !== activeRoom.toLowerCase()
-        )
-          return false;
-        if (e.day.toLowerCase() !== targetDay.toLowerCase()) return false;
-
-        return targetStartMins < e.end_time && targetEndMins > e.start_time;
-      });
-
-      if (roomConflict) {
-        setConflictModalData({
-          show: true,
-          title: `Conflict Detected`,
-          message: `Room [${activeRoom}] is already occupied by section ${roomConflict.section} (${roomConflict.course_code}) on ${targetDay} from ${formatTime(roomConflict.start_time)} to ${formatTime(roomConflict.end_time)}.`,
-        });
-        return;
-      }
-    }
-
     executeDropPlacement(
       targetDay,
       targetStartMins,
@@ -1050,7 +909,6 @@ export default function ScheduleTimetableClient({
     );
   };
 
-  // --- Handlers for Subject Splitting & Automatic Duplicate Merging --- //
   const handleOpenSplitModal = (subj: LocalTimetableEntry) => {
     setActiveMenuEntryId(null);
     const existingDuplicates = changedSchedules.filter(
@@ -1090,9 +948,9 @@ export default function ScheduleTimetableClient({
   const computedTargetDuration =
     splitModalData.matchingDuplicates.length > 0
       ? splitModalData.matchingDuplicates.reduce(
-          (sum, item) => sum + (item.originalDuration || 60),
-          0,
-        )
+        (sum, item) => sum + (item.originalDuration || 60),
+        0,
+      )
       : splitModalData.entry?.originalDuration || 60;
 
   const isSplitValid =
@@ -1139,7 +997,6 @@ export default function ScheduleTimetableClient({
     });
   };
 
-  // --- Check if ANY conflict exists across the entire schedule ---
   const hasAnyConflicts = React.useMemo(() => {
     for (let i = 0; i < changedSchedules.length; i++) {
       const entryA = changedSchedules[i];
@@ -1158,11 +1015,9 @@ export default function ScheduleTimetableClient({
 
         if (!isOverlapping) continue;
 
-        // 1. Section Overlap Conflict
         if (entryA.section.toLowerCase() === entryB.section.toLowerCase()) {
           return true;
         }
-        // 2. Room Overlap Conflict
         if (
           entryA.room_name &&
           entryB.room_name &&
@@ -1170,7 +1025,6 @@ export default function ScheduleTimetableClient({
         ) {
           return true;
         }
-        // 3. Teacher Double-Booking Conflict
         if (
           entryA.teacher_id &&
           entryB.teacher_id &&
@@ -1182,6 +1036,72 @@ export default function ScheduleTimetableClient({
     }
     return false;
   }, [changedSchedules]);
+
+  const hasEntryConflict = (entryA: LocalTimetableEntry) => {
+    if (!entryA.day || !entryA.start_time || entryA.start_time <= 0)
+      return false;
+
+    for (const entryB of changedSchedules) {
+      if (entryB.schedule_entry_id === entryA.schedule_entry_id) continue;
+      if (!entryB.day || !entryB.start_time || entryB.start_time <= 0)
+        continue;
+      if (entryB.day.toLowerCase() !== entryA.day.toLowerCase()) continue;
+
+      const isOverlapping =
+        entryA.start_time < entryB.end_time &&
+        entryA.end_time > entryB.start_time;
+
+      if (!isOverlapping) continue;
+
+      if (entryA.section.toLowerCase() === entryB.section.toLowerCase()) {
+        return true;
+      }
+      if (
+        entryA.room_name &&
+        entryB.room_name &&
+        entryA.room_name.toLowerCase() === entryB.room_name.toLowerCase()
+      ) {
+        return true;
+      }
+      if (
+        entryA.teacher_id &&
+        entryB.teacher_id &&
+        entryA.teacher_id === entryB.teacher_id
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const checkFatigueRisk = (entry: LocalTimetableEntry) => {
+    if (!entry.teacher_id || !entry.day || !entry.start_time || entry.start_time <= 0)
+      return false;
+    const teacherAllEntries = changedSchedules.filter(
+      (e) => e.teacher_id === entry.teacher_id && e.day && e.start_time > 0,
+    );
+    const dayBlocks = teacherAllEntries
+      .filter((e) => e.day?.toLowerCase() === entry.day?.toLowerCase())
+      .sort((a, b) => a.start_time - b.start_time);
+
+    if (dayBlocks.length <= 1) return false;
+
+    let consecutiveMinutes = dayBlocks[0].end_time - dayBlocks[0].start_time;
+    for (let i = 1; i < dayBlocks.length; i++) {
+      const prev = dayBlocks[i - 1];
+      const curr = dayBlocks[i];
+      const gap = curr.start_time - prev.end_time;
+
+      if (gap < 30) {
+        consecutiveMinutes += curr.end_time - curr.start_time;
+      } else {
+        consecutiveMinutes = curr.end_time - curr.start_time;
+      }
+
+      if (consecutiveMinutes > 240) return true;
+    }
+    return false;
+  };
 
   if (isLoading) {
     return (
@@ -1221,9 +1141,9 @@ export default function ScheduleTimetableClient({
   }
 
   return (
-    <div className="scrollbar-track-transparet relative flex scrollbar-thumb-gray-400 overflow-y-auto">
+    <div className="scrollbar-track-transparent relative flex scrollbar-thumb-gray-400 overflow-y-auto">
       {/* --- Main Div --- */}
-      <div className="scrollbar-track-transparet flex-1 scrollbar-thumb-gray-400 space-y-4 overflow-y-auto p-4">
+      <div className="scrollbar-track-transparent flex-1 scrollbar-thumb-gray-400 space-y-4 overflow-y-auto p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Button
@@ -1282,65 +1202,73 @@ export default function ScheduleTimetableClient({
 
         {JSON.stringify(changedSchedules) !==
           JSON.stringify(originalEntries) && (
-          <div className="flex flex-col items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 shadow-sm sm:flex-row dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-            <div className="flex flex-col">
+            <div className="flex flex-col items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 shadow-sm sm:flex-row dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              <div className="flex flex-col">
               <span className="font-medium">
                 You have unsaved changes in this session.
               </span>
-              {hasAnyConflicts && (
-                <span className="text-[11px] font-semibold text-red-600 dark:text-red-400">
+                {hasAnyConflicts && (
+                  <span className="text-[11px] font-semibold text-red-600 dark:text-red-400">
                   ⚠️ Cannot save: Unresolved conflicts detected in the
                   timetable.
                 </span>
-              )}
+                )}
+              </div>
+              <div className="flex space-x-2">
+                <Button
+                  color={hasAnyConflicts ? "gray" : "green"}
+                  size="xs"
+                  disabled={hasAnyConflicts}
+                  className={`flex items-center gap-1 ${hasAnyConflicts ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                >
+                  <HiCheck className="h-3.5 w-3.5" /> Save Changes
+                </Button>
+                <Button
+                  color="alternative"
+                  size="xs"
+                  onClick={handleDiscardChanges}
+                  className="flex cursor-pointer items-center gap-1 border-amber-300 bg-white hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                >
+                  <HiRefresh className="h-3.5 w-3.5" /> Discard Changes
+                </Button>
+              </div>
             </div>
-            <div className="flex space-x-2">
-              <Button
-                color={hasAnyConflicts ? "gray" : "green"}
-                size="xs"
-                disabled={hasAnyConflicts}
-                className={`flex items-center gap-1 ${hasAnyConflicts ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
-              >
-                <HiCheck className="h-3.5 w-3.5" /> Save Changes
-              </Button>
-              <Button
-                color="alternative"
-                size="xs"
-                onClick={handleDiscardChanges}
-                className="flex cursor-pointer items-center gap-1 border-amber-300 bg-white hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-800 dark:hover:bg-gray-700"
-              >
-                <HiRefresh className="h-3.5 w-3.5" /> Discard Changes
-              </Button>
-            </div>
-          </div>
-        )}
+          )}
 
         <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
-                View:
-              </span>
-              <ButtonGroup>
-                <Button
-                  color="alternative"
-                  size="sm"
-                  className={`cursor-pointer ${displayFormat === "timetable" ? "bg-gray-200 font-bold dark:bg-gray-700" : ""}`}
-                  onClick={() => setDisplayFormat("timetable")}
-                  title="Timetable Grid View"
-                >
-                  <FaCalendarDay className="h-4 w-4" />
-                </Button>
-                <Button
-                  color="alternative"
-                  size="sm"
-                  className={`cursor-pointer ${displayFormat === "table" ? "bg-gray-200 font-bold dark:bg-gray-700" : ""}`}
-                  onClick={() => setDisplayFormat("table")}
-                  title="Row Table View"
-                >
-                  <FaList className="h-4 w-4" />
-                </Button>
-              </ButtonGroup>
+          {/* --- Legend --- */}
+          <div className="flex items-center gap-4 text-xs font-medium text-gray-600 dark:text-gray-300">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-100 dark:border-blue-700 dark:bg-blue-950"></span>
+              <span>Lecture</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950"></span>
+              <span>Laboratory</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded border border-violet-300 bg-violet-100 dark:border-violet-700 dark:bg-violet-950"></span>
+              <span>Break Periods</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800"></span>
+              <span>Other Section / Room</span>
+            </div>
+            <Tooltip
+              placement={"bottom"}
+              style={`${isDarkMode ? "dark" : "light"}`}
+              content={
+                "Indicates teachers exceeding 4 hours of consecutive teaching without a 30-minute break."
+              }
+            >
+              <div className="flex cursor-pointer items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950"></span>
+                <span>Fatigue Risk</span>
+              </div>
+            </Tooltip>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-700 dark:bg-red-950"></span>
+              <span>Schedule Conflict</span>
             </div>
           </div>
 
@@ -1395,1375 +1323,359 @@ export default function ScheduleTimetableClient({
           </div>
         </div>
 
+        {/* --- Timetable Grid Container with Absolute Overlay Layer --- */}
+        <div className="relative max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
 
-        {/* --- Legend --- */}
-        <div className="flex items-center gap-4 text-xs font-medium text-gray-600 dark:text-gray-300">
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-100 dark:border-blue-700 dark:bg-blue-950"></span>
-            <span>Lecture</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950"></span>
-            <span>Laboratory</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-violet-300 bg-violet-100 dark:border-violet-700 dark:bg-violet-950"></span>
-            <span>Break Periods</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800"></span>
-            <span>Other Section / Room</span>
-          </div>
-          <Tooltip
-              placement={"bottom"}
-              style={`${isDarkMode ? "dark" : "light"}`}
-              content={
-                "Indicates teachers exceeding 4 hours of consecutive teaching without a 30-minute break."
+          {/* --- ABSOLUTE OVERLAY ENGINE FOR NORMAL BLOCKS, GHOSTS, & CONFLICTS --- */}
+          {(() => {
+            const DAY_COLUMNS = [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday",
+            ];
+
+            const entriesToRender = changedSchedules.filter((entry) => {
+              if (!entry.day || entry.start_time === undefined || entry.start_time <= 0) {
+                return false;
               }
-          >
-            <div className="flex cursor-pointer items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950"></span>
-              <span>Fatigue Risk</span>
-            </div>
-          </Tooltip>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-700 dark:bg-red-950"></span>
-            <span>Schedule Conflict</span>
-          </div>
-        </div>
+              const matchesSection =
+                selectedTimetableSection === "ALL" ||
+                entry.section === selectedTimetableSection;
+              const matchesRoom =
+                selectedTimetableRoom === "ALL" ||
+                entry.room_name === selectedTimetableRoom;
 
-        {/* --- Conflict Blocks Overlay --- */}
-        {displayFormat === "timetable" ? (
-          <div className="relative max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            {/* --- UNIFIED ABSOLUTE OVERLAY ENGINE FOR CONFLICTS ONLY --- */}
-            {(() => {
-              const DAY_COLUMNS = [
-                "monday",
-                "tuesday",
-                "wednesday",
-                "thursday",
-                "friday",
-                "saturday",
-              ];
+              if (matchesSection && matchesRoom) return true;
 
-              // 1. Filter entries that have an actual conflict anywhere across the schedule
-              const rawConflictingEntries = changedSchedules.filter((entry) => {
-                if (!entry.day || entry.start_time <= 0) return false;
+              const draggedEntry = changedSchedules.find(
+                (e) => e.schedule_entry_id === draggedEntryId,
+              );
+              const isSameSection =
+                draggedEntry &&
+                entry.section.toLowerCase() === draggedEntry.section.toLowerCase();
+              const matchesActiveRoom =
+                selectedTimetableRoom !== "ALL" &&
+                entry.room_name?.toLowerCase() === selectedTimetableRoom.toLowerCase();
+              const isSameTeacher =
+                draggedEntry &&
+                draggedEntry.teacher_id &&
+                entry.teacher_id === draggedEntry.teacher_id;
 
-                const matchesSection =
-                  selectedTimetableSection === "ALL" ||
-                  entry.section === selectedTimetableSection;
-                if (!matchesSection) return false;
+              return isSameSection || matchesActiveRoom || isSameTeacher;
+            });
 
-                return changedSchedules.some((other) => {
-                  if (other.schedule_entry_id === entry.schedule_entry_id)
-                    return false;
-                  if (!other.day || other.start_time <= 0) return false;
-                  if (other.day.toLowerCase() !== entry.day?.toLowerCase())
-                    return false;
-                  if (
-                    entry.start_time >= other.end_time ||
-                    entry.end_time <= other.start_time
-                  )
-                    return false;
+            if (entriesToRender.length === 0) return null;
 
-                  return (
-                    entry.section.toLowerCase() ===
-                      other.section.toLowerCase() ||
-                    (entry.room_name &&
-                      other.room_name &&
-                      entry.room_name.toLowerCase() ===
-                        other.room_name.toLowerCase()) ||
-                    (entry.teacher_id &&
-                      other.teacher_id &&
-                      entry.teacher_id === other.teacher_id)
-                  );
-                });
-              });
+            return entriesToRender.map((entry) => {
+              const dayLower = entry.day.toLowerCase();
+              const dayIndex = DAY_COLUMNS.indexOf(dayLower);
+              if (dayIndex === -1) return null;
 
-              // 2. Sort all conflicting entries by duration in descending order (longest blocks first)
-              const sortedByDuration = [...rawConflictingEntries].sort(
-                (a, b) => {
-                  const durationA =
-                    a.end_time - a.start_time || a.originalDuration || 60;
-                  const durationB =
-                    b.end_time - b.start_time || b.originalDuration || 60;
-                  return durationB - durationA;
-                },
+              const durationMins =
+                entry.end_time - entry.start_time || entry.originalDuration || 60;
+              const topOffsetPx =
+                ((entry.start_time - GRID_START_MINS) / 30) * ROW_HEIGHT_PX;
+              const heightPx = Math.max(
+                ROW_HEIGHT_PX,
+                (durationMins / 30) * ROW_HEIGHT_PX,
               );
 
-              const processedConflictIds = new Set<string>();
-              const conflictingEntries: LocalTimetableEntry[] = [];
+              const isConflict = hasEntryConflict(entry);
+              const isFatigue = checkFatigueRisk(entry);
+              const isLabType = entry.type?.toLowerCase() === "laboratory";
+              const isBeingDragged = draggedEntryId === entry.schedule_entry_id;
 
-              sortedByDuration.forEach((entry) => {
-                if (processedConflictIds.has(entry.schedule_entry_id)) return;
+              const matchesDirectFilter =
+                (selectedTimetableSection === "ALL" || entry.section === selectedTimetableSection) &&
+                (selectedTimetableRoom === "ALL" || entry.room_name === selectedTimetableRoom);
+              const isGhost = !matchesDirectFilter;
 
-                // Find all blocks overlapping with this entry on the same day
-                const cluster = sortedByDuration.filter((other) => {
-                  if (other.day?.toLowerCase() !== entry.day?.toLowerCase())
-                    return false;
-                  return (
-                    other.start_time < entry.end_time &&
-                    other.end_time > entry.start_time
-                  );
-                });
+              let blockStyle = "bg-blue-50/90 text-blue-950 border-blue-300 dark:bg-blue-950/80 dark:text-blue-200 dark:border-blue-700";
+              let zIndexClass = "z-10";
 
-                if (cluster.length > 0) {
-                  // Pick the block in the cluster that spans the most time (longest duration)
-                  const longestBlock = cluster.reduce((prev, curr) => {
-                    const prevDur =
-                      prev.end_time - prev.start_time ||
-                      prev.originalDuration ||
-                      60;
-                    const currDur =
-                      curr.end_time - curr.start_time ||
-                      curr.originalDuration ||
-                      60;
-                    return currDur > prevDur ? curr : prev;
-                  });
+              if (isConflict) {
+                blockStyle = "bg-red-100 text-red-950 border-red-500 dark:bg-red-950/90 dark:text-red-100 dark:border-red-600 shadow-lg";
+                zIndexClass = "z-20";
+              } else if (isFatigue) {
+                blockStyle = "bg-amber-100 text-amber-950 border-amber-400 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700";
+              } else if (isLabType) {
+                blockStyle = "bg-emerald-50/90 text-emerald-950 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700";
+              }
 
-                  if (
-                    !processedConflictIds.has(longestBlock.schedule_entry_id)
-                  ) {
-                    conflictingEntries.push(longestBlock);
-                    processedConflictIds.add(longestBlock.schedule_entry_id);
-                  }
+              if (isGhost) {
+                blockStyle = "bg-gray-100 text-gray-500 border-gray-300 opacity-50 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
+                zIndexClass = "z-5";
+              }
 
-                  cluster.forEach((b) =>
-                    processedConflictIds.add(b.schedule_entry_id),
-                  );
-                }
-              });
-
-              if (conflictingEntries.length === 0) return null;
-
-              // 3. Cluster connected overlapping conflicts together
-              const processedIds = new Set<string>();
-              const conflictGroups: Array<{
-                type: "group" | "single";
-                day: string;
-                minStart: number;
-                maxEnd: number;
-                blocks: LocalTimetableEntry[];
-              }> = [];
-
-              conflictingEntries.forEach((entry) => {
-                if (processedIds.has(entry.schedule_entry_id)) return;
-
-                const cluster = [entry];
-                processedIds.add(entry.schedule_entry_id);
-
-                let added = true;
-                while (added) {
-                  added = false;
-                  conflictingEntries.forEach((other) => {
-                    if (processedIds.has(other.schedule_entry_id)) return;
-                    if (other.day?.toLowerCase() !== entry.day?.toLowerCase())
-                      return;
-
-                    const overlapsCluster = cluster.some(
-                      (b) =>
-                        other.start_time < b.end_time &&
-                        other.end_time > b.start_time,
-                    );
-
-                    if (overlapsCluster) {
-                      cluster.push(other);
-                      processedIds.add(other.schedule_entry_id);
-                      added = true;
+              return (
+                <div
+                  key={entry.schedule_entry_id}
+                  draggable={isEditMode && !isGhost}
+                  onDragStart={(e) => {
+                    if (isGhost) return;
+                    hasDroppedRef.current = false;
+                    setDraggedEntryId(entry.schedule_entry_id);
+                    draggedDurationRef.current = durationMins;
+                    setDragSourceInfo({
+                      day: entry.day,
+                      start_time: entry.start_time,
+                      duration: durationMins,
+                      course_code: entry.course_code,
+                    });
+                    if (entry.room_name) {
+                      setSelectedTimetableRoom(entry.room_name);
                     }
-                  });
-                }
 
-                const minStart = Math.min(...cluster.map((b) => b.start_time));
-                const maxEnd = Math.max(...cluster.map((b) => b.end_time));
-
-                conflictGroups.push({
-                  type: cluster.length > 1 ? "group" : "single",
-                  day: entry.day.toLowerCase(),
-                  minStart,
-                  maxEnd,
-                  blocks: cluster,
-                });
-              });
-
-              if (conflictGroups.length === 0) return null;
-
-              return conflictGroups.map((item, idx) => {
-                const dayIndex = DAY_COLUMNS.indexOf(item.day);
-                if (dayIndex === -1) return null;
-
-                const topOffsetPx =
-                  ((item.minStart - GRID_START_MINS) / 30) * ROW_HEIGHT_PX;
-                const durationMins = item.maxEnd - item.minStart;
-                const heightPx = Math.max(
-                  ROW_HEIGHT_PX,
-                  (durationMins / 30) * ROW_HEIGHT_PX,
-                );
-
-                const block = item.blocks[0];
-                const scheduleEntryId = block.schedule_entry_id;
-                const isBeingDragged = draggedEntryId === scheduleEntryId;
-
-                return (
-                  <div
-                    key={idx}
-                    draggable={isEditMode && item.type === "single"}
-                    onDragStart={(e) => {
-                      if (item.type !== "single") return;
-                      hasDroppedRef.current = false;
-                      setDraggedEntryId(scheduleEntryId);
-                      draggedDurationRef.current = durationMins;
-                      setDragSourceInfo({
-                        day: block.day,
-                        start_time: block.start_time,
-                        duration: durationMins,
-                        course_code: block.course_code,
-                      });
-                      if (block.room_name) {
-                        setSelectedTimetableRoom(block.room_name);
-                      }
-
-                      const dragPreview = document.createElement("div");
-                      dragPreview.style.position = "absolute";
-                      dragPreview.style.top = "-9999px";
-                      dragPreview.style.left = "-9999px";
-                      dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
-                      dragPreview.style.height = `${heightPx - 12}px`;
-                      dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans bg-red-100 text-red-950 border border-red-300 dark:bg-red-950 dark:text-red-100 dark:border-red-700`;
-
-                      dragPreview.innerHTML = `
-            <div>
-              <div class="flex items-center justify-between">
-                <div class="text-xs font-bold truncate">${block.course_name}</div>
-                <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-200">${block.type || "Lecture"}</span>
-              </div>
-              <div class="text-[10px] font-medium opacity-80 truncate">${block.course_code}</div>
-            </div>
-            <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
-              <div>Sec: ${block.section}</div>
-              <div>Room: ${block.room_name || "TBA"}</div>
-              <div class="font-mono">${formatTime(block.start_time)} - ${formatTime(block.end_time)}</div>
-            </div>
-          `;
-
-                      document.body.appendChild(dragPreview);
-                      if (e.dataTransfer.setDragImage) {
-                        e.dataTransfer.setDragImage(dragPreview, 20, 20);
-                      }
-                      setTimeout(() => {
-                        document.body.removeChild(dragPreview);
-                      }, 0);
-
-                      e.dataTransfer.setData(
-                        "text/plain",
-                        JSON.stringify({
-                          type: "existing",
-                          scheduleEntryId: scheduleEntryId,
-                          section: block.section,
-                          roomName: block.room_name,
-                          subjectId: block.subject_id,
-                          roomId: block.room_id,
-                          teacherId: block.teacher_id,
-                          entryType: block.type,
-                          duration: durationMins,
-                          originalDay: block.day,
-                          originalStartTime: block.start_time,
-                          originalEndTime: block.end_time,
-                        } as DragPayload),
-                      );
-                    }}
-                    onDragEnd={() => {
-                      setDraggedEntryId(null);
-                      setDragSourceInfo(null);
-                      setDragOverCell(null);
-                    }}
-                    className={`absolute z-40 flex flex-col overflow-hidden rounded border backdrop-blur-xs transition-all ${
-                      isBeingDragged
-                        ? "border-dashed border-red-400 bg-red-50/90 p-0 align-top opacity-40 shadow-xl dark:border-red-600 dark:bg-red-950/60"
-                        : "border-red-500 bg-red-950/95 p-2 text-red-100 shadow-xl dark:border-red-600 dark:bg-red-950/60"
-                    } ${
-                      isEditMode && item.type === "single"
-                        ? "cursor-grab active:cursor-grabbing"
-                        : ""
-                    }`}
-                    style={{
-                      top: `${topOffsetPx + 45}px`,
-                      left: `calc(96px + (${dayIndex} * ((100% - 96px) / 6)))`,
-                      width: `calc((100% - 96px) / 6 - 6px)`,
-                      height: `${heightPx}px`,
-                      pointerEvents: "auto",
-                    }}
-                  >
-                    {item.type === "group" ? (
-                      <div className="flex h-full flex-col gap-1.5 overflow-y-auto">
-                        <div className="flex items-center justify-between border-b border-red-800/80 pb-1">
-                          <span className="text-[10px] font-bold tracking-wider text-red-300 uppercase">
-                            ⚠️ Overlapping Conflict ({item.blocks.length})
-                          </span>
-                        </div>
-                        {item.blocks.map((b, bIdx) => {
-                          const isSubDragged =
-                            draggedEntryId === b.schedule_entry_id;
-                          return (
-                            <div
-                              key={bIdx}
-                              draggable={isEditMode}
-                              onDragStart={(e) => {
-                                e.stopPropagation();
-                                hasDroppedRef.current = false;
-                                setDraggedEntryId(b.schedule_entry_id);
-                                const dMins =
-                                  b.end_time - b.start_time ||
-                                  b.originalDuration ||
-                                  60;
-                                draggedDurationRef.current = dMins;
-                                setDragSourceInfo({
-                                  day: b.day,
-                                  start_time: b.start_time,
-                                  duration: dMins,
-                                  course_code: b.course_code,
-                                });
-                                if (b.room_name) {
-                                  setSelectedTimetableRoom(b.room_name);
-                                }
-
-                                const subDragPreview =
-                                  document.createElement("div");
-                                subDragPreview.style.position = "absolute";
-                                subDragPreview.style.top = "-9999px";
-                                subDragPreview.style.left = "-9999px";
-                                subDragPreview.style.width = `${e.currentTarget.clientWidth}px`;
-                                subDragPreview.style.height = `60px`;
-                                subDragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans bg-red-100 text-red-950 border border-red-300 dark:bg-red-950 dark:text-red-100 dark:border-red-700`;
-
-                                subDragPreview.innerHTML = `
+                    // --- Original Position Marker Preview Image Setup ---
+                    const dragPreview = document.createElement("div");
+                    dragPreview.style.position = "absolute";
+                    dragPreview.style.top = "-9999px";
+                    dragPreview.style.left = "-9999px";
+                    dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
+                    dragPreview.style.height = `${heightPx - 12}px`;
+                    dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans bg-cyan-100 text-cyan-950 border border-cyan-300 dark:bg-cyan-950 dark:text-cyan-100 dark:border-cyan-700`;
+                    dragPreview.innerHTML = `
                       <div>
                         <div class="flex items-center justify-between">
-                          <div class="text-xs font-bold truncate">${b.course_name}</div>
-                          <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-200">${b.type || "Lecture"}</span>
+                          <div class="text-xs font-bold truncate">${entry.course_name}</div>
+                          <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase bg-cyan-200 text-cyan-900">${entry.type || "Lecture"}</span>
                         </div>
-                        <div class="text-[10px] font-medium opacity-80 truncate">${b.course_code}</div>
+                        <div class="text-[10px] font-medium opacity-80 truncate">${entry.course_code}</div>
                       </div>
                       <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
-                        <div>Sec: ${b.section}</div>
-                        <div>Room: ${b.room_name || "TBA"}</div>
-                        <div class="font-mono">${formatTime(b.start_time)} - ${formatTime(b.end_time)}</div>
+                        <div>Sec: ${entry.section}</div>
+                        <div>Room: ${entry.room_name || "TBA"}</div>
+                        <div class="font-mono">${formatTime(entry.start_time)} - ${formatTime(entry.end_time)}</div>
                       </div>
                     `;
+                    document.body.appendChild(dragPreview);
+                    if (e.dataTransfer.setDragImage) {
+                      e.dataTransfer.setDragImage(dragPreview, 20, 20);
+                    }
+                    setTimeout(() => {
+                      document.body.removeChild(dragPreview);
+                    }, 0);
 
-                                document.body.appendChild(subDragPreview);
-                                if (e.dataTransfer.setDragImage) {
-                                  e.dataTransfer.setDragImage(
-                                    subDragPreview,
-                                    20,
-                                    20,
-                                  );
-                                }
-                                setTimeout(() => {
-                                  document.body.removeChild(subDragPreview);
-                                }, 0);
+                    e.dataTransfer.setData(
+                      "text/plain",
+                      JSON.stringify({
+                        type: "existing",
+                        scheduleEntryId: entry.schedule_entry_id,
+                        section: entry.section,
+                        roomName: entry.room_name,
+                        subjectId: entry.subject_id,
+                        roomId: entry.room_id,
+                        teacherId: entry.teacher_id,
+                        entryType: entry.type,
+                        duration: durationMins,
+                        originalDay: entry.day,
+                        originalStartTime: entry.start_time,
+                        originalEndTime: entry.end_time,
+                      } as DragPayload),
+                    );
+                  }}
+                  onDragEnd={() => {
+                    setDraggedEntryId(null);
+                    setDragSourceInfo(null);
+                    setDragOverCell(null);
+                  }}
+                  className={`absolute flex flex-col overflow-hidden rounded border p-2 backdrop-blur-xs transition-all ${zIndexClass} ${
+                    isBeingDragged ? "opacity-30 border-dashed border-cyan-400 bg-cyan-50/50" : ""
+                  } ${blockStyle} ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
+                  style={{
+                    top: `${topOffsetPx + 45}px`,
+                    left: `calc(96px + (${dayIndex} * ((100% - 96px) / 6)))`,
+                    width: `calc((100% - 96px) / 6 - 6px)`,
+                    height: `${heightPx - 4}px`,
+                    pointerEvents: "auto",
+                  }}
+                >
+                  {/* --- Original Position Marker Banner when Dragging --- */}
+                  {isBeingDragged && (
+                    <div className="absolute inset-0 z-35 flex items-center justify-center gap-1 bg-cyan-100/90 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/90 dark:text-cyan-200">
+                      <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
+                      <span>Original Position (Drop here)</span>
+                    </div>
+                  )}
 
-                                e.dataTransfer.setData(
-                                  "text/plain",
-                                  JSON.stringify({
-                                    type: "existing",
-                                    scheduleEntryId: b.schedule_entry_id,
-                                    section: b.section,
-                                    roomName: b.room_name,
-                                    subjectId: b.subject_id,
-                                    roomId: b.room_id,
-                                    teacherId: b.teacher_id,
-                                    entryType: b.type,
-                                    duration: dMins,
-                                    originalDay: b.day,
-                                    originalStartTime: b.start_time,
-                                    originalEndTime: b.end_time,
-                                  } as DragPayload),
-                                );
-                              }}
-                              onDragEnd={() => {
-                                setDraggedEntryId(null);
-                                setDragSourceInfo(null);
-                                setDragOverCell(null);
-                              }}
-                              className={`relative rounded border border-red-700/60 bg-red-900/70 p-1.5 text-[11px] text-white ${
-                                isSubDragged ? "opacity-40" : ""
-                              } ${isEditMode ? "cursor-grab active:cursor-grabbing" : ""}`}
-                            >
-                              {isEditMode && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUnassignEntry(b.schedule_entry_id);
-                                  }}
-                                  title="Unassign / Return to Sidebar"
-                                  className="absolute top-1 right-1 z-30 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
-                                >
-                                  <HiX className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                              <div className="truncate pr-4 font-bold">
-                                {b.course_name}
-                              </div>
-                              <div className="text-[10px] text-red-200">
-                                {b.course_code} • Sec: {b.section}
-                              </div>
-                              <div className="font-mono text-[10px] text-red-300">
-                                {formatTime(b.start_time)} -{" "}
-                                {formatTime(b.end_time)}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="relative flex h-full flex-col justify-between overflow-hidden text-red-100">
-                        {isEditMode && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUnassignEntry(scheduleEntryId);
-                            }}
-                            title="Unassign / Return to Sidebar"
-                            className="absolute top-1 right-1 z-30 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
-                          >
-                            <HiX className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                        <div>
-                          <div className="flex items-center justify-between pr-4">
-                            <div className="truncate text-xs font-bold">
-                              {block.course_name}
-                            </div>
-                          </div>
-                          <div className="truncate text-[10px] font-medium opacity-90">
-                            {block.course_code}
-                          </div>
-                        </div>
-                        <div className="space-y-0.5 text-[10px] font-semibold opacity-90">
-                          <div>
-                            Teacher: {block.teacher_code || "Unassigned"}
-                          </div>
-                          <div>Sec: {block.section}</div>
-                          <div>Room: {block.room_name || "TBA"}</div>
-                          <div className="font-mono">
-                            {formatTime(block.start_time)} -{" "}
-                            {formatTime(block.end_time)}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                  {isEditMode && !isGhost && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUnassignEntry(entry.schedule_entry_id);
+                      }}
+                      title="Unassign / Return to Sidebar"
+                      className="absolute top-1 right-1 z-30 rounded-full bg-gray-200/80 p-0.5 text-gray-700 hover:bg-red-200 hover:text-red-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-red-900"
+                    >
+                      <HiX className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <div className="flex items-center justify-between pr-4">
+                    <div className="truncate text-xs font-bold">
+                      {entry.course_name}
+                    </div>
                   </div>
-                );
-              });
-            })()}
+                  <div className="truncate text-[10px] font-medium opacity-90">
+                    {entry.course_code} {isGhost ? "(Other Section/Room)" : ""}
+                  </div>
+                  <div className="mt-auto space-y-0.5 text-[10px] font-semibold opacity-90">
+                    <div>Teacher: {entry.teacher_code || "Unassigned"}</div>
+                    <div>Sec: {entry.section}</div>
+                    <div>Room: {entry.room_name || "TBA"}</div>
+                    <div className="font-mono">
+                      {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                    </div>
+                  </div>
+                </div>
+              );
+            });
+          })()}
 
-            <table className="w-full min-w-212.5 border-collapse text-left text-xs">
-              <thead>
-                <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                  <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
-                    Time
-                  </th>
-                  {daysOfWeek.map((day) => (
-                    <th
-                      key={day}
-                      className="min-w-30 border-r border-b p-3 text-center font-bold"
-                    >
-                      <span className="sm:hidden">
-                        {day.substring(0, 3).toUpperCase()}
-                      </span>
-                      <span className="hidden sm:inline">
-                        {day.toUpperCase()}
-                      </span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {timeSlotsGrid.map((timeSlot, tIdx) => {
-                  const slotTotalMins = timeStrToMinutes(timeSlot);
+          {/* --- Background Skeleton Table --- */}
+          <table className="w-full min-w-212.5 border-collapse text-left text-xs pointer-events-auto">
+            <thead>
+            <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+              <th className="sticky left-0 z-5 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+                Time
+              </th>
+              {daysOfWeek.map((day) => (
+                <th
+                  key={day}
+                  className="min-w-30 border-r border-b p-3 text-center font-bold"
+                >
+                    <span className="sm:hidden">
+                      {day.substring(0, 3).toUpperCase()}
+                    </span>
+                  <span className="hidden sm:inline">
+                      {day.toUpperCase()}
+                    </span>
+                </th>
+              ))}
+            </tr>
+            </thead>
+            <tbody>
+            {timeSlotsGrid.map((timeSlot, tIdx) => {
+              const slotTotalMins = timeStrToMinutes(timeSlot);
 
-                  return (
-                    <tr
-                      key={tIdx}
-                      className="h-11 border-b dark:border-gray-800"
-                    >
-                      <td className="sticky left-0 z-10 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                        {timeSlot}
-                      </td>
-                      {daysOfWeek.map((day) => {
-                        const matchedEntry = filteredTimetableEntries.find(
-                          (entry) => {
-                            if (entry.day.toLowerCase() !== day.toLowerCase())
-                              return false;
-                            const entryStartStr = formatMinutesToTimeStr(
-                              entry.start_time,
-                            );
-                            return entryStartStr === timeSlot;
-                          },
-                        );
+              return (
+                <tr key={tIdx} className="h-11 border-b dark:border-gray-800">
+                  <td className="sticky left-0 z-5 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                    {timeSlot}
+                  </td>
+                  {daysOfWeek.map((day) => {
+                    const matchedBreak = expandedBreaks.find((bp) => {
+                      if (bp.day.toLowerCase() !== day.toLowerCase())
+                        return false;
+                      return (
+                        slotTotalMins >= bp.start_time &&
+                        slotTotalMins < bp.end_time
+                      );
+                    });
 
-                        const ghostEntry = !matchedEntry
-                          ? changedSchedules.find((entry) => {
-                              if (!entry.day || entry.start_time <= 0)
-                                return false;
-                              if (entry.day.toLowerCase() !== day.toLowerCase())
-                                return false;
-                              const entryStartStr = formatMinutesToTimeStr(
-                                entry.start_time,
-                              );
-                              if (entryStartStr !== timeSlot) return false;
+                    let isHighlighted = false;
+                    if (
+                      dragOverCell &&
+                      dragOverCell.day.toLowerCase() === day.toLowerCase()
+                    ) {
+                      const hoverStartMins = timeStrToMinutes(
+                        dragOverCell.timeSlot,
+                      );
+                      const hoverDuration = dragOverCell.duration || 60;
+                      const hoverEndMins = hoverStartMins + hoverDuration;
 
-                              if (
-                                draggedEntryId &&
-                                entry.schedule_entry_id === draggedEntryId
-                              ) {
-                                return false;
-                              }
+                      if (
+                        slotTotalMins >= hoverStartMins &&
+                        slotTotalMins < hoverEndMins
+                      ) {
+                        isHighlighted = true;
+                      }
+                    }
 
-                              const draggedEntry = changedSchedules.find(
-                                (e) => e.schedule_entry_id === draggedEntryId,
-                              );
-
-                              const isSameSection =
-                                draggedEntry &&
-                                entry.section.toLowerCase() ===
-                                  draggedEntry.section.toLowerCase();
-
-                              const matchesActiveRoom =
-                                selectedTimetableRoom !== "ALL" &&
-                                entry.room_name?.toLowerCase() ===
-                                  selectedTimetableRoom.toLowerCase();
-
-                              const activeTeachers = new Set(
-                                filteredTimetableEntries
-                                  .map((e) => e.teacher_id)
-                                  .filter(Boolean),
-                              );
-                              const matchesTeacher =
-                                entry.teacher_id &&
-                                activeTeachers.has(entry.teacher_id);
-
-                              const isSameTeacher =
-                                draggedEntry &&
-                                draggedEntry.teacher_id &&
-                                entry.teacher_id === draggedEntry.teacher_id;
-
-                              return (
-                                isSameSection ||
-                                matchesActiveRoom ||
-                                matchesTeacher ||
-                                isSameTeacher
-                              );
-                            })
-                          : null;
-
-                        const displayEntry = matchedEntry || ghostEntry;
-
-                        const isBeingDragged =
-                          displayEntry &&
-                          displayEntry.schedule_entry_id === draggedEntryId;
-
-                        if (isBeingDragged) {
-                          const durationMins =
-                            displayEntry.end_time - displayEntry.start_time ||
-                            displayEntry.originalDuration ||
-                            60;
-                          const rowSpan = Math.max(
-                            1,
-                            Math.round(durationMins / 30),
-                          );
-
-                          return (
-                            <td
-                              key={day}
-                              rowSpan={rowSpan}
-                              style={{
-                                height: "0px",
-                              }}
-                              onDragEnd={() => {
-                                setDraggedEntryId(null);
-                                setDragSourceInfo(null);
-                                setDragOverCell(null);
-                              }}
-                              className="relative overflow-hidden border-r border-dashed border-cyan-400 bg-cyan-50/50 p-0 align-top dark:bg-cyan-950/20"
-                            >
-                              <div
-                                onDragOver={(e) => {
-                                  e.preventDefault();
-                                  if (
-                                    !dragOverCell ||
-                                    dragOverCell.day !== day ||
-                                    dragOverCell.timeSlot !== timeSlot
-                                  ) {
-                                    setDragOverCell({
-                                      day,
-                                      timeSlot,
-                                      duration: durationMins,
-                                    });
-                                  }
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  const rawData =
-                                    e.dataTransfer.getData("text/plain");
-                                  if (!rawData) return;
-                                  try {
-                                    const parsed = JSON.parse(
-                                      rawData,
-                                    ) as DragPayload;
-                                    handleDropToSlot(day, timeSlot, parsed);
-                                  } catch (err) {
-                                    console.error("Drop parse error", err);
-                                  }
-                                }}
-                                className="absolute inset-x-0 top-0 z-35 flex h-11 items-center justify-center gap-1 border-b border-dashed border-cyan-400 bg-cyan-100/70 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200"
-                              >
-                                <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
-                                <span>Original Position (Drop here)</span>
-                              </div>
-
-                              <div
-                                className="absolute inset-x-0 top-11 bottom-0 p-2 text-center"
-                                onDragOver={(e) => {
-                                  e.preventDefault();
-                                  const nextSlotTime = formatMinutesToTimeStr(
-                                    timeStrToMinutes(timeSlot) + 30,
-                                  );
-                                  if (
-                                    !dragOverCell ||
-                                    dragOverCell.day !== day ||
-                                    dragOverCell.timeSlot !== nextSlotTime
-                                  ) {
-                                    setDragOverCell({
-                                      day,
-                                      timeSlot: nextSlotTime,
-                                      duration: durationMins,
-                                    });
-                                  }
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  const rawData =
-                                    e.dataTransfer.getData("text/plain");
-                                  if (!rawData) return;
-                                  try {
-                                    const parsed = JSON.parse(
-                                      rawData,
-                                    ) as DragPayload;
-                                    const nextSlotTime = formatMinutesToTimeStr(
-                                      timeStrToMinutes(timeSlot) + 30,
-                                    );
-                                    handleDropToSlot(day, nextSlotTime, parsed);
-                                  } catch (err) {
-                                    console.error("Drop parse error", err);
-                                  }
-                                }}
-                              ></div>
-                            </td>
-                          );
-                        }
-
-                        if (displayEntry) {
-                          const durationMins =
-                            displayEntry.end_time - displayEntry.start_time ||
-                            displayEntry.originalDuration ||
-                            60;
-
-                          // --- FIX: Check if this block is part of ANY active conflict cluster ---
-                          const isDisplayedInOverlay = (() => {
-                            if (
-                              !displayEntry.day ||
-                              displayEntry.start_time <= 0
-                            )
-                              return false;
-                            const matchesSection =
-                              selectedTimetableSection === "ALL" ||
-                              displayEntry.section === selectedTimetableSection;
-                            if (!matchesSection) return false;
-
-                            // Check if this entry overlaps with any other entry in the schedule
-                            return changedSchedules.some((other) => {
-                              if (
-                                other.schedule_entry_id ===
-                                displayEntry.schedule_entry_id
-                              )
-                                return false;
-                              if (!other.day || other.start_time <= 0)
-                                return false;
-                              if (
-                                other.day.toLowerCase() !==
-                                displayEntry.day?.toLowerCase()
-                              )
-                                return false;
-                              if (
-                                displayEntry.start_time >= other.end_time ||
-                                displayEntry.end_time <= other.start_time
-                              )
-                                return false;
-
-                              return (
-                                displayEntry.section.toLowerCase() ===
-                                  other.section.toLowerCase() ||
-                                (displayEntry.room_name &&
-                                  other.room_name &&
-                                  displayEntry.room_name.toLowerCase() ===
-                                    other.room_name.toLowerCase()) ||
-                                (displayEntry.teacher_id &&
-                                  other.teacher_id &&
-                                  displayEntry.teacher_id === other.teacher_id)
-                              );
-                            });
-                          })();
-
-                          const rowSpan = Math.max(
-                            1,
-                            Math.round(durationMins / 30),
-                          );
-                          const blockHeightPx = rowSpan * ROW_HEIGHT_PX;
-
-                          const isGhost = !matchedEntry && !!ghostEntry;
-                          const isLabType =
-                            displayEntry.type?.toLowerCase() === "laboratory";
-
-                          const hasSectionConsecutiveTeachingViolation =
-                            (() => {
-                              const sectionEntries = changedSchedules.filter(
-                                (e) =>
-                                  e.section.toLowerCase() ===
-                                  displayEntry.section.toLowerCase(),
-                              );
-                              const teachersInSec = Array.from(
-                                new Set(
-                                  sectionEntries
-                                    .map((e) => e.teacher_id)
-                                    .filter(Boolean),
-                                ),
-                              );
-
-                              for (const tId of teachersInSec) {
-                                const teacherAllEntries =
-                                  changedSchedules.filter(
-                                    (e) =>
-                                      e.teacher_id === tId &&
-                                      e.day &&
-                                      e.start_time > 0,
-                                  );
-
-                                const days = [
-                                  "Monday",
-                                  "Tuesday",
-                                  "Wednesday",
-                                  "Thursday",
-                                  "Friday",
-                                  "Saturday",
-                                ];
-                                for (const d of days) {
-                                  const dayBlocks = teacherAllEntries
-                                    .filter(
-                                      (e) =>
-                                        e.day?.toLowerCase() ===
-                                        d.toLowerCase(),
-                                    )
-                                    .sort(
-                                      (a, b) => a.start_time - b.start_time,
-                                    );
-
-                                  if (dayBlocks.length <= 1) continue;
-
-                                  let consecutiveMinutes =
-                                    dayBlocks[0].end_time -
-                                    dayBlocks[0].start_time;
-                                  for (let i = 1; i < dayBlocks.length; i++) {
-                                    const prev = dayBlocks[i - 1];
-                                    const curr = dayBlocks[i];
-                                    const gap = curr.start_time - prev.end_time;
-
-                                    if (gap < 30) {
-                                      consecutiveMinutes +=
-                                        curr.end_time - curr.start_time;
-                                    } else {
-                                      consecutiveMinutes =
-                                        curr.end_time - curr.start_time;
-                                    }
-
-                                    if (consecutiveMinutes > 240) {
-                                      return true;
-                                    }
-                                  }
-                                }
-                              }
-                              return false;
-                            })();
-
-                          const hasEntryConflict = (
-                            entryA: LocalTimetableEntry,
-                          ) => {
-                            if (
-                              !entryA.day ||
-                              !entryA.start_time ||
-                              entryA.start_time <= 0
-                            )
-                              return false;
-
-                            for (const entryB of changedSchedules) {
-                              if (
-                                entryB.schedule_entry_id ===
-                                entryA.schedule_entry_id
-                              )
-                                continue;
-                              if (
-                                !entryB.day ||
-                                !entryB.start_time ||
-                                entryB.start_time <= 0
-                              )
-                                continue;
-                              if (
-                                entryB.day.toLowerCase() !==
-                                entryA.day.toLowerCase()
-                              )
-                                continue;
-
-                              const isOverlapping =
-                                entryA.start_time < entryB.end_time &&
-                                entryA.end_time > entryB.start_time;
-
-                              if (!isOverlapping) continue;
-
-                              // 1. Section Overlap Conflict
-                              if (
-                                entryA.section.toLowerCase() ===
-                                entryB.section.toLowerCase()
-                              ) {
-                                return true;
-                              }
-                              // 2. Room Overlap Conflict
-                              if (
-                                entryA.room_name &&
-                                entryB.room_name &&
-                                entryA.room_name.toLowerCase() ===
-                                  entryB.room_name.toLowerCase()
-                              ) {
-                                return true;
-                              }
-                              // 3. Teacher Double-Booking Conflict
-                              if (
-                                entryA.teacher_id &&
-                                entryB.teacher_id &&
-                                entryA.teacher_id === entryB.teacher_id
-                              ) {
-                                return true;
-                              }
-                            }
-                            return false;
-                          };
-
-                          const hasConflict = hasEntryConflict(displayEntry);
-
-                          let blockStyle =
-                            "bg-blue-50/80 text-blue-950 border-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800";
-
-                          // --- FIX: Hide from regular grid if it has any conflict, letting the overlay engine handle it ---
-                          if (isDisplayedInOverlay) {
-                            blockStyle = "hidden";
-                          } else if (hasConflict) {
-                            blockStyle =
-                              "bg-red-100 text-red-400 border-red-200 dark:bg-red-800 dark:text-red-500 dark:border-red-700";
-                          } else if (isGhost) {
-                            if (!hasSectionConsecutiveTeachingViolation) {
-                              blockStyle =
-                                "bg-gray-100 text-gray-400 border-gray-200 opacity-50 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700";
-                            } else {
-                              blockStyle =
-                                "bg-amber-100 text-amber-400 border-amber-200 opacity-50 dark:bg-amber-800 dark:text-amber-500 dark:border-amber-700";
-                            }
-                          } else if (hasSectionConsecutiveTeachingViolation) {
-                            blockStyle =
-                              "bg-amber-100 text-amber-400 border-amber-200 dark:bg-amber-800 dark:text-amber-500 dark:border-amber-700";
-                          } else if (isLabType) {
-                            blockStyle =
-                              "bg-emerald-50/80 text-emerald-950 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
-                          }
-
-                          const scheduleEntryId =
-                            displayEntry.schedule_entry_id;
-
-                          return (
-                            <td
-                              key={day}
-                              rowSpan={rowSpan}
-                              style={{
-                                height: "0px",
-                              }}
-                              draggable={isEditMode && !isGhost}
-                              onDragStart={(e) => {
-                                hasDroppedRef.current = false;
-                                setDraggedEntryId(scheduleEntryId);
-                                draggedDurationRef.current = durationMins;
-                                setDragSourceInfo({
-                                  day: displayEntry.day,
-                                  start_time: displayEntry.start_time,
-                                  duration: durationMins,
-                                  course_code: displayEntry.course_code,
-                                });
-                                if (displayEntry.room_name) {
-                                  setSelectedTimetableRoom(
-                                    displayEntry.room_name,
-                                  );
-                                }
-
-                                const dragPreview =
-                                  document.createElement("div");
-                                dragPreview.style.position = "absolute";
-                                dragPreview.style.top = "-9999px";
-                                dragPreview.style.left = "-9999px";
-                                dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
-                                dragPreview.style.height = `${blockHeightPx - 12}px`;
-                                dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans ${
-                                  isDisplayedInOverlay
-                                    ? "bg-red-100 text-red-950 border border-red-300 dark:bg-red-950 dark:text-red-100 dark:border-red-700"
-                                    : hasSectionConsecutiveTeachingViolation
-                                      ? "bg-amber-100 text-amber-950 border border-amber-300 dark:bg-amber-950 dark:text-amber-100 dark:border-amber-700"
-                                      : isLabType
-                                        ? "bg-emerald-100 text-emerald-950 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:border-emerald-700"
-                                        : "bg-blue-100 text-blue-950 border border-blue-300 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-700"
-                                }`;
-
-                                dragPreview.innerHTML = `
-                                      <div>
-                                        <div class="flex items-center justify-between">
-                                          <div class="text-xs font-bold truncate">${displayEntry.course_name}</div>
-                                          <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                            hasSectionConsecutiveTeachingViolation
-                                              ? "bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200"
-                                              : isLabType
-                                                ? "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200"
-                                                : "bg-blue-200 text-blue-900 dark:bg-blue-900 dark:text-blue-200"
-                                          }">${displayEntry.type || "Lecture"}</span>
-                                        </div>
-                                        <div class="text-[10px] font-medium opacity-80 truncate">${displayEntry.course_code}</div>
-                                      </div>
-                                      <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
-                                        <div>Sec: ${displayEntry.section}</div>
-                                        <div>Room: ${displayEntry.room_name || "TBA"}</div>
-                                        <div class="font-mono">${formatTime(displayEntry.start_time)} - ${formatTime(displayEntry.end_time)}</div>
-                                      </div>
-                                    `;
-
-                                document.body.appendChild(dragPreview);
-                                if (e.dataTransfer.setDragImage) {
-                                  e.dataTransfer.setDragImage(
-                                    dragPreview,
-                                    20,
-                                    20,
-                                  );
-                                }
-                                setTimeout(() => {
-                                  document.body.removeChild(dragPreview);
-                                }, 0);
-
-                                e.dataTransfer.setData(
-                                  "text/plain",
-                                  JSON.stringify({
-                                    type: "existing",
-                                    scheduleEntryId: scheduleEntryId,
-                                    section: displayEntry.section,
-                                    roomName: displayEntry.room_name,
-                                    subjectId: displayEntry.subject_id,
-                                    roomId: displayEntry.room_id,
-                                    teacherId: displayEntry.teacher_id,
-                                    entryType: displayEntry.type,
-                                    duration: durationMins,
-                                    originalDay: displayEntry.day,
-                                    originalStartTime: displayEntry.start_time,
-                                    originalEndTime: displayEntry.end_time,
-                                  } as DragPayload),
-                                );
-                              }}
-                              onDragEnd={() => {
-                                setDraggedEntryId(null);
-                                setDragSourceInfo(null);
-                                setDragOverCell(null);
-                              }}
-                              onDragOver={(e) => {
-                                if (isGhost) {
-                                  e.preventDefault();
-                                  const dragDuration = durationMins;
-                                  if (
-                                    !dragOverCell ||
-                                    dragOverCell.day !== day ||
-                                    dragOverCell.timeSlot !== timeSlot
-                                  ) {
-                                    setDragOverCell({
-                                      day,
-                                      timeSlot,
-                                      duration: dragDuration,
-                                    });
-                                  }
-                                }
-                              }}
-                              onDrop={(e) => {
-                                if (isGhost) {
-                                  e.preventDefault();
-                                  const rawData =
-                                    e.dataTransfer.getData("text/plain");
-                                  if (!rawData) return;
-                                  try {
-                                    const parsed = JSON.parse(
-                                      rawData,
-                                    ) as DragPayload;
-                                    handleDropToSlot(day, timeSlot, parsed);
-                                  } catch (err) {
-                                    console.error("Drop parse error", err);
-                                  }
-                                }
-                              }}
-                              className={`relative z-20 overflow-hidden border-r p-0 align-top ${blockStyle} border font-sans ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
-                            >
-                              <div
-                                className="schedule-block-inner absolute inset-1.5 flex flex-col gap-1 overflow-hidden rounded bg-inherit p-2 shadow-xs"
-                                style={{ height: `${blockHeightPx - 12}px` }}
-                              >
-                                {isEditMode && !isGhost && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUnassignEntry(scheduleEntryId);
-                                    }}
-                                    title="Unassign / Return to Sidebar"
-                                    className="absolute top-1 right-1 z-30 rounded-full bg-red-100 p-0.5 text-red-600 hover:bg-red-200 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
-                                  >
-                                    <HiX className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-
-                                <div>
-                                  <div className="flex items-center justify-between pr-4">
-                                    <div className="truncate text-xs font-bold text-gray-900 dark:text-white">
-                                      {displayEntry.course_name}
-                                    </div>
-                                  </div>
-                                  <div className="truncate text-[10px] font-medium text-gray-600 dark:text-gray-300">
-                                    {displayEntry.course_code}{" "}
-                                    {isGhost && "(Other Section/Room)"}
-                                  </div>
-                                </div>
-
-                                <div className="space-y-0.5 text-[10px] font-semibold text-gray-700 dark:text-gray-300">
-                                  <div>
-                                    Teacher:{" "}
-                                    {displayEntry.teacher_code || "Unassigned"}
-                                  </div>
-                                  <div>Sec: {displayEntry.section}</div>
-                                  <div>
-                                    Room: {displayEntry.room_name || "TBA"}
-                                  </div>
-                                  <div className="font-mono">
-                                    {formatTime(displayEntry.start_time)} -{" "}
-                                    {formatTime(displayEntry.end_time)}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        const isCoveredByClass = filteredTimetableEntries.some(
-                          (entry) => {
-                            if (entry.day.toLowerCase() !== day.toLowerCase())
-                              return false;
-                            return (
-                              slotTotalMins > entry.start_time &&
-                              slotTotalMins < entry.end_time
-                            );
-                          },
-                        );
-
-                        const isCoveredByGhost = changedSchedules.some(
-                          (entry) => {
-                            if (!entry.day || entry.start_time <= 0)
-                              return false;
-                            if (entry.day.toLowerCase() !== day.toLowerCase())
-                              return false;
-                            if (
-                              draggedEntryId &&
-                              entry.schedule_entry_id === draggedEntryId
-                            ) {
-                              return false;
-                            }
-
-                            const draggedEntry = changedSchedules.find(
-                              (e) => e.schedule_entry_id === draggedEntryId,
-                            );
-                            const isSameSection =
-                              draggedEntry &&
-                              entry.section.toLowerCase() ===
-                                draggedEntry.section.toLowerCase();
-
-                            const matchesActiveRoom =
-                              selectedTimetableRoom !== "ALL" &&
-                              entry.room_name?.toLowerCase() ===
-                                selectedTimetableRoom.toLowerCase();
-
-                            const activeTeachers = new Set(
-                              filteredTimetableEntries
-                                .map((e) => e.teacher_id)
-                                .filter(Boolean),
-                            );
-                            const matchesTeacher =
-                              entry.teacher_id &&
-                              activeTeachers.has(entry.teacher_id);
-
-                            const isSameTeacher =
-                              draggedEntry &&
-                              draggedEntry.teacher_id &&
-                              entry.teacher_id === draggedEntry.teacher_id;
-
-                            const matchesGhostFilter =
-                              isSameSection ||
-                              matchesActiveRoom ||
-                              matchesTeacher ||
-                              isSameTeacher;
-
-                            if (!matchesGhostFilter) return false;
-
-                            const durationMins =
-                              entry.end_time - entry.start_time ||
-                              entry.originalDuration ||
-                              60;
-                            const ghostRowSpan = Math.max(
-                              1,
-                              Math.round(durationMins / 30),
-                            );
-                            const ghostStartSlotMins = entry.start_time;
-                            const ghostEndSlotMins =
-                              ghostStartSlotMins + ghostRowSpan * 30;
-
-                            return (
-                              slotTotalMins > ghostStartSlotMins &&
-                              slotTotalMins < ghostEndSlotMins
-                            );
-                          },
-                        );
-
-                        if (isCoveredByClass || isCoveredByGhost) {
-                          return null;
-                        }
-
-                        const matchedBreak = expandedBreaks.find((bp) => {
-                          if (bp.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          return (
-                            slotTotalMins >= bp.start_time &&
-                            slotTotalMins < bp.end_time
-                          );
-                        });
-
-                        let isHighlighted = false;
-                        if (
-                          dragOverCell &&
-                          dragOverCell.day.toLowerCase() === day.toLowerCase()
-                        ) {
-                          const hoverStartMins = timeStrToMinutes(
-                            dragOverCell.timeSlot,
-                          );
-                          const hoverDuration = dragOverCell.duration || 60;
-                          const hoverEndMins = hoverStartMins + hoverDuration;
+                    return (
+                      <td
+                        key={day}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          const dragDuration =
+                            draggedDurationRef.current || 60;
 
                           if (
-                            slotTotalMins >= hoverStartMins &&
-                            slotTotalMins < hoverEndMins
+                            !dragOverCell ||
+                            dragOverCell.day !== day ||
+                            dragOverCell.timeSlot !== timeSlot ||
+                            dragOverCell.duration !== dragDuration
                           ) {
-                            isHighlighted = true;
+                            setDragOverCell({
+                              day,
+                              timeSlot,
+                              duration: dragDuration,
+                            });
                           }
-                        }
-
-                        return (
-                          <td
-                            key={day}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              const dragDuration =
-                                draggedDurationRef.current || 60;
-
-                              if (
-                                !dragOverCell ||
-                                dragOverCell.day !== day ||
-                                dragOverCell.timeSlot !== timeSlot ||
-                                dragOverCell.duration !== dragDuration
-                              ) {
-                                setDragOverCell({
-                                  day,
-                                  timeSlot,
-                                  duration: dragDuration,
-                                });
-                              }
-                            }}
-                            onDragLeave={() => {
-                              if (
-                                dragOverCell?.day === day &&
-                                dragOverCell?.timeSlot === timeSlot
-                              ) {
-                                setDragOverCell(null);
-                              }
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              const rawData =
-                                e.dataTransfer.getData("text/plain");
-                              if (!rawData) return;
-                              try {
-                                const parsed = JSON.parse(
-                                  rawData,
-                                ) as DragPayload;
-                                handleDropToSlot(day, timeSlot, parsed);
-                              } catch (err) {
-                                console.error("Drop parse error", err);
-                              }
-                            }}
-                            className={`relative border-r p-1 text-center transition-colors ${
-                              isHighlighted
-                                ? "z-25 border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/65"
-                                : matchedBreak
-                                  ? "border-violet-200 bg-violet-50/80 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
-                                  : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
-                            }`}
-                          >
-                            {matchedBreak &&
-                              slotTotalMins === matchedBreak.start_time && (
-                                <div
-                                  className="absolute inset-1.5 z-10 flex flex-col items-center justify-center overflow-hidden rounded bg-violet-100/90 p-1 text-center shadow-xs dark:bg-violet-900/80"
-                                  style={{
-                                    height: `${((matchedBreak.end_time - matchedBreak.start_time) / 30) * ROW_HEIGHT_PX - 12}px`,
-                                  }}
-                                  onDragOver={(e) => {
-                                    e.preventDefault();
-                                    const dragDuration =
-                                      draggedDurationRef.current || 60;
-                                    if (
-                                      !dragOverCell ||
-                                      dragOverCell.day !== day ||
-                                      dragOverCell.timeSlot !== timeSlot ||
-                                      dragOverCell.duration !== dragDuration
-                                    ) {
-                                      setDragOverCell({
-                                        day,
-                                        timeSlot,
-                                        duration: dragDuration,
-                                      });
-                                    }
-                                  }}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    const rawData =
-                                      e.dataTransfer.getData("text/plain");
-                                    if (!rawData) return;
-                                    try {
-                                      const parsed = JSON.parse(
-                                        rawData,
-                                      ) as DragPayload;
-                                      handleDropToSlot(day, timeSlot, parsed);
-                                    } catch (err) {
-                                      console.error("Drop parse error", err);
-                                    }
-                                  }}
-                                >
-                                  <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-violet-900 dark:text-violet-100">
-                                    <GiCoffeeCup />
-                                    <div>{matchedBreak.break_description}</div>
-                                  </div>
-                                  <div className="font-mono text-[9px] text-violet-700 dark:text-violet-300">
-                                    {formatTime(matchedBreak.start_time)} -{" "}
-                                    {formatTime(matchedBreak.end_time)}
-                                  </div>
-                                </div>
-                              )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Card className="overflow-x-auto">
-            <Table hoverable>
-              <TableHead>
-                <TableRow>
-                  <TableHeadCell>Day</TableHeadCell>
-                  <TableHeadCell>Time</TableHeadCell>
-                  <TableHeadCell>Subject</TableHeadCell>
-                  <TableHeadCell>Type</TableHeadCell>
-                  <TableHeadCell>Section</TableHeadCell>
-                  <TableHeadCell>Room</TableHeadCell>
-                  <TableHeadCell>Teacher</TableHeadCell>
-                </TableRow>
-              </TableHead>
-              <TableBody className="divide-y">
-                {filteredTimetableEntries.length > 0 ? (
-                  filteredTimetableEntries.map((item, index) => (
-                    <TableRow
-                      key={index}
-                      className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                    >
-                      <TableCell className="font-semibold text-gray-900 dark:text-white">
-                        {item.day}
-                      </TableCell>
-                      <TableCell className="text-xs text-gray-500 dark:text-gray-400">
-                        {formatTime(item.start_time)} -{" "}
-                        {formatTime(item.end_time)}
-                      </TableCell>
-                      <TableCell className="font-medium text-gray-900 dark:text-white">
-                        <div>{item.course_name || "Unnamed Subject"}</div>
-                        <div className="font-mono text-xs text-cyan-600 dark:text-cyan-400">
-                          {item.course_code}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase ${item.type?.toLowerCase() === "laboratory" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
-                        >
-                          {item.type || "Lecture"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="inline-flex rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
-                          {item.section}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-gray-500 dark:text-gray-400">
-                        {item.room_name || "TBA"}
-                      </TableCell>
-                      <TableCell className="text-gray-500 dark:text-gray-400">
-                        {item.teacher_code || "Unassigned"}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                    <TableCell
-                      colSpan={7}
-                      className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
-                    >
-                      No entries found matching the selected filters.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
+                        }}
+                        onDragLeave={() => {
+                          if (
+                            dragOverCell?.day === day &&
+                            dragOverCell?.timeSlot === timeSlot
+                          ) {
+                            setDragOverCell(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const rawData =
+                            e.dataTransfer.getData("text/plain");
+                          if (!rawData) return;
+                          try {
+                            const parsed = JSON.parse(rawData) as DragPayload;
+                            handleDropToSlot(day, timeSlot, parsed);
+                          } catch (err) {
+                            console.error("Drop parse error", err);
+                          }
+                        }}
+                        className={`relative border-r p-1 text-center transition-colors ${
+                          isHighlighted
+                            ? "z-5 border-dashed border-cyan-400 bg-cyan-100/70 dark:bg-cyan-950/65"
+                            : matchedBreak
+                              ? "border-violet-200 bg-violet-50/80 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
+                              : "text-gray-300 hover:bg-cyan-50/50 dark:border-gray-800 dark:hover:bg-cyan-950/20"
+                        }`}
+                      >
+                        {matchedBreak &&
+                          slotTotalMins === matchedBreak.start_time && (
+                            <div
+                              className="absolute inset-1.5 z-5 flex flex-col items-center justify-center overflow-hidden rounded bg-violet-100/90 p-1 text-center shadow-xs dark:bg-violet-900/80"
+                              style={{
+                                height: `${((matchedBreak.end_time - matchedBreak.start_time) / 30) * ROW_HEIGHT_PX - 12}px`,
+                              }}
+                            >
+                              <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-violet-900 dark:text-violet-100">
+                                <GiCoffeeCup />
+                                <div>{matchedBreak.break_description}</div>
+                              </div>
+                              <div className="font-mono text-[9px] text-violet-700 dark:text-violet-300">
+                                {formatTime(matchedBreak.start_time)} -{" "}
+                                {formatTime(matchedBreak.end_time)}
+                              </div>
+                            </div>
+                          )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* --- EDIT SIDE-PANEL DRAWER (USING RELATIVE POPUP MODAL) --- */}
+      {/* --- EDIT SIDE-PANEL DRAWER --- */}
       {isEditMode && (
-        <aside className="scrollbar-track-transparet fixed inset-y-0 right-0 w-80 shrink-0 scrollbar-thumb-gray-400 overflow-y-auto border-l border-gray-200 bg-white p-4 shadow-2xl lg:static lg:h-auto lg:shadow-none dark:border-gray-700 dark:bg-gray-900">
+        <aside className="scrollbar-track-transparent fixed inset-y-0 right-0 w-80 shrink-0 scrollbar-thumb-gray-400 overflow-y-auto border-l border-gray-200 bg-white p-4 shadow-2xl lg:static lg:h-auto lg:shadow-none dark:border-gray-700 dark:bg-gray-900">
           <div className="mb-4 flex items-center justify-between border-b border-gray-200 pb-3 dark:border-gray-700">
             <h3 className="text-sm font-bold text-gray-900 dark:text-white">
               Sections & Subjects Palette
@@ -2799,110 +1711,6 @@ export default function ScheduleTimetableClient({
                   !e.day || e.start_time === undefined || e.start_time <= 0,
               ).length;
 
-              const hasSectionConflict = (() => {
-                for (const entryA of sectionEntries) {
-                  if (
-                    !entryA.day ||
-                    !entryA.start_time ||
-                    entryA.start_time <= 0
-                  )
-                    continue;
-
-                  for (const entryB of changedSchedules) {
-                    if (entryB.schedule_entry_id === entryA.schedule_entry_id)
-                      continue;
-                    if (
-                      !entryB.day ||
-                      !entryB.start_time ||
-                      entryB.start_time <= 0
-                    )
-                      continue;
-                    if (entryB.day.toLowerCase() !== entryA.day.toLowerCase())
-                      continue;
-
-                    const isOverlapping =
-                      entryA.start_time < entryB.end_time &&
-                      entryA.end_time > entryB.start_time;
-
-                    if (!isOverlapping) continue;
-
-                    if (
-                      entryA.section.toLowerCase() ===
-                      entryB.section.toLowerCase()
-                    ) {
-                      return true;
-                    }
-
-                    if (
-                      entryA.room_name &&
-                      entryB.room_name &&
-                      entryA.room_name.toLowerCase() ===
-                        entryB.room_name.toLowerCase()
-                    ) {
-                      return true;
-                    }
-
-                    if (
-                      entryA.teacher_id &&
-                      entryB.teacher_id &&
-                      entryA.teacher_id === entryB.teacher_id
-                    ) {
-                      return true;
-                    }
-                  }
-                }
-                return false;
-              })();
-
-              const hasSectionConsecutiveTeachingViolation = (() => {
-                const teachersInSec = Array.from(
-                  new Set(
-                    sectionEntries.map((e) => e.teacher_id).filter(Boolean),
-                  ),
-                );
-
-                for (const tId of teachersInSec) {
-                  const teacherAllEntries = changedSchedules.filter(
-                    (e) => e.teacher_id === tId && e.day && e.start_time > 0,
-                  );
-
-                  const days = [
-                    "Monday",
-                    "Tuesday",
-                    "Wednesday",
-                    "Thursday",
-                    "Friday",
-                    "Saturday",
-                  ];
-                  for (const d of days) {
-                    const dayBlocks = teacherAllEntries
-                      .filter((e) => e.day?.toLowerCase() === d.toLowerCase())
-                      .sort((a, b) => a.start_time - b.start_time);
-
-                    if (dayBlocks.length <= 1) continue;
-
-                    let consecutiveMinutes =
-                      dayBlocks[0].end_time - dayBlocks[0].start_time;
-                    for (let i = 1; i < dayBlocks.length; i++) {
-                      const prev = dayBlocks[i - 1];
-                      const curr = dayBlocks[i];
-                      const gap = curr.start_time - prev.end_time;
-
-                      if (gap < 30) {
-                        consecutiveMinutes += curr.end_time - curr.start_time;
-                      } else {
-                        consecutiveMinutes = curr.end_time - curr.start_time;
-                      }
-
-                      if (consecutiveMinutes > 240) {
-                        return true;
-                      }
-                    }
-                  }
-                }
-                return false;
-              })();
-
               return (
                 <AccordionPanel key={sIdx}>
                   <AccordionTitle className="rounded-lg bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-800 dark:bg-gray-800 dark:text-gray-200">
@@ -2915,41 +1723,6 @@ export default function ScheduleTimetableClient({
                           <Badge color="warning" size="xs">
                             {unassignedCount} Needs Room
                           </Badge>
-                        )}
-                        {(() => {
-                          const noTeacherCount = sectionEntries.filter(
-                            (e) => !e.teacher_code,
-                          ).length;
-
-                          if (noTeacherCount === 0) return null;
-
-                          return (
-                            <Badge color="failure" size="xs">
-                              {noTeacherCount} Entr
-                              {noTeacherCount > 1 ? "ies" : "y"} Missing Teacher
-                            </Badge>
-                          );
-                        })()}
-                        {hasSectionConflict && (
-                          <Badge
-                            color="failure"
-                            size="xs"
-                            icon={HiExclamationTriangle}
-                          >
-                            Conflict Detected
-                          </Badge>
-                        )}
-                        {hasSectionConsecutiveTeachingViolation && (
-                          <Tooltip
-                            placement={"bottom"}
-                            content={
-                              "Indicates teachers exceeding 4 hours of consecutive teaching without a 30-minute break."
-                            }
-                          >
-                            <Badge color="warning" size="xs" icon={HiClock}>
-                              Fatigue Risk
-                            </Badge>
-                          </Tooltip>
                         )}
                       </div>
                     </div>
@@ -2969,103 +1742,6 @@ export default function ScheduleTimetableClient({
                             );
                           });
 
-                          const hasSubjConflict = (() => {
-                            if (
-                              !subj.day ||
-                              !subj.start_time ||
-                              subj.start_time <= 0
-                            )
-                              return false;
-                            for (const entryB of changedSchedules) {
-                              if (
-                                entryB.schedule_entry_id ===
-                                subj.schedule_entry_id
-                              )
-                                continue;
-                              if (
-                                !entryB.day ||
-                                !entryB.start_time ||
-                                entryB.start_time <= 0
-                              )
-                                continue;
-                              if (
-                                entryB.day.toLowerCase() !==
-                                subj.day.toLowerCase()
-                              )
-                                continue;
-
-                              const isOverlapping =
-                                subj.start_time < entryB.end_time &&
-                                subj.end_time > entryB.start_time;
-
-                              if (!isOverlapping) continue;
-
-                              if (
-                                subj.section.toLowerCase() ===
-                                entryB.section.toLowerCase()
-                              )
-                                return true;
-                              if (
-                                subj.room_name &&
-                                entryB.room_name &&
-                                subj.room_name.toLowerCase() ===
-                                  entryB.room_name.toLowerCase()
-                              )
-                                return true;
-                              if (
-                                subj.teacher_id &&
-                                entryB.teacher_id &&
-                                subj.teacher_id === entryB.teacher_id
-                              )
-                                return true;
-                            }
-                            return false;
-                          })();
-
-                          const hasSubjFatigueRisk = (() => {
-                            if (
-                              !subj.teacher_id ||
-                              !subj.day ||
-                              !subj.start_time ||
-                              subj.start_time <= 0
-                            )
-                              return false;
-                            const teacherAllEntries = changedSchedules.filter(
-                              (e) =>
-                                e.teacher_id === subj.teacher_id &&
-                                e.day &&
-                                e.start_time > 0,
-                            );
-                            const dayBlocks = teacherAllEntries
-                              .filter(
-                                (e) =>
-                                  e.day?.toLowerCase() ===
-                                  subj.day?.toLowerCase(),
-                              )
-                              .sort((a, b) => a.start_time - b.start_time);
-
-                            if (dayBlocks.length <= 1) return false;
-
-                            let consecutiveMinutes =
-                              dayBlocks[0].end_time - dayBlocks[0].start_time;
-                            for (let i = 1; i < dayBlocks.length; i++) {
-                              const prev = dayBlocks[i - 1];
-                              const curr = dayBlocks[i];
-                              const gap = curr.start_time - prev.end_time;
-
-                              if (gap < 30) {
-                                consecutiveMinutes +=
-                                  curr.end_time - curr.start_time;
-                              } else {
-                                consecutiveMinutes =
-                                  curr.end_time - curr.start_time;
-                              }
-
-                              if (consecutiveMinutes > 240) return true;
-                            }
-                            return false;
-                          })();
-
                           const itemDuration = subj.originalDuration || 60;
                           const isLabType =
                             subj.type?.toLowerCase() === "laboratory";
@@ -3078,14 +1754,6 @@ export default function ScheduleTimetableClient({
                               draggable={
                                 !isPlaced && selectedTimetableRoom !== "ALL"
                               }
-                              onClick={() => {
-                                if (hasSubjConflict || hasSubjFatigueRisk) {
-                                  if (subj.room_name) {
-                                    setSelectedTimetableRoom(subj.room_name);
-                                  }
-                                  setSelectedTimetableSection(secCode);
-                                }
-                              }}
                               onDragStart={(e) => {
                                 if (selectedTimetableRoom === "ALL") return;
                                 draggedDurationRef.current = itemDuration;
@@ -3115,13 +1783,9 @@ export default function ScheduleTimetableClient({
                               className={`relative rounded border p-2 text-xs transition-all ${
                                 selectedTimetableRoom === "ALL"
                                   ? "cursor-not-allowed border-gray-200 bg-gray-100/60 text-gray-400 opacity-75 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500"
-                                  : hasSubjConflict
-                                    ? "cursor-pointer border-red-200 bg-red-100/60 text-red-700 dark:border-red-700 dark:bg-red-900/60 dark:text-red-200"
-                                    : hasSubjFatigueRisk
-                                      ? "cursor-pointer border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
-                                      : isPlaced
-                                        ? "cursor-not-allowed border-gray-200 bg-gray-100/60 text-gray-400 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500"
-                                        : `cursor-grab ${isLabType ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/20" : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/20"} text-gray-800 dark:text-gray-200`
+                                  : isPlaced
+                                    ? "cursor-not-allowed border-gray-200 bg-gray-100/60 text-gray-400 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500"
+                                    : `cursor-grab ${isLabType ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/20" : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/20"} text-gray-800 dark:text-gray-200`
                               }`}
                             >
                               <div className="flex items-center justify-between">
@@ -3197,7 +1861,7 @@ export default function ScheduleTimetableClient({
                                 {subj.course_name}
                               </div>
                               <div
-                                className={`${isPlaced && "opacity-60"} mt-0.5 text-[9px] font-medium ${hasSubjConflict ? "text-red-600 dark:text-red-400" : hasSubjFatigueRisk ? "text-amber-600 dark:text-amber-400" : "text-gray-600 dark:text-gray-400"}`}
+                                className={`${isPlaced && "opacity-60"} mt-0.5 text-[9px] font-medium text-gray-600 dark:text-gray-400`}
                               >
                                 Teacher: {subj.teacher_code || "Unassigned"}
                               </div>
@@ -3209,15 +1873,7 @@ export default function ScheduleTimetableClient({
                                   {itemDuration > 60 ? "s" : ""}{" "}
                                   {subj.room_name ? `• ${subj.room_name}` : ""}
                                 </span>
-                                {hasSubjConflict ? (
-                                  <span className="font-semibold text-red-600 dark:text-red-400">
-                                    ⚠️ Conflict Detected
-                                  </span>
-                                ) : hasSubjFatigueRisk ? (
-                                  <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                    ⚠ Fatigue Risk
-                                  </span>
-                                ) : isPlaced ? (
+                                {isPlaced ? (
                                   <span className="font-semibold text-emerald-600 dark:text-emerald-400">
                                     ✓ Placed
                                   </span>
