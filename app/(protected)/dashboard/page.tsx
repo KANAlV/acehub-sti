@@ -5,6 +5,7 @@ import { fetchUserRole } from "@/app/actions/user";
 import ScheduleDashboard from "@/components/dashboard/ScheduleDashboard";
 import TeacherSchedule from "@/components/dashboard/TeacherSchedule";
 import { Spinner } from "flowbite-react";
+import Timetable from "@/app/(protected)/timetable/page";
 
 interface UserPermissions {
   booking: boolean;
@@ -63,9 +64,11 @@ export default function Dashboard() {
         </div>
       </div>
     );
-  } else if (!permissions?.schedules && permissions?.personal_schedule) {
+  } else if (permissions?.schedules) {
+    return <ScheduleDashboard />
+  } else if (permissions?.personal_schedule) {
     return <TeacherSchedule />;
   } else {
-    return <ScheduleDashboard />;
+    return <Timetable />;
   }
 }

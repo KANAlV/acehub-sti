@@ -1,7 +1,7 @@
 "use server";
 import sql from "@/lib/database";
 import { cookies } from "next/headers";
-import { log } from "next/dist/server/typescript/utils";
+import { LocalTimetableEntry } from "@/components/schedules/ScheduleTimetable";
 
 /*************
  * DASHBOARD *
@@ -157,6 +157,41 @@ export async function fetchSubjectRequirementById(
       success: false,
       data: null,
       error: (error as Error).message || "Failed to fetch subject requirement.",
+    };
+  }
+}
+
+export async function saveScheduleEntries(
+  scheduleId: string,
+  entries: LocalTimetableEntry[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const formattedEntries = entries.map((e) => ({
+      schedule_entry_id: e.schedule_entry_id,
+      subject_id: e.subject_id || null,
+      teacher_id: e.teacher_id || null,
+      room_id: e.room_id || null,
+      section: e.section || "",
+      day: e.day || "",
+      start_time: e.start_time || 0,
+      end_time: e.end_time || 0,
+      type: e.type || "Lecture",
+    }));
+
+    // Use sql.json() if your driver supports it, or pass as standard JSON parameter string
+    await sql`
+      SELECT save_schedule_entries_bulk(
+               ${scheduleId}::UUID,
+               ${sql.json(formattedEntries)}
+             )
+    `;
+
+    return { success: true };
+  } catch (err) {
+    console.error("Failed to save schedule entries:", err);
+    return {
+      success: false,
+      error: (err as Error).message || "Failed to persist timetable entries.",
     };
   }
 }

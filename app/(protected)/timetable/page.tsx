@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Badge,
   Button,
   ButtonGroup,
   Card,
@@ -17,12 +18,15 @@ import {
   TableHeadCell,
   TableRow,
   Select,
+  Tooltip,
+  useThemeMode,
 } from "flowbite-react";
 import {
   HiArrowLeft,
-  HiOutlineExternalLink,
+  HiExclamationCircle,
   HiOutlineExclamationCircle,
 } from "react-icons/hi";
+import { HiExclamationTriangle } from "react-icons/hi2";
 import { FaCalendarDay, FaList } from "react-icons/fa6";
 import {
   fetchScheduleByName,
@@ -32,11 +36,7 @@ import {
   TimetableEntryRecord,
   fetchActiveScheduleName,
 } from "@/app/actions/system";
-import { FaCoffee } from "react-icons/fa";
-
-interface ScheduleTimetableClientProps {
-  scheduleName: string;
-}
+import { GiCoffeeCup } from "react-icons/gi";
 
 interface BreakPeriodRecord {
   break_id: string;
@@ -57,16 +57,20 @@ export default function Timetable() {
   const [scheduleID, setScheduleID] = useState<string | null>(null);
   const [scheduleExists, setScheduleExists] = useState<boolean>(true);
 
+  // --- Dark Mode ---
+  const { computedMode } = useThemeMode();
+  const isDarkMode = computedMode === "dark";
+
   // --- Break Periods State --- //
   const [breakPeriods, setBreakPeriods] = useState<BreakPeriodRecord[]>([]);
   const [breakPeriodCount, setBreakPeriodCount] = useState(0);
 
-  // --- Display & Filter States (Initialized as empty to prevent both being "ALL" initially) --- //
+  // --- Display & Filter States --- //
   const [displayFormat, setDisplayFormat] = useState<"timetable" | "table">(
     "timetable",
   );
   const [selectedTimetableSection, setSelectedTimetableSection] =
-    useState<string>("");
+    useState<string>("ALL");
   const [selectedTimetableRoom, setSelectedTimetableRoom] =
     useState<string>("ALL");
 
@@ -99,36 +103,40 @@ export default function Timetable() {
     "Saturday",
   ];
 
+  // 12-hour format time slots grid (7:00 AM to 8:30 PM in 30-minute increments)
   const timeSlotsGrid = [
-    "07:00",
-    "07:30",
-    "08:00",
-    "08:30",
-    "09:00",
-    "09:30",
-    "10:00",
-    "10:30",
-    "11:00",
-    "11:30",
-    "12:00",
-    "12:30",
-    "13:00",
-    "13:30",
-    "14:00",
-    "14:30",
-    "15:00",
-    "15:30",
-    "16:00",
-    "16:30",
-    "17:00",
-    "17:30",
-    "18:00",
-    "18:30",
-    "19:00",
-    "19:30",
-    "20:00",
-    "20:30",
+    "07:00 AM",
+    "07:30 AM",
+    "08:00 AM",
+    "08:30 AM",
+    "09:00 AM",
+    "09:30 AM",
+    "10:00 AM",
+    "10:30 AM",
+    "11:00 AM",
+    "11:30 AM",
+    "12:00 PM",
+    "12:30 PM",
+    "01:00 PM",
+    "01:30 PM",
+    "02:00 PM",
+    "02:30 PM",
+    "03:00 PM",
+    "03:30 PM",
+    "04:00 PM",
+    "04:30 PM",
+    "05:00 PM",
+    "05:30 PM",
+    "06:00 PM",
+    "06:30 PM",
+    "07:00 PM",
+    "07:30 PM",
+    "08:00 PM",
+    "08:30 PM",
   ];
+
+  const GRID_START_MINS = 7 * 60; // 7:00 AM in minutes
+  const ROW_HEIGHT_PX = 44; // matches h-11 (44px)
 
   // --- Break Period Count Fetcher --- //
   const getBreakPeriodCount = useCallback(async (search?: string | null) => {
@@ -237,13 +245,13 @@ export default function Timetable() {
           setEntries(res.data);
           setError(null);
 
-          // Ensure dropdowns are NEVER both "ALL" on load:
+          // Set initial filter defaults
           const sections = Array.from(
             new Set(res.data.map((e) => e.section).filter(Boolean)),
           );
           if (sections.length > 0) {
-            setSelectedTimetableSection(sections[0]); // Pick first section
-            setSelectedTimetableRoom("ALL"); // Room is ALL, Section is specific (Mutually exclusive)
+            setSelectedTimetableSection(sections[0]);
+            setSelectedTimetableRoom("ALL");
           } else {
             setSelectedTimetableSection("ALL");
             const rooms = Array.from(
@@ -269,16 +277,25 @@ export default function Timetable() {
   }, [scheduleID]);
 
   const formatMinutesToTimeStr = (totalMinutes: number): string => {
-    const hours = Math.floor(totalMinutes / 60);
+    const hours24 = Math.floor(totalMinutes / 60);
     const mins = totalMinutes % 60;
-    return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+    const period = hours24 >= 12 ? "PM" : "AM";
+    const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+    return `${String(hours12).padStart(2, "0")}:${String(mins).padStart(2, "0")} ${period}`;
   };
 
   const timeStrToMinutes = (timeStr: string): number => {
     if (!timeStr) return 0;
     const parts = timeStr.split(":");
-    const hours = parseInt(parts[0] || "0", 10);
-    const mins = parseInt(parts[1] || "0", 10);
+    let hours = parseInt(parts[0] || "0", 10);
+    const minPart = parts[1] || "00 AM";
+    const mins = parseInt(minPart.substring(0, 2), 10);
+    const isPM = minPart.toUpperCase().includes("PM");
+    const isAM = minPart.toUpperCase().includes("AM");
+
+    if (isPM && hours < 12) hours += 12;
+    if (isAM && hours === 12) hours = 0;
+
     return hours * 60 + mins;
   };
 
@@ -339,7 +356,7 @@ export default function Timetable() {
 
   const expandedBreaks = getExpandedBreaks();
 
-  // Filter logic ensuring strict mutual exclusivity (never both ALL)
+  // Filter logic - entries matching current section/room filter
   const filteredTimetableEntries = entries.filter((entry) => {
     const matchesSection =
       selectedTimetableSection === "ALL" ||
@@ -357,12 +374,89 @@ export default function Timetable() {
     new Set(entries.map((e) => e.room_name).filter(Boolean)),
   );
 
+  // --- Conflict Detection --- //
+  const hasEntryConflict = (entryA: TimetableEntryRecord) => {
+    if (!entryA.day || !entryA.start_time || entryA.start_time <= 0)
+      return false;
+
+    for (const entryB of entries) {
+      if (entryB.schedule_entry_id === entryA.schedule_entry_id) continue;
+      if (!entryB.day || !entryB.start_time || entryB.start_time <= 0)
+        continue;
+      if (entryB.day.toLowerCase() !== entryA.day.toLowerCase()) continue;
+
+      const isOverlapping =
+        entryA.start_time < entryB.end_time &&
+        entryA.end_time > entryB.start_time;
+
+      if (!isOverlapping) continue;
+
+      if (entryA.section.toLowerCase() === entryB.section.toLowerCase()) {
+        return true;
+      }
+      if (
+        entryA.room_name &&
+        entryB.room_name &&
+        entryA.room_name.toLowerCase() === entryB.room_name.toLowerCase()
+      ) {
+        return true;
+      }
+      if (
+        entryA.teacher_id && entryA.teacher_id !== "" &&
+        entryB.teacher_id && entryB.teacher_id !== "" &&
+        entryA.teacher_id === entryB.teacher_id
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // --- Fatigue Risk Detection --- //
+  const checkFatigueRisk = (entry: TimetableEntryRecord) => {
+    if (!entry.teacher_id || entry.teacher_id === "" || !entry.day || !entry.start_time || entry.start_time <= 0)
+      return false;
+    const teacherAllEntries = entries.filter(
+      (e) => e.teacher_id && e.teacher_id !== "" && e.teacher_id === entry.teacher_id && e.day && e.start_time > 0,
+    );
+    const dayBlocks = teacherAllEntries
+      .filter((e) => e.day?.toLowerCase() === entry.day?.toLowerCase())
+      .sort((a, b) => a.start_time - b.start_time);
+
+    if (dayBlocks.length <= 1) return false;
+
+    let consecutiveMinutes = dayBlocks[0].end_time - dayBlocks[0].start_time;
+    for (let i = 1; i < dayBlocks.length; i++) {
+      const prev = dayBlocks[i - 1];
+      const curr = dayBlocks[i];
+      const gap = curr.start_time - prev.end_time;
+
+      if (gap < 30) {
+        consecutiveMinutes += curr.end_time - curr.start_time;
+      } else {
+        consecutiveMinutes = curr.end_time - curr.start_time;
+      }
+
+      if (consecutiveMinutes > 240) return true;
+    }
+    return false;
+  };
+
+  // --- Unassigned Counts --- //
+  const unassignedBlocksCount = useMemo(() => {
+    return entries.filter((e) => !e.room_name).length;
+  }, [entries]);
+
+  const unassignedTeacherBlocksCount = useMemo(() => {
+    return entries.filter((e) => !e.teacher_id || e.teacher_id === "").length;
+  }, [entries]);
+
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full flex-col items-center justify-center gap-3">
+      <div className="flex h-[75vh] w-full flex-col items-center justify-center gap-3">
         <Spinner size="xl" />
         <span className="text-sm text-gray-500 dark:text-gray-400">
-          Loading timetable for {scheduleName}...
+          Loading timetable...
         </span>
       </div>
     );
@@ -422,336 +516,416 @@ export default function Timetable() {
   }
 
   return (
-    <div>
-      {/* Legend & Controls Bar */}
-      <div className="flex flex-col gap-4 border border-gray-200 bg-gray-50 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 dark:bg-gray-800">
-        {/* View Mode ButtonGroup Toggle & Legend */}
-        <div className="flex flex-wrap items-center gap-6">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
-              View:
-            </span>
-            <ButtonGroup>
-              <Button
-                color="alternative"
-                size="sm"
-                className={`cursor-pointer ${displayFormat === "timetable" ? "bg-gray-200 font-bold dark:bg-gray-700" : ""}`}
-                onClick={() => setDisplayFormat("timetable")}
-                title="Timetable Grid View"
-              >
-                <FaCalendarDay className="h-4 w-4" />
-              </Button>
-              <Button
-                color="alternative"
-                size="sm"
-                className={`cursor-pointer ${displayFormat === "table" ? "bg-gray-200 font-bold dark:bg-gray-700" : ""}`}
-                onClick={() => setDisplayFormat("table")}
-                title="Row Table View"
-              >
-                <FaList className="h-4 w-4" />
-              </Button>
-            </ButtonGroup>
-          </div>
-
-          {/* Timetable Legend */}
-          <div className="flex items-center gap-4 text-xs font-medium text-gray-600 dark:text-gray-300">
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-sky-300 bg-sky-100 dark:border-sky-700 dark:bg-sky-950"></span>
-              <span>Classes</span>
+    <div className="scrollbar-track-transparent relative flex scrollbar-thumb-gray-400 overflow-y-auto">
+      <div className="scrollbar-track-transparent flex-1 scrollbar-thumb-gray-400 space-y-4 overflow-y-auto p-4">
+        {/* --- Header --- */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <Button
+              color="alternative"
+              size="xs"
+              onClick={() => router.push("/schedules")}
+              className="mb-2 cursor-pointer"
+            >
+              <HiArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to Schedules
+            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Timetable: {scheduleName}
+              </h1>
+              {unassignedBlocksCount > 0 && (
+                <Badge color="warning" size="sm" icon={HiExclamationCircle}>
+                  {unassignedBlocksCount} Unassigned Rooms
+                </Badge>
+              )}
+              {unassignedTeacherBlocksCount > 0 && (
+                <Badge color="failure" size="sm" icon={HiExclamationTriangle}>
+                  {unassignedTeacherBlocksCount} Entr
+                  {unassignedTeacherBlocksCount > 1 ? "ies" : "y"} Missing Teachers
+                </Badge>
+              )}
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950"></span>
-              <span>Break Periods</span>
-            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Comprehensive overview of class schedules, rooms, and sections.
+            </p>
           </div>
         </div>
 
-        {/* Filter Dropdowns with strict mutual exclusivity (never both ALL) */}
-        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
-            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
-              Section:
-            </span>
-            <Select
-              className="w-full sm:w-44"
-              value={selectedTimetableSection}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val !== "ALL") {
-                  setSelectedTimetableRoom("ALL"); // Force room to ALL if section is specific
-                } else if (selectedTimetableRoom === "ALL") {
-                  // Prevent both from being ALL: if section becomes ALL, force room to first room option
-                  setSelectedTimetableRoom(availableTimetableRooms[0] || "ALL");
+        {/* --- Controls Bar: Legend, View Toggle & Filters --- */}
+        <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 dark:bg-gray-800">
+          {/* Legend & View Toggle */}
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                View:
+              </span>
+              <ButtonGroup>
+                <Button
+                  color="alternative"
+                  size="sm"
+                  className={`cursor-pointer ${displayFormat === "timetable" ? "bg-gray-200 font-bold dark:bg-gray-700" : ""}`}
+                  onClick={() => setDisplayFormat("timetable")}
+                  title="Timetable Grid View"
+                >
+                  <FaCalendarDay className="h-4 w-4" />
+                </Button>
+                <Button
+                  color="alternative"
+                  size="sm"
+                  className={`cursor-pointer ${displayFormat === "table" ? "bg-gray-200 font-bold dark:bg-gray-700" : ""}`}
+                  onClick={() => setDisplayFormat("table")}
+                  title="Row Table View"
+                >
+                  <FaList className="h-4 w-4" />
+                </Button>
+              </ButtonGroup>
+            </div>
+
+            {/* Timetable Legend */}
+            <div className="flex items-center gap-4 text-xs font-medium text-gray-600 dark:text-gray-300">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-100 dark:border-blue-700 dark:bg-blue-950"></span>
+                <span>Lecture</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950"></span>
+                <span>Laboratory</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded border border-violet-300 bg-violet-100 dark:border-violet-700 dark:bg-violet-950"></span>
+                <span>Break Periods</span>
+              </div>
+              <Tooltip
+                placement={"bottom"}
+                style={`${isDarkMode ? "dark" : "light"}`}
+                content={
+                  "Indicates teachers exceeding 4 hours of consecutive teaching without a 30-minute break."
                 }
-                setSelectedTimetableSection(val);
-              }}
-            >
-              <option value="ALL">-- All Sections --</option>
-              {availableTimetableSections.map((secCode) => (
-                <option key={secCode} value={secCode}>
-                  {secCode}
-                </option>
-              ))}
-            </Select>
+              >
+                <div className="flex cursor-pointer items-center gap-1.5">
+                  <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950"></span>
+                  <span>Fatigue Risk</span>
+                </div>
+              </Tooltip>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-700 dark:bg-red-950"></span>
+                <span>Schedule Conflict</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800"></span>
+                <span>Other Section / Room</span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
-            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
-              Room:
-            </span>
-            <Select
-              className="w-full sm:w-44"
-              value={selectedTimetableRoom}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val !== "ALL") {
-                  setSelectedTimetableSection("ALL"); // Force section to ALL if room is specific
-                } else if (selectedTimetableSection === "ALL") {
-                  // Prevent both from being ALL: if room becomes ALL, force section to first section option
-                  setSelectedTimetableSection(
-                    availableTimetableSections[0] || "ALL",
-                  );
-                }
-                setSelectedTimetableRoom(val);
-              }}
-            >
-              <option value="ALL">-- All Rooms --</option>
-              {availableTimetableRooms.map((roomName) => (
-                <option key={roomName} value={roomName}>
-                  {roomName}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Display Container */}
-      {displayFormat === "timetable" ? (
-        <div className="max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-          <table className="w-full border-collapse text-left text-xs">
-            <thead>
-              <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                <th className="sticky left-0 z-10 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
-                  Time
-                </th>
-                {daysOfWeek.map((day) => (
-                  <th
-                    key={day}
-                    className="border-r border-b p-3 text-center font-bold"
-                  >
-                    {day.toUpperCase()}
-                  </th>
+          {/* Filter Dropdowns */}
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+              <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                Section:
+              </span>
+              <Select
+                className="w-full sm:w-44"
+                value={selectedTimetableSection}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "ALL" && selectedTimetableRoom === "ALL") {
+                    return;
+                  }
+                  setSelectedTimetableSection(val);
+                }}
+              >
+                <option value="ALL">-- All Sections --</option>
+                {availableTimetableSections.map((secCode) => (
+                  <option key={secCode} value={secCode}>
+                    {secCode}
+                  </option>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {timeSlotsGrid.map((timeSlot, tIdx) => {
-                const slotTimeParts = timeSlot.split(":");
-                const slotHour = parseInt(slotTimeParts[0], 10);
-                const slotMin = parseInt(slotTimeParts[1], 10);
-                const slotTotalMins = slotHour * 60 + slotMin;
+              </Select>
+            </div>
 
-                return (
-                  <tr key={tIdx} className="border-b dark:border-gray-800">
-                    <td className="sticky left-0 z-10 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                      {timeSlot}
-                    </td>
-                    {daysOfWeek.map((day) => {
-                      // Check for Class Entry
-                      const matchedEntry = filteredTimetableEntries.find(
-                        (entry) => {
-                          if (entry.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          const entryStartStr = formatMinutesToTimeStr(
-                            entry.start_time,
-                          );
-                          return entryStartStr === timeSlot;
-                        },
-                      );
-
-                      if (matchedEntry) {
-                        const durationMins =
-                          matchedEntry.end_time - matchedEntry.start_time;
-                        const rowSpan = Math.max(
-                          1,
-                          Math.round(durationMins / 30),
-                        );
-
-                        const blockStyle =
-                          "bg-sky-50 text-sky-950 border-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800";
-
-                        return (
-                          <td
-                            key={day}
-                            rowSpan={rowSpan}
-                            className={`border-r p-1.5 align-top ${blockStyle} border font-sans`}
-                          >
-                            <div className="flex h-full flex-col justify-between rounded p-2 shadow-xs">
-                              <div>
-                                <div className="text-xs font-bold text-gray-900 dark:text-white">
-                                  {matchedEntry.course_name}
-                                </div>
-                                <div className="truncate text-[10px] opacity-90">
-                                  {matchedEntry.course_code}
-                                </div>
-                              </div>
-                              <div className="mt-2 space-y-0.5 text-[10px] font-semibold opacity-90">
-                                <div>Sec: {matchedEntry.section}</div>
-                                <div>
-                                  Room: {matchedEntry.room_name || "TBA"}
-                                </div>
-                                <div className="font-mono">
-                                  {formatTime(matchedEntry.start_time)} -{" "}
-                                  {formatTime(matchedEntry.end_time)}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                        );
-                      }
-
-                      // Check for Break Period Entry
-                      const matchedBreak = expandedBreaks.find((bp) => {
-                        if (bp.day.toLowerCase() !== day.toLowerCase())
-                          return false;
-                        const breakStartStr = formatMinutesToTimeStr(
-                          bp.start_time,
-                        );
-                        return breakStartStr === timeSlot;
-                      });
-
-                      if (matchedBreak) {
-                        const durationMins =
-                          matchedBreak.end_time - matchedBreak.start_time;
-                        const rowSpan = Math.max(
-                          1,
-                          Math.round(durationMins / 30),
-                        );
-                        const breakStyle =
-                          "bg-amber-50 text-amber-950 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
-
-                        return (
-                          <td
-                            key={day}
-                            rowSpan={rowSpan}
-                            className={`border-r p-1.5 align-top ${breakStyle} border font-sans`}
-                          >
-                            <div className="flex h-full flex-col items-center justify-center rounded p-2 text-center shadow-xs">
-                              <FaCoffee className="mb-1 h-4 w-4 text-amber-600 dark:text-amber-400" />
-                              <div className="text-xs font-bold text-amber-900 dark:text-amber-100">
-                                {matchedBreak.break_description}
-                              </div>
-                              <div className="mt-1 font-mono text-[10px] text-amber-700 dark:text-amber-300">
-                                {formatTime(matchedBreak.start_time)} -{" "}
-                                {formatTime(matchedBreak.end_time)}
-                              </div>
-                            </div>
-                          </td>
-                        );
-                      }
-
-                      // Check if slot is covered by an ongoing class
-                      const isCoveredByClass = filteredTimetableEntries.some(
-                        (entry) => {
-                          if (entry.day.toLowerCase() !== day.toLowerCase())
-                            return false;
-                          return (
-                            slotTotalMins > entry.start_time &&
-                            slotTotalMins < entry.end_time
-                          );
-                        },
-                      );
-
-                      // Check if slot is covered by an ongoing break
-                      const isCoveredByBreak = expandedBreaks.some((bp) => {
-                        if (bp.day.toLowerCase() !== day.toLowerCase())
-                          return false;
-                        return (
-                          slotTotalMins > bp.start_time &&
-                          slotTotalMins < bp.end_time
-                        );
-                      });
-
-                      if (isCoveredByClass || isCoveredByBreak) {
-                        return null;
-                      }
-
-                      return (
-                        <td
-                          key={day}
-                          className="border-r p-2 text-center text-gray-300 dark:border-gray-800"
-                        ></td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+              <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                Room:
+              </span>
+              <Select
+                className="w-full sm:w-44"
+                value={selectedTimetableRoom}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "ALL" && selectedTimetableSection === "ALL") {
+                    return;
+                  }
+                  setSelectedTimetableRoom(val);
+                }}
+              >
+                <option value="ALL">-- All Rooms --</option>
+                {availableTimetableRooms.map((roomName) => (
+                  <option key={roomName} value={roomName}>
+                    {roomName}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
         </div>
-      ) : (
-        <Card className="overflow-x-auto">
-          <Table hoverable>
-            <TableHead>
-              <TableRow>
-                <TableHeadCell>Day</TableHeadCell>
-                <TableHeadCell>Time</TableHeadCell>
-                <TableHeadCell>Subject</TableHeadCell>
-                <TableHeadCell>Section</TableHeadCell>
-                <TableHeadCell>Room</TableHeadCell>
-                <TableHeadCell>Teacher</TableHeadCell>
-              </TableRow>
-            </TableHead>
-            <TableBody className="divide-y">
-              {filteredTimetableEntries.length > 0 ? (
-                filteredTimetableEntries.map((item, index) => (
-                  <TableRow
-                    key={index}
-                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                  >
-                    <TableCell className="font-semibold text-gray-900 dark:text-white">
-                      {item.day}
-                    </TableCell>
-                    <TableCell className="text-xs text-gray-500 dark:text-gray-400">
-                      {formatTime(item.start_time)} -{" "}
-                      {formatTime(item.end_time)}
-                    </TableCell>
-                    <TableCell className="font-medium text-gray-900 dark:text-white">
-                      <div>{item.course_name || "Unnamed Subject"}</div>
-                      <div className="font-mono text-xs text-cyan-600 dark:text-cyan-400">
-                        {item.course_code}
+
+        {/* --- Main Display Container --- */}
+        {displayFormat === "timetable" ? (
+          <div className="relative max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            {/* Wrapper with min-width for mobile scrolling */}
+            <div className="relative min-w-212.5">
+              {/* --- ABSOLUTE OVERLAY FOR BLOCKS --- */}
+              <div className="absolute inset-0 pointer-events-none">
+                {(() => {
+                  const DAY_COLUMNS = [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                  ];
+
+                  // Entries to render: filtered + ghosts
+                  const entriesToRender = entries.filter((entry) => {
+                    if (!entry.day || entry.start_time === undefined || entry.start_time <= 0) {
+                      return false;
+                    }
+                    const matchesSection =
+                      selectedTimetableSection === "ALL" ||
+                      entry.section === selectedTimetableSection;
+                    const matchesRoom =
+                      selectedTimetableRoom === "ALL" ||
+                      entry.room_name === selectedTimetableRoom;
+                    // Show if matches filter, or if it shares section/room with a matching entry
+                    if (matchesSection && matchesRoom) return true;
+                    // Show ghost entries from same section or room
+                    const hasSameSection = filteredTimetableEntries.some(
+                      (e) => e.section.toLowerCase() === entry.section.toLowerCase()
+                    );
+                    const hasSameRoom = filteredTimetableEntries.some(
+                      (e) => e.room_name?.toLowerCase() === entry.room_name?.toLowerCase()
+                    );
+                    return hasSameSection || hasSameRoom;
+                  });
+
+                  if (entriesToRender.length === 0) return null;
+
+                  return entriesToRender.map((entry) => {
+                    const dayLower = entry.day.toLowerCase();
+                    const dayIndex = DAY_COLUMNS.indexOf(dayLower);
+                    if (dayIndex === -1) return null;
+
+                    const durationMins =
+                      entry.end_time - entry.start_time || 60;
+                    const topOffsetPx =
+                      ((entry.start_time - GRID_START_MINS) / 30) * ROW_HEIGHT_PX;
+                    const heightPx = Math.max(
+                      ROW_HEIGHT_PX,
+                      (durationMins / 30) * ROW_HEIGHT_PX,
+                    );
+
+                    const isConflict = hasEntryConflict(entry);
+                    const isFatigue = checkFatigueRisk(entry);
+                    const isLabType = entry.type?.toLowerCase() === "laboratory";
+
+                    const matchesDirectFilter =
+                      (selectedTimetableSection === "ALL" || entry.section === selectedTimetableSection) &&
+                      (selectedTimetableRoom === "ALL" || entry.room_name === selectedTimetableRoom);
+                    const isGhost = !matchesDirectFilter;
+
+                    let blockStyle = "bg-blue-50/90 text-blue-950 border-blue-300 dark:bg-blue-950/80 dark:text-blue-200 dark:border-blue-700";
+                    let zIndexClass = "z-10";
+
+                    if (isConflict) {
+                      blockStyle = "bg-red-100 text-red-950 border-red-500 dark:bg-red-950/90 dark:text-red-100 dark:border-red-600 shadow-lg";
+                      zIndexClass = "z-20";
+                    } else if (isFatigue) {
+                      blockStyle = "bg-amber-100 text-amber-950 border-amber-400 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700";
+                    } else if (isLabType) {
+                      blockStyle = "bg-emerald-50/90 text-emerald-950 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700";
+                    }
+
+                    if (isGhost) {
+                      blockStyle = "bg-gray-100 text-gray-500 border-gray-300 opacity-50 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
+                      zIndexClass = "z-5";
+                    }
+
+                    return (
+                      <div
+                        key={entry.schedule_entry_id}
+                        className={`absolute flex flex-col overflow-hidden rounded border p-2 backdrop-blur-xs ${zIndexClass} ${blockStyle}`}
+                        style={{
+                          top: `${topOffsetPx + 45}px`,
+                          left: `calc(96px + (${dayIndex} * ((100% - 96px) / 6)))`,
+                          width: `calc((100% - 96px) / 6 - 6px)`,
+                          height: `${heightPx - 4}px`,
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="truncate text-xs font-bold">
+                            {entry.course_name}
+                          </div>
+                        </div>
+                        <div className="truncate text-[10px] font-medium opacity-90">
+                          {entry.course_code} {isGhost ? "(Other Section/Room)" : ""}
+                        </div>
+                        <div className="mt-auto space-y-0.5 text-[10px] font-semibold opacity-90">
+                          <div>Teacher: {entry.teacher_code || "Unassigned"}</div>
+                          <div>Sec: {entry.section}</div>
+                          <div>Room: {entry.room_name || "TBA"}</div>
+                          <div className="font-mono">
+                            {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                          </div>
+                        </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="inline-flex rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
-                        {item.section}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-gray-500 dark:text-gray-400">
-                      {item.room_name || "TBA"}
-                    </TableCell>
-                    <TableCell className="text-gray-500 dark:text-gray-400">
-                      {item.teacher_name || "Unassigned"}
+                    );
+                  });
+                })()}
+              </div>
+
+              {/* --- Background Skeleton Table --- */}
+              <table className="w-full border-collapse text-left text-xs pointer-events-auto" style={{ tableLayout: "fixed" }}>
+                <thead>
+                  <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                    <th className="sticky left-0 z-5 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+                      Time
+                    </th>
+                    {daysOfWeek.map((day) => (
+                      <th
+                        key={day}
+                        className="min-w-30 border-r border-b p-3 text-center font-bold"
+                      >
+                        <span className="sm:hidden">
+                          {day.substring(0, 3).toUpperCase()}
+                        </span>
+                        <span className="hidden sm:inline">
+                          {day.toUpperCase()}
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {timeSlotsGrid.map((timeSlot, tIdx) => {
+                    const slotTotalMins = timeStrToMinutes(timeSlot);
+
+                    return (
+                      <tr key={tIdx} className="h-11 border-b dark:border-gray-800">
+                        <td className="sticky left-0 z-5 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                          {timeSlot}
+                        </td>
+                        {daysOfWeek.map((day) => {
+                          const matchedBreak = expandedBreaks.find((bp) => {
+                            if (bp.day.toLowerCase() !== day.toLowerCase())
+                              return false;
+                            return (
+                              slotTotalMins >= bp.start_time &&
+                              slotTotalMins < bp.end_time
+                            );
+                          });
+
+                          return (
+                            <td
+                              key={day}
+                              className={`relative border-r p-1 text-center transition-colors ${
+                                matchedBreak
+                                  ? "border-violet-200 bg-violet-50/80 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
+                                  : "text-gray-300 dark:border-gray-800"
+                              }`}
+                            >
+                              {matchedBreak &&
+                                slotTotalMins === matchedBreak.start_time && (
+                                  <div
+                                    className="absolute inset-1.5 z-5 flex flex-col items-center justify-center overflow-hidden rounded bg-violet-100/90 p-1 text-center shadow-xs dark:bg-violet-900/80"
+                                    style={{
+                                      height: `${((matchedBreak.end_time - matchedBreak.start_time) / 30) * ROW_HEIGHT_PX - 12}px`,
+                                    }}
+                                  >
+                                    <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-violet-900 dark:text-violet-100">
+                                      <GiCoffeeCup />
+                                      <div>{matchedBreak.break_description}</div>
+                                    </div>
+                                    <div className="font-mono text-[9px] text-violet-700 dark:text-violet-300">
+                                      {formatTime(matchedBreak.start_time)} -{" "}
+                                      {formatTime(matchedBreak.end_time)}
+                                    </div>
+                                  </div>
+                                )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <Card className="overflow-x-auto">
+            <Table hoverable>
+              <TableHead>
+                <TableRow>
+                  <TableHeadCell>Day</TableHeadCell>
+                  <TableHeadCell>Time</TableHeadCell>
+                  <TableHeadCell>Subject</TableHeadCell>
+                  <TableHeadCell>Section</TableHeadCell>
+                  <TableHeadCell>Room</TableHeadCell>
+                  <TableHeadCell>Teacher</TableHeadCell>
+                </TableRow>
+              </TableHead>
+              <TableBody className="divide-y">
+                {filteredTimetableEntries.length > 0 ? (
+                  filteredTimetableEntries.map((item, index) => (
+                    <TableRow
+                      key={index}
+                      className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                    >
+                      <TableCell className="font-semibold text-gray-900 dark:text-white">
+                        {item.day}
+                      </TableCell>
+                      <TableCell className="text-xs text-gray-500 dark:text-gray-400">
+                        {formatTime(item.start_time)} -{" "}
+                        {formatTime(item.end_time)}
+                      </TableCell>
+                      <TableCell className="font-medium text-gray-900 dark:text-white">
+                        <div>{item.course_name || "Unnamed Subject"}</div>
+                        <div className="font-mono text-xs text-cyan-600 dark:text-cyan-400">
+                          {item.course_code}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="inline-flex rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+                          {item.section}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-gray-500 dark:text-gray-400">
+                        {item.room_name || "TBA"}
+                      </TableCell>
+                      <TableCell className="text-gray-500 dark:text-gray-400">
+                        {item.teacher_name || "Unassigned"}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                    <TableCell
+                      colSpan={6}
+                      className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                    >
+                      No entries found matching the selected filters.
                     </TableCell>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                  <TableCell
-                    colSpan={6}
-                    className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
-                  >
-                    No entries found matching the selected filters.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+      </div>
 
-      {/* Page Does Not Exist Modal */}
+      {/* Schedule Not Found Modal */}
       <Modal
         show={!scheduleExists && !isLoading}
         size="md"

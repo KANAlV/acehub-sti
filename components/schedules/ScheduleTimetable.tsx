@@ -47,6 +47,7 @@ import {
   getRoomsForGeneration,
   fetchRoomTypeList,
   fetchFacultyLoadConfig,
+  saveScheduleEntries,
   Configuration,
   TimetableEntryRecord,
   SubjectUnitsRecord,
@@ -143,6 +144,7 @@ export default function ScheduleTimetableClient({
 
   // --- Edit Mode & Sidepanel State --- //
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [conflictModalData, setConflictModalData] = useState<{
     show: boolean;
     title: string;
@@ -489,6 +491,32 @@ export default function ScheduleTimetableClient({
     setDraggedEntryId(null);
   };
 
+  const handleSaveChanges = async () => {
+    if (!scheduleID || hasAnyConflicts) return;
+    setIsSaving(true);
+    try {
+      const result = await saveScheduleEntries(scheduleID, changedSchedules);
+      if (result.success) {
+        setChangedSchedules(changedSchedules);
+        setOriginalEntries(changedSchedules);
+      } else {
+        setConflictModalData({
+          show: true,
+          title: "Save Failed",
+          message: result.error || "Failed to save schedule changes. Please try again.",
+        });
+      }
+    } catch (err) {
+      setConflictModalData({
+        show: true,
+        title: "Save Failed",
+        message: "An unexpected error occurred while saving. Please try again.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const formatMinutesToTimeStr = (totalMinutes: number): string => {
     const hours24 = Math.floor(totalMinutes / 60);
     const mins = totalMinutes % 60;
@@ -628,16 +656,22 @@ export default function ScheduleTimetableClient({
       (prev) =>
         prev.map((e) => {
           if (e.schedule_entry_id === targetEntryId) {
+            const newRoomName =
+              selectedTimetableRoom !== "ALL"
+                ? selectedTimetableRoom
+                : activeRoom || e.room_name;
+            // Look up the room_id from allRooms based on the new room name
+            const matchedRoom = allRooms.find(
+              (r) => r.room_name?.toLowerCase() === newRoomName?.toLowerCase(),
+            );
             return {
               ...e,
               day: targetDay,
               start_time: targetStartMins,
               end_time: targetStartMins + duration,
               originalDuration: duration,
-              room_name:
-                selectedTimetableRoom !== "ALL"
-                  ? selectedTimetableRoom
-                  : activeRoom || e.room_name,
+              room_name: newRoomName,
+              room_id: matchedRoom?.room_id || e.room_id,
             };
           }
           return e;
@@ -1264,10 +1298,16 @@ export default function ScheduleTimetableClient({
                 <Button
                   color={hasAnyConflicts ? "gray" : "green"}
                   size="xs"
-                  disabled={hasAnyConflicts}
+                  disabled={hasAnyConflicts || isSaving}
+                  onClick={handleSaveChanges}
                   className={`flex items-center gap-1 ${hasAnyConflicts ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
                 >
-                  <HiCheck className="h-3.5 w-3.5" /> Save Changes
+                  {isSaving ? (
+                    <Spinner size="xs" />
+                  ) : (
+                    <HiCheck className="h-3.5 w-3.5" />
+                  )}
+                  {isSaving ? "Saving..." : "Save Changes"}
                 </Button>
                 <Button
                   color="alternative"
@@ -1296,10 +1336,6 @@ export default function ScheduleTimetableClient({
               <span className="inline-block h-3 w-3 rounded border border-violet-300 bg-violet-100 dark:border-violet-700 dark:bg-violet-950"></span>
               <span>Break Periods</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800"></span>
-              <span>Other Section / Room</span>
-            </div>
             <Tooltip
               placement={"bottom"}
               style={`${isDarkMode ? "dark" : "light"}`}
@@ -1315,6 +1351,10 @@ export default function ScheduleTimetableClient({
             <div className="flex items-center gap-1.5">
               <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-700 dark:bg-red-950"></span>
               <span>Schedule Conflict</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800"></span>
+              <span>Other Section / Room</span>
             </div>
           </div>
 
