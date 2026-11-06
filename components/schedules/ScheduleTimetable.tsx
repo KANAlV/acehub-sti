@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -140,7 +146,7 @@ export default function ScheduleTimetableClient({
   const [conflictModalData, setConflictModalData] = useState<{
     show: boolean;
     title: string;
-    message: string;
+    message: ReactNode;
   }>({ show: false, title: "", message: "" });
 
   // --- Item-Level Action Menu Popup State (Dismissible by clicking outside) --- //
@@ -171,7 +177,7 @@ export default function ScheduleTimetableClient({
   const [confirmModalData, setConfirmModalData] = useState<{
     show: boolean;
     title: string;
-    message: string;
+    message: ReactNode;
     onConfirm: () => void;
   }>({ show: false, title: "", message: "", onConfirm: () => {} });
 
@@ -784,7 +790,13 @@ export default function ScheduleTimetableClient({
         setConfirmModalData({
           show: true,
           title: "Continuous Teaching Limit Exceeded!",
-          message: `Placing this block creates more than 4 hours of consecutive teaching on ${targetDay} without a 30-minute break. Do you wish to override and proceed?`,
+          message: (
+              <>
+                This creates a 4+ hour consecutive teaching on {targetDay} without a break.
+                <br />
+                Proceed anyway?
+              </>
+          ),
           onConfirm: () => {
             setConfirmModalData({
               show: false,
@@ -848,7 +860,13 @@ export default function ScheduleTimetableClient({
             setConfirmModalData({
               show: true,
               title: "Assign Lecture to Laboratory Room",
-              message: `Assigning a Lecture class to ${activeRoom} (${roomTypeName}, a laboratory). Do you want to continue?`,
+              message: (
+                <>
+                  Assigning a Lecture class to {activeRoom} ({roomTypeName}, a laboratory).
+                  <br />
+                  Do you want to continue?
+                </>
+              ),
               onConfirm: () => {
                 setConfirmModalData({
                   show: false,
@@ -871,6 +889,28 @@ export default function ScheduleTimetableClient({
       }
     }
 
+    // --- Room Overlap Check: Prevent dropping on top of another block in the same room ---
+    const roomOverlap = changedSchedules.find((e) => {
+      if (!e.day || e.start_time <= 0) return false;
+      if (e.day.toLowerCase() !== targetDay.toLowerCase()) return false;
+      // Skip the block being dragged itself
+      if (droppedData.scheduleEntryId && e.schedule_entry_id === droppedData.scheduleEntryId) {
+        return false;
+      }
+      // Only conflict if the same room is already occupied
+      if (!e.room_name || !activeRoom || e.room_name.toLowerCase() !== activeRoom.toLowerCase()) return false;
+      return targetStartMins < e.end_time && targetEndMins > e.start_time;
+    });
+
+    if (roomOverlap) {
+      setConflictModalData({
+        show: true,
+        title: `Schedule Conflict`,
+        message: `Another class [${roomOverlap.course_code}] (${roomOverlap.section}) is already scheduled in ${roomOverlap.room_name} during this time slot from ${formatTime(roomOverlap.start_time)} to ${formatTime(roomOverlap.end_time)}.`,
+      });
+      return;
+    }
+
     const breakConflict = expandedBreaks.find((bp) => {
       if (bp.day.toLowerCase() !== targetDay.toLowerCase()) return false;
       return targetStartMins < bp.end_time && targetEndMins > bp.start_time;
@@ -880,7 +920,13 @@ export default function ScheduleTimetableClient({
       setConfirmModalData({
         show: true,
         title: "Break Period Conflict Override",
-        message: `Attempting to place class during break period [${breakConflict.break_description}] (${formatTime(breakConflict.start_time)} - ${formatTime(breakConflict.end_time)}). Do you wish to override and assign over this break?`,
+        message: (
+          <>
+            Attempting to place class during break period [{breakConflict.break_description}] ({formatTime(breakConflict.start_time)} - {formatTime(breakConflict.end_time)}).
+            <br />
+            Do you wish to override and assign over this break?
+          </>
+        ),
         onConfirm: () => {
           setConfirmModalData({
             show: false,
@@ -1326,237 +1372,242 @@ export default function ScheduleTimetableClient({
         {/* --- Timetable Grid Container with Absolute Overlay Layer --- */}
         <div className="relative max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
 
+          {/* --- Background Skeleton Table --- */}
+          <div className="relative min-w-212.5">
+          
           {/* --- ABSOLUTE OVERLAY ENGINE FOR NORMAL BLOCKS, GHOSTS, & CONFLICTS --- */}
+          <div className="absolute inset-0 pointer-events-none">
           {(() => {
-            const DAY_COLUMNS = [
-              "monday",
-              "tuesday",
-              "wednesday",
-              "thursday",
-              "friday",
-              "saturday",
-            ];
+          const DAY_COLUMNS = [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+          ];
 
-            const entriesToRender = changedSchedules.filter((entry) => {
-              if (!entry.day || entry.start_time === undefined || entry.start_time <= 0) {
-                return false;
-              }
-              const matchesSection =
-                selectedTimetableSection === "ALL" ||
-                entry.section === selectedTimetableSection;
-              const matchesRoom =
-                selectedTimetableRoom === "ALL" ||
-                entry.room_name === selectedTimetableRoom;
+          const entriesToRender = changedSchedules.filter((entry) => {
+            if (!entry.day || entry.start_time === undefined || entry.start_time <= 0) {
+              return false;
+            }
+            const matchesSection =
+              selectedTimetableSection === "ALL" ||
+              entry.section === selectedTimetableSection;
+            const matchesRoom =
+              selectedTimetableRoom === "ALL" ||
+              entry.room_name === selectedTimetableRoom;
 
-              if (matchesSection && matchesRoom) return true;
+            if (matchesSection && matchesRoom) return true;
 
-              const draggedEntry = changedSchedules.find(
-                (e) => e.schedule_entry_id === draggedEntryId,
-              );
-              const isSameSection =
-                draggedEntry &&
-                entry.section.toLowerCase() === draggedEntry.section.toLowerCase();
-              const matchesActiveRoom =
-                selectedTimetableRoom !== "ALL" &&
-                entry.room_name?.toLowerCase() === selectedTimetableRoom.toLowerCase();
-              const isSameTeacher =
-                draggedEntry &&
-                draggedEntry.teacher_id &&
-                entry.teacher_id === draggedEntry.teacher_id;
+            const draggedEntry = changedSchedules.find(
+              (e) => e.schedule_entry_id === draggedEntryId,
+            );
+            const isSameSection =
+              draggedEntry &&
+              entry.section.toLowerCase() === draggedEntry.section.toLowerCase();
+            const matchesActiveRoom =
+              selectedTimetableRoom !== "ALL" &&
+              entry.room_name?.toLowerCase() === selectedTimetableRoom.toLowerCase();
+            const isSameTeacher =
+              draggedEntry &&
+              draggedEntry.teacher_id &&
+              entry.teacher_id === draggedEntry.teacher_id;
 
-              return isSameSection || matchesActiveRoom || isSameTeacher;
-            });
+            return isSameSection || matchesActiveRoom || isSameTeacher;
+          });
 
-            if (entriesToRender.length === 0) return null;
+          if (entriesToRender.length === 0) return null;
 
-            return entriesToRender.map((entry) => {
-              const dayLower = entry.day.toLowerCase();
-              const dayIndex = DAY_COLUMNS.indexOf(dayLower);
-              if (dayIndex === -1) return null;
+          return entriesToRender.map((entry) => {
+            const dayLower = entry.day.toLowerCase();
+            const dayIndex = DAY_COLUMNS.indexOf(dayLower);
+            if (dayIndex === -1) return null;
 
-              const durationMins =
-                entry.end_time - entry.start_time || entry.originalDuration || 60;
-              const topOffsetPx =
-                ((entry.start_time - GRID_START_MINS) / 30) * ROW_HEIGHT_PX;
-              const heightPx = Math.max(
-                ROW_HEIGHT_PX,
-                (durationMins / 30) * ROW_HEIGHT_PX,
-              );
+            const durationMins =
+              entry.end_time - entry.start_time || entry.originalDuration || 60;
+            const topOffsetPx =
+              ((entry.start_time - GRID_START_MINS) / 30) * ROW_HEIGHT_PX;
+            const heightPx = Math.max(
+              ROW_HEIGHT_PX,
+              (durationMins / 30) * ROW_HEIGHT_PX,
+            );
 
-              const isConflict = hasEntryConflict(entry);
-              const isFatigue = checkFatigueRisk(entry);
-              const isLabType = entry.type?.toLowerCase() === "laboratory";
-              const isBeingDragged = draggedEntryId === entry.schedule_entry_id;
+            const isConflict = hasEntryConflict(entry);
+            const isFatigue = checkFatigueRisk(entry);
+            const isLabType = entry.type?.toLowerCase() === "laboratory";
+            const isBeingDragged = draggedEntryId === entry.schedule_entry_id;
 
-              const matchesDirectFilter =
-                (selectedTimetableSection === "ALL" || entry.section === selectedTimetableSection) &&
-                (selectedTimetableRoom === "ALL" || entry.room_name === selectedTimetableRoom);
-              const isGhost = !matchesDirectFilter;
+            const matchesDirectFilter =
+              (selectedTimetableSection === "ALL" || entry.section === selectedTimetableSection) &&
+              (selectedTimetableRoom === "ALL" || entry.room_name === selectedTimetableRoom);
+            const isGhost = !matchesDirectFilter;
 
-              let blockStyle = "bg-blue-50/90 text-blue-950 border-blue-300 dark:bg-blue-950/80 dark:text-blue-200 dark:border-blue-700";
-              let zIndexClass = "z-10";
+            let blockStyle = "bg-blue-50/90 text-blue-950 border-blue-300 dark:bg-blue-950/80 dark:text-blue-200 dark:border-blue-700";
+            let zIndexClass = "z-10";
 
-              if (isConflict) {
-                blockStyle = "bg-red-100 text-red-950 border-red-500 dark:bg-red-950/90 dark:text-red-100 dark:border-red-600 shadow-lg";
-                zIndexClass = "z-20";
-              } else if (isFatigue) {
-                blockStyle = "bg-amber-100 text-amber-950 border-amber-400 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700";
-              } else if (isLabType) {
-                blockStyle = "bg-emerald-50/90 text-emerald-950 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700";
-              }
+            if (isConflict) {
+              blockStyle = "bg-red-100 text-red-950 border-red-500 dark:bg-red-950/90 dark:text-red-100 dark:border-red-600 shadow-lg";
+              zIndexClass = "z-20";
+            } else if (isFatigue) {
+              blockStyle = "bg-amber-100 text-amber-950 border-amber-400 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700";
+            } else if (isLabType) {
+              blockStyle = "bg-emerald-50/90 text-emerald-950 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700";
+            }
 
-              if (isGhost) {
-                blockStyle = "bg-gray-100 text-gray-500 border-gray-300 opacity-50 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
-                zIndexClass = "z-5";
-              }
+            if (isGhost) {
+              blockStyle = "bg-gray-100 text-gray-500 border-gray-300 opacity-50 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
+              zIndexClass = "z-5";
+            }
 
-              return (
-                <div
-                  key={entry.schedule_entry_id}
-                  draggable={isEditMode && !isGhost}
-                  onDragStart={(e) => {
-                    if (isGhost) return;
-                    hasDroppedRef.current = false;
-                    setDraggedEntryId(entry.schedule_entry_id);
-                    draggedDurationRef.current = durationMins;
-                    setDragSourceInfo({
-                      day: entry.day,
-                      start_time: entry.start_time,
+            return (
+              <div
+                key={entry.schedule_entry_id}
+                data-entry-id={entry.schedule_entry_id}
+                draggable={isEditMode && !isGhost}
+                onDragStart={(e) => {
+                  if (isGhost) return;
+                  hasDroppedRef.current = false;
+                  setDraggedEntryId(entry.schedule_entry_id);
+                  draggedDurationRef.current = durationMins;
+                  setDragSourceInfo({
+                    day: entry.day,
+                    start_time: entry.start_time,
+                    duration: durationMins,
+                    course_code: entry.course_code,
+                  });
+                  if (entry.room_name) {
+                    setSelectedTimetableRoom(entry.room_name);
+                  }
+
+                  // --- Original Position Marker Preview Image Setup ---
+                  const dragPreview = document.createElement("div");
+                  dragPreview.style.position = "absolute";
+                  dragPreview.style.top = "-9999px";
+                  dragPreview.style.left = "-9999px";
+                  dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
+                  dragPreview.style.height = `${heightPx - 12}px`;
+                  dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans bg-cyan-100 text-cyan-950 border border-cyan-300 dark:bg-cyan-950 dark:text-cyan-100 dark:border-cyan-700`;
+                  dragPreview.innerHTML = `
+                    <div>
+                      <div class="flex items-center justify-between">
+                        <div class="text-xs font-bold truncate">${entry.course_name}</div>
+                        <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase bg-cyan-200 text-cyan-900">${entry.type || "Lecture"}</span>
+                      </div>
+                      <div class="text-[10px] font-medium opacity-80 truncate">${entry.course_code}</div>
+                    </div>
+                    <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
+                      <div>Sec: ${entry.section}</div>
+                      <div>Room: ${entry.room_name || "TBA"}</div>
+                      <div class="font-mono">${formatTime(entry.start_time)} - ${formatTime(entry.end_time)}</div>
+                    </div>
+                  `;
+                  document.body.appendChild(dragPreview);
+                  if (e.dataTransfer.setDragImage) {
+                    e.dataTransfer.setDragImage(dragPreview, 20, 20);
+                  }
+                  setTimeout(() => {
+                    document.body.removeChild(dragPreview);
+                  }, 0);
+
+                  e.dataTransfer.setData(
+                    "text/plain",
+                    JSON.stringify({
+                      type: "existing",
+                      scheduleEntryId: entry.schedule_entry_id,
+                      section: entry.section,
+                      roomName: entry.room_name,
+                      subjectId: entry.subject_id,
+                      roomId: entry.room_id,
+                      teacherId: entry.teacher_id,
+                      entryType: entry.type,
                       duration: durationMins,
-                      course_code: entry.course_code,
-                    });
-                    if (entry.room_name) {
-                      setSelectedTimetableRoom(entry.room_name);
-                    }
-
-                    // --- Original Position Marker Preview Image Setup ---
-                    const dragPreview = document.createElement("div");
-                    dragPreview.style.position = "absolute";
-                    dragPreview.style.top = "-9999px";
-                    dragPreview.style.left = "-9999px";
-                    dragPreview.style.width = `${e.currentTarget.clientWidth}px`;
-                    dragPreview.style.height = `${heightPx - 12}px`;
-                    dragPreview.className = `flex flex-col gap-1 rounded p-2 shadow-lg font-sans bg-cyan-100 text-cyan-950 border border-cyan-300 dark:bg-cyan-950 dark:text-cyan-100 dark:border-cyan-700`;
-                    dragPreview.innerHTML = `
-                      <div>
-                        <div class="flex items-center justify-between">
-                          <div class="text-xs font-bold truncate">${entry.course_name}</div>
-                          <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase bg-cyan-200 text-cyan-900">${entry.type || "Lecture"}</span>
-                        </div>
-                        <div class="text-[10px] font-medium opacity-80 truncate">${entry.course_code}</div>
-                      </div>
-                      <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
-                        <div>Sec: ${entry.section}</div>
-                        <div>Room: ${entry.room_name || "TBA"}</div>
-                        <div class="font-mono">${formatTime(entry.start_time)} - ${formatTime(entry.end_time)}</div>
-                      </div>
-                    `;
-                    document.body.appendChild(dragPreview);
-                    if (e.dataTransfer.setDragImage) {
-                      e.dataTransfer.setDragImage(dragPreview, 20, 20);
-                    }
-                    setTimeout(() => {
-                      document.body.removeChild(dragPreview);
-                    }, 0);
-
-                    e.dataTransfer.setData(
-                      "text/plain",
-                      JSON.stringify({
-                        type: "existing",
-                        scheduleEntryId: entry.schedule_entry_id,
-                        section: entry.section,
-                        roomName: entry.room_name,
-                        subjectId: entry.subject_id,
-                        roomId: entry.room_id,
-                        teacherId: entry.teacher_id,
-                        entryType: entry.type,
-                        duration: durationMins,
-                        originalDay: entry.day,
-                        originalStartTime: entry.start_time,
-                        originalEndTime: entry.end_time,
-                      } as DragPayload),
-                    );
-                  }}
-                  onDragEnd={() => {
-                    setDraggedEntryId(null);
-                    setDragSourceInfo(null);
-                    setDragOverCell(null);
-                  }}
-                  className={`absolute flex flex-col overflow-hidden rounded border p-2 backdrop-blur-xs transition-all ${zIndexClass} ${
-                    isBeingDragged ? "opacity-30 border-dashed border-cyan-400 bg-cyan-50/50" : ""
-                  } ${blockStyle} ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
-                  style={{
-                    top: `${topOffsetPx + 45}px`,
-                    left: `calc(96px + (${dayIndex} * ((100% - 96px) / 6)))`,
-                    width: `calc((100% - 96px) / 6 - 6px)`,
-                    height: `${heightPx - 4}px`,
-                    pointerEvents: "auto",
-                  }}
-                >
-                  {/* --- Original Position Marker Banner when Dragging --- */}
-                  {isBeingDragged && (
-                    <div className="absolute inset-0 z-35 flex items-center justify-center gap-1 bg-cyan-100/90 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/90 dark:text-cyan-200">
-                      <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
-                      <span>Original Position (Drop here)</span>
-                    </div>
-                  )}
-
-                  {isEditMode && !isGhost && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUnassignEntry(entry.schedule_entry_id);
-                      }}
-                      title="Unassign / Return to Sidebar"
-                      className="absolute top-1 right-1 z-30 rounded-full bg-gray-200/80 p-0.5 text-gray-700 hover:bg-red-200 hover:text-red-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-red-900"
-                    >
-                      <HiX className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  <div className="flex items-center justify-between pr-4">
-                    <div className="truncate text-xs font-bold">
-                      {entry.course_name}
-                    </div>
+                      originalDay: entry.day,
+                      originalStartTime: entry.start_time,
+                      originalEndTime: entry.end_time,
+                    } as DragPayload),
+                  );
+                }}
+                onDragEnd={() => {
+                  setDraggedEntryId(null);
+                  setDragSourceInfo(null);
+                  setDragOverCell(null);
+                }}
+                className={`absolute flex flex-col overflow-hidden rounded border p-2 backdrop-blur-xs transition-all ${zIndexClass} ${
+                  isBeingDragged ? "opacity-30 border-dashed border-cyan-400 bg-cyan-50/50" : ""
+                } ${blockStyle} ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
+                style={{
+                  top: `${topOffsetPx + 45}px`,
+                  left: `calc(96px + (${dayIndex} * ((100% - 96px) / 6)))`,
+                  width: `calc((100% - 96px) / 6 - 6px)`,
+                  height: `${heightPx - 4}px`,
+                  pointerEvents: isBeingDragged ? "none" : "auto",
+                }}
+              >
+                {/* --- Original Position Marker Banner when Dragging --- */}
+                {isBeingDragged && (
+                  <div className="absolute inset-0 z-35 flex items-center justify-center gap-1 bg-cyan-100/90 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/90 dark:text-cyan-200 pointer-events-none">
+                    <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
+                    <span>Original Position (Drop here)</span>
                   </div>
-                  <div className="truncate text-[10px] font-medium opacity-90">
-                    {entry.course_code} {isGhost ? "(Other Section/Room)" : ""}
-                  </div>
-                  <div className="mt-auto space-y-0.5 text-[10px] font-semibold opacity-90">
-                    <div>Teacher: {entry.teacher_code || "Unassigned"}</div>
-                    <div>Sec: {entry.section}</div>
-                    <div>Room: {entry.room_name || "TBA"}</div>
-                    <div className="font-mono">
-                      {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
-                    </div>
+                )}
+
+                {isEditMode && !isGhost && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUnassignEntry(entry.schedule_entry_id);
+                    }}
+                    title="Unassign / Return to Sidebar"
+                    className="absolute top-1 right-1 z-30 rounded-full bg-gray-200/80 p-0.5 text-gray-700 hover:bg-red-200 hover:text-red-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-red-900"
+                  >
+                    <HiX className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <div className="flex items-center justify-between pr-4">
+                  <div className="truncate text-xs font-bold">
+                    {entry.course_name}
                   </div>
                 </div>
-              );
-            });
-          })()}
+                <div className="truncate text-[10px] font-medium opacity-90">
+                  {entry.course_code} {isGhost ? "(Other Section/Room)" : ""}
+                </div>
+                <div className="mt-auto space-y-0.5 text-[10px] font-semibold opacity-90">
+                  <div>Teacher: {entry.teacher_code || "Unassigned"}</div>
+                  <div>Sec: {entry.section}</div>
+                  <div>Room: {entry.room_name || "TBA"}</div>
+                  <div className="font-mono">
+                    {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                  </div>
+                </div>
+              </div>
+            );
+          });
+        })()}
+          </div>
 
-          {/* --- Background Skeleton Table --- */}
-          <table className="w-full min-w-212.5 border-collapse text-left text-xs pointer-events-auto">
-            <thead>
-            <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-              <th className="sticky left-0 z-5 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
-                Time
+          <table className="w-full border-collapse text-left text-xs pointer-events-auto" style={{ tableLayout: "fixed" }}>
+          <thead>
+          <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <th className="sticky left-0 z-5 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+              Time
+            </th>
+            {daysOfWeek.map((day) => (
+              <th
+                key={day}
+                className="min-w-30 border-r border-b p-3 text-center font-bold"
+              >
+                <span className="sm:hidden">
+                  {day.substring(0, 3).toUpperCase()}
+                </span>
+                <span className="hidden sm:inline">
+                  {day.toUpperCase()}
+                </span>
               </th>
-              {daysOfWeek.map((day) => (
-                <th
-                  key={day}
-                  className="min-w-30 border-r border-b p-3 text-center font-bold"
-                >
-                    <span className="sm:hidden">
-                      {day.substring(0, 3).toUpperCase()}
-                    </span>
-                  <span className="hidden sm:inline">
-                      {day.toUpperCase()}
-                    </span>
-                </th>
-              ))}
-            </tr>
-            </thead>
+            ))}
+          </tr>
+          </thead>
             <tbody>
             {timeSlotsGrid.map((timeSlot, tIdx) => {
               const slotTotalMins = timeStrToMinutes(timeSlot);
@@ -1670,6 +1721,7 @@ export default function ScheduleTimetableClient({
             })}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
@@ -1689,9 +1741,11 @@ export default function ScheduleTimetableClient({
           </div>
 
           {selectedTimetableRoom == "ALL" ? (
-            <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200">
-              <HiExclamationTriangle className="h-4 w-4 shrink-0" />
-              <span>Select a room to enable dragging</span>
+            <div className="mb-3 w-full rounded-md border border-amber-300 bg-amber-100 p-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+              <div className="flex items-center gap-2">
+                <HiExclamationTriangle className="h-4 w-4 shrink-0" />
+                <span>Select a room to enable dragging</span>
+              </div>
             </div>
           ) : (
             <p className="mb-3 text-[11px] text-gray-500 dark:text-gray-400">
@@ -1711,6 +1765,12 @@ export default function ScheduleTimetableClient({
                   !e.day || e.start_time === undefined || e.start_time <= 0,
               ).length;
 
+              const conflictEntries = sectionEntries.filter((e) => hasEntryConflict(e));
+              const conflictCount = conflictEntries.length;
+
+              const fatigueEntries = sectionEntries.filter((e) => checkFatigueRisk(e));
+              const fatigueCount = fatigueEntries.length;
+
               return (
                 <AccordionPanel key={sIdx}>
                   <AccordionTitle className="rounded-lg bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-800 dark:bg-gray-800 dark:text-gray-200">
@@ -1723,6 +1783,16 @@ export default function ScheduleTimetableClient({
                           <Badge color="warning" size="xs">
                             {unassignedCount} Needs Room
                           </Badge>
+                        )}
+                        {conflictCount > 0 && (
+                          <Badge color="failure" size="xs">
+                            {conflictCount} Conflict{conflictCount > 1 ? "s" : ""}
+                          </Badge>
+                        )}
+                        {fatigueCount > 0 && (
+                          <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium border border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                            {fatigueCount} Fatigue Risk{fatigueCount > 1 ? "s" : ""}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -1747,15 +1817,20 @@ export default function ScheduleTimetableClient({
                             subj.type?.toLowerCase() === "laboratory";
                           const isMenuOpen =
                             activeMenuEntryId === scheduleEntryId;
+                          const hasConflict = hasEntryConflict(subj);
+                          const hasFatigue = checkFatigueRisk(subj);
 
                           return (
                             <div
                               key={subIdx}
                               draggable={
-                                !isPlaced && selectedTimetableRoom !== "ALL"
+                                selectedTimetableRoom !== "ALL" && !isPlaced
                               }
                               onDragStart={(e) => {
-                                if (selectedTimetableRoom === "ALL") return;
+                                if (selectedTimetableRoom === "ALL" || isPlaced) {
+                                  e.preventDefault();
+                                  return;
+                                }
                                 draggedDurationRef.current = itemDuration;
                                 setDraggedEntryId(scheduleEntryId);
                                 e.dataTransfer.setData(
@@ -1780,23 +1855,37 @@ export default function ScheduleTimetableClient({
                                 setDragSourceInfo(null);
                                 setDragOverCell(null);
                               }}
+                              onClick={() => {
+                                setSelectedTimetableSection(secCode);
+                                if (subj.room_name) {
+                                  setSelectedTimetableRoom(subj.room_name);
+                                }
+                                const blockElement = document.querySelector(`[data-entry-id="${scheduleEntryId}"]`);
+                                if (blockElement) {
+                                  blockElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                                }
+                              }}
                               className={`relative rounded border p-2 text-xs transition-all ${
                                 selectedTimetableRoom === "ALL"
-                                  ? "cursor-not-allowed border-gray-200 bg-gray-100/60 text-gray-400 opacity-75 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500"
-                                  : isPlaced
-                                    ? "cursor-not-allowed border-gray-200 bg-gray-100/60 text-gray-400 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500"
-                                    : `cursor-grab ${isLabType ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/20" : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/20"} text-gray-800 dark:text-gray-200`
+                                  ? "cursor-pointer border-gray-200 bg-gray-100/60 text-gray-400 hover:bg-gray-200/60 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500 dark:hover:bg-gray-700/60"
+                                  : hasConflict
+                                    ? "cursor-pointer border-red-200/50 bg-red-50/30 hover:bg-red-100/50 dark:border-red-800/50 dark:bg-red-950/10 text-gray-800 dark:text-gray-200"
+                                    : hasFatigue
+                                      ? "cursor-pointer border-amber-200/50 bg-amber-50/30 hover:bg-amber-100/50 dark:border-amber-800/50 dark:bg-amber-950/10 text-gray-800 dark:text-gray-200"
+                                      : isPlaced
+                                        ? "cursor-pointer border-gray-200 bg-gray-100/60 text-gray-400 hover:bg-gray-200/60 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500 dark:hover:bg-gray-700/60"
+                                        : `cursor-grab ${isLabType ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/20" : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/20"} text-gray-800 dark:text-gray-200`
                               }`}
                             >
                               <div className="flex items-center justify-between">
                                 <div
-                                  className={`${isPlaced && "opacity-60"} font-bold`}
+                                  className={`font-bold`}
                                 >
                                   {subj.course_code}
                                 </div>
                                 <div className="relative flex items-center gap-1">
                                   <span
-                                    className={`${isPlaced && "opacity-60"} rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isLabType ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
+                                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${isLabType ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"}`}
                                   >
                                     {subj.type || "Lecture"}
                                   </span>
@@ -1856,18 +1945,18 @@ export default function ScheduleTimetableClient({
                                 </div>
                               </div>
                               <div
-                                className={`${isPlaced && "opacity-60"} truncate text-[10px]`}
+                                className={`truncate text-[10px]`}
                               >
                                 {subj.course_name}
                               </div>
                               <div
-                                className={`${isPlaced && "opacity-60"} mt-0.5 text-[9px] font-medium text-gray-600 dark:text-gray-400`}
+                                className={`mt-0.5 text-[9px] font-medium text-gray-600 dark:text-gray-400`}
                               >
                                 Teacher: {subj.teacher_code || "Unassigned"}
                               </div>
                               <div className="mt-1 flex items-center justify-between text-[9px]">
                                 <span
-                                  className={`${isPlaced && "opacity-60"} font-mono text-gray-500`}
+                                  className={`font-mono text-gray-500`}
                                 >
                                   {itemDuration / 60} hr
                                   {itemDuration > 60 ? "s" : ""}{" "}
