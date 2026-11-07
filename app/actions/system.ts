@@ -1537,6 +1537,58 @@ export async function searchSubjectsWithCurriculumFilter(
   }
 }
 
+/* READ - FETCH SUBJECT DISTINCT */
+export interface SubjectRecord {
+  subject_id: string;
+  curriculum: string | null;
+  program_code: string | null;
+  course_code: string;
+  course_name: string;
+  lecture_units: number;
+  lab_units: number;
+  lab_type: string | null;
+  lab_type_name: string | null;
+  year_term: string | null;
+}
+
+export async function fetchSubjectsDistinct(
+  search: string | null = null,
+  programCode: string | null = null,
+  curriculum: string | null = null,
+  sortBy: string = "course_code",
+  sortDir: string = "ASC",
+  limit: number = 10,
+  page: number = 1,
+): Promise<{ success: boolean; data: SubjectRecord[]; error?: string }> {
+  try {
+    const offset = limit > 0 ? (page - 1) * limit : 0;
+
+    const data = await sql<SubjectRecord[]>`
+    SELECT * FROM subjects_read_distinct(
+      ${search || null},
+    ${programCode || null},
+    ${curriculum || null},
+    ${sortBy},
+    ${sortDir},
+    ${limit},
+    ${offset}
+  );
+    `;
+
+    return {
+      success: true,
+      data: ((data as unknown) as SubjectRecord[]) || [],
+    };
+  } catch (error) {
+    console.error("Failed to fetch subjects:", error);
+    return {
+      success: false,
+      data: [],
+      error: (error as Error).message || "Failed to fetch subjects.",
+    };
+  }
+}
+
 /* READ - FETCH SUBJECTS */
 export async function fetchSubjects(
   search: string | null = null,
@@ -1575,6 +1627,7 @@ export async function fetchSubjects(
     };
   }
 }
+
 
 /* READ DISTINCT - FETCH SUBJECTS */
 export async function fetchDistinctCourseNames(

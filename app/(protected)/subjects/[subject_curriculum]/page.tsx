@@ -31,6 +31,8 @@ import {
     Toast,
     ToastToggle,
     Progress,
+    ToggleSwitch,
+    FileInput,
 } from "flowbite-react";
 import {
     HiSearch,
@@ -40,8 +42,17 @@ import {
     HiOutlineTrash,
     HiArrowLeft,
 } from "react-icons/hi";
-import { FaPlus, FaSortUp, FaSortDown } from "react-icons/fa";
+import {
+    FaPlus,
+    FaSortUp,
+    FaSortDown,
+    FaFileExcel,
+    FaFileImport,
+    FaFileExport,
+    FaDownload,
+} from "react-icons/fa";
 import { useMsal } from "@azure/msal-react";
+import ExcelJS from "exceljs";
 
 import {
     fetchSubjects,
@@ -51,8 +62,11 @@ import {
     deleteSubject,
     fetchPrograms,
     fetchRoomTypeList,
+    fetchSubjectsDistinct,
+    fetchSubjectsAQClusters,
     SubjectRecord,
     SubjectInput,
+    SubjectAQClusterRecord,
 } from "@/app/actions/system";
 
 export interface ProgramRecord {
@@ -66,33 +80,40 @@ export interface RoomType {
     value: string;
 }
 
+const REQUIRED_HEADERS = [
+    "Curriculum",
+    "Year Level",
+    "Program",
+    "Course Code",
+    "Course Name",
+    "Lecture",
+    "Laboratory",
+    "Laboratory Type",
+];
+
 export default function CurriculumSubjectsPage() {
     const router = useRouter();
     const params = useParams();
 
-    // Directly read and decode the dynamic parameter from the URL path
-    const curriculumVersion = decodeURIComponent(
-        (params?.subject_curriculum as string) || ""
+    const curriculumVersion = useMemo(
+        () => decodeURIComponent((params?.subject_curriculum as string) || ""),
+        [params?.subject_curriculum]
     );
 
-    // --- MSAL Auth State for Actor ---
     const { instance, accounts } = useMsal();
-    const activeAccount = instance.getActiveAccount() || accounts[0];
+    const activeAccount = useMemo(() => instance.getActiveAccount() || accounts[0], [instance, accounts]);
     const actor = activeAccount?.username || "system";
 
-    // --- Data State ---
     const [subjects, setSubjects] = useState<SubjectRecord[]>([]);
     const [subjectsCount, setSubjectsCount] = useState<number>(0);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [isPending, startTransition] = useTransition();
 
-    // --- External Dropdown Data ---
     const [programsList, setProgramsList] = useState<ProgramRecord[]>([]);
     const [isLoadingPrograms, setIsLoadingPrograms] = useState<boolean>(false);
     const [roomTypeList, setRoomTypeList] = useState<RoomType[]>([]);
     const [isLoadingRoomTypes, setIsLoadingRoomTypes] = useState<boolean>(false);
 
-    // --- Search, Filter & Pagination State ---
     const [searchTerm, setSearchTerm] = useState<string>("");
     const [debouncedSearch, setDebouncedSearch] = useState<string>("");
     const [selectedProgramFilter, setSelectedProgramFilter] = useState<string>("ALL");
@@ -103,16 +124,32 @@ export default function CurriculumSubjectsPage() {
     const [sortBy, setSortBy] = useState<string>("course_code");
     const [sortDir, setSortDir] = useState<"ASC" | "DESC">("ASC");
 
-    // --- Modal States ---
+    // Modal States
     const [openAddModal, setOpenAddModal] = useState<boolean>(false);
     const [openEditModal, setOpenEditModal] = useState<boolean>(false);
     const [openDeleteModal, setOpenDeleteModal] = useState<boolean>(false);
     const [openAddConfirmation, setOpenAddConfirmation] = useState(false);
+    const [openExcelModal, setOpenExcelModal] = useState<boolean>(false);
 
-    // --- Target Record ---
+    // Excel Operations State
+    const [activeExcelTab, setActiveExcelTab] = useState<"import" | "export" | "template">("import");
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [isDragging, setIsDragging] = useState<boolean>(false);
+    const [isImporting, setIsImporting] = useState<boolean>(false);
+    const [importLogs, setImportLogs] = useState<string[]>([]);
+    const [formatError, setFormatError] = useState<string>("");
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const [isAddingExisting, setIsAddingExisting] = useState<boolean>(false);
+    const [existingSubjectSearch, setExistingSubjectSearch] = useState<string>("");
+    const [existingSubjectSearchResults, setExistingSubjectSearchResults] = useState<SubjectRecord[]>([]);
+    const [isSearchingExisting, setIsSearchingExisting] = useState<boolean>(false);
+    const [selectedExistingSubject, setSelectedExistingSubject] = useState<SubjectRecord | null>(null);
+    const [subjectAQClusters, setSubjectAQClusters] = useState<SubjectAQClusterRecord[]>([]);
+    const [isAQLoading, setIsAQLoading] = useState<boolean>(false);
+
     const [selectedSubject, setSelectedSubject] = useState<SubjectRecord | null>(null);
 
-    // --- Form State ---
     const initialFormState: SubjectInput = useMemo(() => ({
         curriculum: curriculumVersion,
         program_code: "",
@@ -127,7 +164,6 @@ export default function CurriculumSubjectsPage() {
     const [formData, setFormData] = useState<SubjectInput>(initialFormState);
     const [selectedYear, setSelectedYear] = useState<string>("");
 
-    // --- Validation State ---
     const [programError, setProgramError] = useState<string>("");
     const [courseCodeError, setCourseCodeError] = useState<string>("");
     const [courseNameError, setCourseNameError] = useState<string>("");
@@ -135,7 +171,6 @@ export default function CurriculumSubjectsPage() {
     const [labUnitsError, setLabUnitsError] = useState<string>("");
     const [yearLevelError, setYearLevelError] = useState<string>("");
 
-    // --- Toast State & Timer Ref ---
     const [showToast, setShowToast] = useState<boolean>(false);
     const [toastMessage, setToastMessage] = useState<string>("");
     const [toastType, setToastType] = useState<"success" | "warning" | "error">("success");
@@ -143,20 +178,20 @@ export default function CurriculumSubjectsPage() {
     const [showToastTimer, setShowToastTimer] = useState<boolean>(false);
     const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    const clearToastTimer = () => {
+    const clearToastTimer = useCallback(() => {
         if (toastTimerRef.current) {
             clearInterval(toastTimerRef.current);
             toastTimerRef.current = null;
         }
-    };
+    }, []);
 
-    const closeToast = () => {
+    const closeToast = useCallback(() => {
         clearToastTimer();
         setShowToast(false);
         setShowToastTimer(false);
-    };
+    }, [clearToastTimer]);
 
-    const triggerToast = (msg: string, type: "success" | "warning" | "error" = "success") => {
+    const triggerToast = useCallback((msg: string, type: "success" | "warning" | "error" = "success") => {
         clearToastTimer();
         setToastMessage(msg);
         setToastType(type);
@@ -179,13 +214,24 @@ export default function CurriculumSubjectsPage() {
                 return prev + step;
             });
         }, intervalTime);
-    };
+    }, [clearToastTimer]);
 
     useEffect(() => {
         return () => clearToastTimer();
-    }, []);
+    }, [clearToastTimer]);
 
-    // Parallelized mount data loading
+    const downloadWorkbook = (buffer: ArrayBuffer, filename: string) => {
+        const blob = new Blob([buffer], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        window.URL.revokeObjectURL(url);
+    };
+
     useEffect(() => {
         const loadInitialData = async () => {
             setIsLoadingRoomTypes(true);
@@ -217,13 +263,13 @@ export default function CurriculumSubjectsPage() {
         loadInitialData();
     }, []);
 
-    const getEducationLevel = (year: string): "shs" | "tertiary" | "none" => {
+    const getEducationLevel = useCallback((year: string): "shs" | "tertiary" | "none" => {
         if (["11", "12", "Grade 11", "Grade 12"].includes(year)) return "shs";
         if (["1st Year", "2nd Year", "3rd Year", "4th Year"].includes(year)) return "tertiary";
         return "none";
-    };
+    }, []);
 
-    const currentEduLevel = getEducationLevel(selectedYear);
+    const currentEduLevel = useMemo(() => getEducationLevel(selectedYear), [selectedYear, getEducationLevel]);
 
     useEffect(() => {
         if (currentEduLevel === "none") {
@@ -259,7 +305,6 @@ export default function CurriculumSubjectsPage() {
         setFormData((prev) => ({ ...prev, year_term: combined }));
     }, [selectedYear]);
 
-    // Fast 150ms search debounce
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedSearch(searchTerm);
@@ -267,6 +312,70 @@ export default function CurriculumSubjectsPage() {
         }, 150);
         return () => clearTimeout(handler);
     }, [searchTerm]);
+
+    useEffect(() => {
+        const handler = setTimeout(async () => {
+            if (!isAddingExisting || !existingSubjectSearch || existingSubjectSearch.trim().length < 2) {
+                setExistingSubjectSearchResults([]);
+                return;
+            }
+
+            setIsSearchingExisting(true);
+            try {
+                const res = await fetchSubjectsDistinct(existingSubjectSearch, null, null);
+                if (res.success && res.data) {
+                    setExistingSubjectSearchResults(res.data);
+                } else {
+                    setExistingSubjectSearchResults([]);
+                }
+            } catch (err) {
+                console.error("Failed to search existing subjects:", err);
+                setExistingSubjectSearchResults([]);
+            } finally {
+                setIsSearchingExisting(false);
+            }
+        }, 300);
+
+        return () => clearTimeout(handler);
+    }, [existingSubjectSearch, isAddingExisting]);
+
+    const handleSelectExistingSubject = useCallback(async (subj: SubjectRecord) => {
+        setSelectedExistingSubject(subj);
+        setExistingSubjectSearch("");
+        setExistingSubjectSearchResults([]);
+
+        const existingYearTerm = subj.year_term || "";
+        let cleanYear = existingYearTerm.startsWith("SHS ") ? existingYearTerm.replace("SHS ", "") : existingYearTerm;
+        if (cleanYear === "Grade 11") cleanYear = "11";
+        if (cleanYear === "Grade 12") cleanYear = "12";
+        setSelectedYear(cleanYear);
+
+        setFormData({
+            curriculum: curriculumVersion,
+            program_code: subj.program_code ?? "",
+            course_code: subj.course_code || "",
+            course_name: subj.course_name || "",
+            lecture_units: subj.lecture_units ?? 3,
+            lab_units: subj.lab_units ?? 0,
+            lab_type: subj.lab_type ?? null,
+            year_term: subj.year_term ?? null,
+        });
+
+        setIsAQLoading(true);
+        try {
+            const res = await fetchSubjectsAQClusters(subj.course_name, subj.program_code);
+            if (res.success && res.data) {
+                setSubjectAQClusters(res.data);
+            } else {
+                setSubjectAQClusters([]);
+            }
+        } catch (err) {
+            console.error("Failed to fetch subject AQ clusters:", err);
+            setSubjectAQClusters([]);
+        } finally {
+            setIsAQLoading(false);
+        }
+    }, [curriculumVersion]);
 
     const loadData = useCallback(() => {
         if (!curriculumVersion) return;
@@ -301,19 +410,19 @@ export default function CurriculumSubjectsPage() {
         loadData();
     }, [loadData]);
 
-    const handleSorting = (column: string) => {
+    const handleSorting = useCallback((column: string) => {
         startTransition(() => {
-            if (sortBy === column) {
-                setSortDir((prev) => (prev === "ASC" ? "DESC" : "ASC"));
-            } else {
-                setSortBy(column);
-                setSortDir("ASC");
-            }
+            setSortBy((prevSort) => {
+                if (prevSort === column) {
+                    setSortDir((prevDir) => (prevDir === "ASC" ? "DESC" : "ASC"));
+                }
+                return column;
+            });
             setCurrentPage(1);
         });
-    };
+    }, []);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { id, value, type } = e.target;
 
         if (id === "program_code") {
@@ -358,25 +467,35 @@ export default function CurriculumSubjectsPage() {
         }
 
         setFormData((prev) => ({ ...prev, [id]: value || null }));
-    };
+    }, []);
 
-    const handleCloseModals = () => {
+    const handleCloseModals = useCallback(() => {
         setOpenAddModal(false);
         setOpenAddConfirmation(false);
         setOpenEditModal(false);
         setOpenDeleteModal(false);
+        setOpenExcelModal(false);
         setSelectedSubject(null);
         setFormData({ ...initialFormState, curriculum: curriculumVersion });
         setSelectedYear("");
+        setIsAddingExisting(false);
+        setExistingSubjectSearch("");
+        setExistingSubjectSearchResults([]);
+        setSelectedExistingSubject(null);
+        setSubjectAQClusters([]);
         setProgramError("");
         setCourseCodeError("");
         setCourseNameError("");
         setLecUnitsError("");
         setLabUnitsError("");
         setYearLevelError("");
-    };
+        setImportFile(null);
+        setImportLogs([]);
+        setFormatError("");
+        setIsImporting(false);
+    }, [initialFormState, curriculumVersion]);
 
-    const handleOpenEdit = (subject: SubjectRecord) => {
+    const handleOpenEdit = useCallback((subject: SubjectRecord) => {
         setSelectedSubject(subject);
 
         const existingYearTerm = subject.year_term || "";
@@ -396,9 +515,9 @@ export default function CurriculumSubjectsPage() {
             year_term: subject.year_term ?? null,
         });
         setOpenEditModal(true);
-    };
+    }, [curriculumVersion]);
 
-    const handleCreateSubject = async () => {
+    const handleCreateSubject = useCallback(async () => {
         if (
             !formData.program_code?.trim() ||
             !formData.course_code?.trim() ||
@@ -417,9 +536,9 @@ export default function CurriculumSubjectsPage() {
         } else {
             triggerToast(res.error || "Failed to create subject.", "error");
         }
-    };
+    }, [formData, curriculumVersion, actor, triggerToast, handleCloseModals, loadData, selectedYear]);
 
-    const handleUpdateSubject = async () => {
+    const handleUpdateSubject = useCallback(async () => {
         if (!selectedSubject) return;
 
         if (
@@ -440,9 +559,9 @@ export default function CurriculumSubjectsPage() {
         } else {
             triggerToast(res.error || "Failed to update subject.", "error");
         }
-    };
+    }, [selectedSubject, formData, curriculumVersion, actor, triggerToast, handleCloseModals, loadData, selectedYear]);
 
-    const handleDeleteSubject = async () => {
+    const handleDeleteSubject = useCallback(async () => {
         if (!selectedSubject) return;
         const res = await deleteSubject(actor, selectedSubject.subject_id);
         if (res.success) {
@@ -452,21 +571,297 @@ export default function CurriculumSubjectsPage() {
         } else {
             triggerToast(res.error || "Failed to delete subject.", "error");
         }
-    };
+    }, [selectedSubject, actor, triggerToast, handleCloseModals, loadData]);
 
-    const isFormInvalid =
-        !formData.program_code?.trim() ||
-        !formData.course_code?.trim() ||
-        !formData.course_name?.trim() ||
-        !selectedYear.trim() ||
-        Boolean(programError) ||
-        Boolean(courseCodeError) ||
-        Boolean(courseNameError) ||
-        Boolean(lecUnitsError) ||
-        Boolean(labUnitsError) ||
-        Boolean(yearLevelError);
+    // Excel functions tailored specifically to this curriculum
+    const handleDownloadTemplate = useCallback(async () => {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Template");
 
-    // Optimized O(1) Lookup Map for Room Types
+        worksheet.columns = [
+            { header: "Curriculum", key: "curriculum", width: 18 },
+            { header: "Year Level", key: "year_level", width: 15 },
+            { header: "Program", key: "program", width: 15 },
+            { header: "Course Code", key: "course_code", width: 15 },
+            { header: "Course Name", key: "course_name", width: 30 },
+            { header: "Lecture", key: "lecture", width: 12 },
+            { header: "Laboratory", key: "laboratory", width: 12 },
+            { header: "Laboratory Type", key: "laboratory_type", width: 20 },
+        ];
+
+        worksheet.addRow({
+            curriculum: curriculumVersion,
+            year_level: "1st Year",
+            program: "BSIT",
+            course_code: "CC101",
+            course_name: "Introduction to Computing",
+            lecture: 3,
+            laboratory: 0,
+            laboratory_type: "",
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        downloadWorkbook(buffer, `${curriculumVersion}_Subjects_Template.xlsx`);
+        triggerToast("Blank Excel template downloaded successfully!", "success");
+    }, [curriculumVersion, triggerToast]);
+
+    const handleExportExcel = useCallback(async () => {
+        try {
+            const programCodeParam = selectedProgramFilter === "ALL" ? null : selectedProgramFilter;
+            const response = await fetchSubjects(debouncedSearch, programCodeParam, curriculumVersion, sortBy, sortDir, 10000, 1);
+            const exportList = response?.success && response.data ? response.data : subjects;
+
+            if (exportList.length === 0) {
+                triggerToast("No subject records available to export for this curriculum.", "warning");
+                return;
+            }
+
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet("Subjects");
+
+            worksheet.columns = [
+                { header: "Curriculum", key: "curriculum", width: 18 },
+                { header: "Year Level", key: "year_level", width: 15 },
+                { header: "Program", key: "program", width: 15 },
+                { header: "Course Code", key: "course_code", width: 15 },
+                { header: "Course Name", key: "course_name", width: 30 },
+                { header: "Lecture", key: "lecture", width: 12 },
+                { header: "Laboratory", key: "laboratory", width: 12 },
+                { header: "Laboratory Type", key: "laboratory_type", width: 20 },
+            ];
+
+            exportList.forEach((item) => {
+                const labTypeName = (item.lab_type ? roomTypeList.find(r => r.room_type_id === item.lab_type)?.value : null) || item.lab_type_name || item.lab_type || "";
+                worksheet.addRow({
+                    curriculum: item.curriculum || curriculumVersion,
+                    year_level: item.year_term ? item.year_term.split(" - ")[0] : "",
+                    program: item.program_code || "",
+                    course_code: item.course_code || "",
+                    course_name: item.course_name || "",
+                    lecture: item.lecture_units ?? 0,
+                    laboratory: item.lab_units ?? 0,
+                    laboratory_type: labTypeName,
+                });
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            downloadWorkbook(buffer, `${curriculumVersion}_Subjects_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
+            triggerToast("Curriculum subjects exported to Excel successfully", "success");
+        } catch (err) {
+            console.error(err);
+            triggerToast("Failed to export subjects to Excel", "error");
+        }
+    }, [debouncedSearch, selectedProgramFilter, curriculumVersion, sortBy, sortDir, subjects, roomTypeList, triggerToast]);
+
+    const validateAndSelectFile = useCallback((file: File | null) => {
+        setFormatError("");
+        setImportLogs([]);
+        if (!file) return;
+
+        const validExtensions = [".xlsx", ".xls", ".csv"];
+        const fileName = file.name.toLowerCase();
+        const isValid = validExtensions.some((ext) => fileName.endsWith(ext));
+
+        if (!isValid) {
+            setFormatError("Invalid file type. Strictly accepts Excel files (.xlsx, .xls) or .csv.");
+            setImportFile(null);
+            return;
+        }
+        setImportFile(file);
+    }, []);
+
+    const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragging(true);
+    }, []);
+
+    const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragging(false);
+    }, []);
+
+    const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragging(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            validateAndSelectFile(e.dataTransfer.files[0]);
+        }
+    }, [validateAndSelectFile]);
+
+    const handleImportSubmit = useCallback(async () => {
+        if (!importFile) return;
+
+        setIsImporting(true);
+        setFormatError("");
+        setImportLogs(["Reading Excel workbook with ExcelJS..."]);
+
+        try {
+            const buffer = await importFile.arrayBuffer();
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(buffer);
+
+            const worksheet = workbook.worksheets[0];
+            if (!worksheet || worksheet.rowCount === 0) {
+                setFormatError("The uploaded Excel file contains no worksheets or data.");
+                setIsImporting(false);
+                return;
+            }
+
+            const headerRow = worksheet.getRow(1);
+            const uploadedHeaders: string[] = [];
+            headerRow.eachCell((cell) => {
+                if (cell.value) uploadedHeaders.push(String(cell.value).trim());
+            });
+
+            const isHeaderValid = REQUIRED_HEADERS.every((reqHeader) =>
+                uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
+            );
+
+            if (!isHeaderValid) {
+                setFormatError(
+                    `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
+                );
+                setIsImporting(false);
+                return;
+            }
+
+            setImportLogs((prev) => [...prev, `Headers verified. Enforcing curriculum constraints...`]);
+
+            let successCount = 0;
+            let failCount = 0;
+            const logs: string[] = [];
+
+            const headerIndexMap: Record<string, number> = {};
+            headerRow.eachCell((cell, colNumber) => {
+                if (cell.value) {
+                    headerIndexMap[String(cell.value).trim().toLowerCase()] = colNumber;
+                }
+            });
+
+            const currCol = headerIndexMap["curriculum"] || 1;
+            const yrCol = headerIndexMap["year level"] || 2;
+            const progCol = headerIndexMap["program"] || 3;
+            const codeCol = headerIndexMap["course code"] || 4;
+            const nameCol = headerIndexMap["course name"] || 5;
+            const lecCol = headerIndexMap["lecture"] || 6;
+            const labCol = headerIndexMap["laboratory"] || 7;
+            const labTypeCol = headerIndexMap["laboratory type"] || 8;
+
+            const roomTypeNameToIdMap = new Map<string, string>();
+            roomTypeList.forEach((rt) => {
+                roomTypeNameToIdMap.set(rt.value.toLowerCase().trim(), rt.room_type_id);
+                roomTypeNameToIdMap.set(rt.room_type_id.toLowerCase().trim(), rt.room_type_id);
+            });
+
+            const rowsToProcess: {
+                rowNum: number;
+                yearTerm: string;
+                prog: string;
+                code: string;
+                name: string;
+                lec: number;
+                lab: number;
+                labTypeId: string | null;
+            }[] = [];
+
+            worksheet.eachRow((row, rowNumber) => {
+                if (rowNumber === 1) return;
+                const rawCurr = String(row.getCell(currCol).value || "").trim();
+                const rawYear = String(row.getCell(yrCol).value || "").trim();
+                const rawProg = String(row.getCell(progCol).value || "").trim();
+                const rawCode = String(row.getCell(codeCol).value || "").trim();
+                const rawName = String(row.getCell(nameCol).value || "").trim();
+                const rawLec = Number(row.getCell(lecCol).value || 3);
+                const rawLab = Number(row.getCell(labCol).value || 0);
+                const rawLabType = String(row.getCell(labTypeCol).value || "").trim();
+
+                // STRICT CONSTRAINT CHECK: Block foreign curricula
+                if (rawCurr.toLowerCase() !== curriculumVersion.toLowerCase()) {
+                    logs.push(`Row ${rowNumber} (${rawCode}): Blocked. Curriculum version "${rawCurr}" does not match active target curriculum "${curriculumVersion}".`);
+                    failCount++;
+                    return;
+                }
+
+                if (!rawCode || !rawName) {
+                    logs.push(`Row ${rowNumber}: Skipped. Course Code or Course Name is missing.`);
+                    failCount++;
+                    return;
+                }
+
+                let combinedYearTerm = rawYear;
+                if (["11", "12"].includes(rawYear)) {
+                    combinedYearTerm = `SHS ${rawYear}`;
+                }
+
+                let matchedLabTypeId: string | null = null;
+                if (rawLab > 0 && rawLabType) {
+                    matchedLabTypeId = roomTypeNameToIdMap.get(rawLabType.toLowerCase()) || null;
+                }
+
+                rowsToProcess.push({
+                    rowNum: rowNumber,
+                    yearTerm: combinedYearTerm,
+                    prog: rawProg,
+                    code: rawCode,
+                    name: rawName,
+                    lec: isNaN(rawLec) ? 3 : rawLec,
+                    lab: isNaN(rawLab) ? 0 : rawLab,
+                    labTypeId: matchedLabTypeId,
+                });
+            });
+
+            for (const item of rowsToProcess) {
+                const payload: SubjectInput = {
+                    curriculum: curriculumVersion,
+                    program_code: item.prog,
+                    course_code: item.code,
+                    course_name: item.name,
+                    lecture_units: item.lec,
+                    lab_units: item.lab,
+                    lab_type: item.labTypeId,
+                    year_term: item.yearTerm,
+                };
+
+                const res = await createSubject(actor, payload);
+                if (res?.success) {
+                    successCount++;
+                } else {
+                    logs.push(`Row ${item.rowNum} (${item.code}): ${res?.error || "Creation failed."}`);
+                    failCount++;
+                }
+            }
+
+            setImportLogs((prev) => [
+                ...prev,
+                `Import Completed: ${successCount} successful, ${failCount} failed.`,
+                ...logs,
+            ]);
+
+            if (successCount > 0) {
+                triggerToast(`Imported ${successCount} subjects successfully under ${curriculumVersion}.`, "success");
+                loadData();
+            }
+        } catch (err) {
+            console.error(err);
+            setFormatError("Error: Unable to parse Excel workbook format using ExcelJS.");
+        } finally {
+            setIsImporting(false);
+        }
+    }, [importFile, curriculumVersion, actor, roomTypeList, loadData, triggerToast]);
+
+    const isFormInvalid = useMemo(() =>
+            !formData.program_code?.trim() ||
+            !formData.course_code?.trim() ||
+            !formData.course_name?.trim() ||
+            !selectedYear.trim() ||
+            Boolean(programError) ||
+            Boolean(courseCodeError) ||
+            Boolean(courseNameError) ||
+            Boolean(lecUnitsError) ||
+            Boolean(labUnitsError) ||
+            Boolean(yearLevelError),
+        [formData, selectedYear, programError, courseCodeError, courseNameError, lecUnitsError, labUnitsError, yearLevelError]);
+
     const roomTypeMap = useMemo(() => {
         const map = new Map<string, string>();
         roomTypeList.forEach((rt) => map.set(rt.room_type_id, rt.value));
@@ -559,10 +954,24 @@ export default function CurriculumSubjectsPage() {
                     </div>
 
                     <Button
+                        color="gray"
+                        className="whitespace-nowrap"
+                        onClick={() => setOpenExcelModal(true)}
+                    >
+                        <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
+                        Excel Operations
+                    </Button>
+
+                    <Button
                         className="w-full whitespace-nowrap sm:w-auto"
                         onClick={() => {
                             setFormData({ ...initialFormState, curriculum: curriculumVersion });
                             setSelectedYear("");
+                            setIsAddingExisting(false);
+                            setExistingSubjectSearch("");
+                            setExistingSubjectSearchResults([]);
+                            setSelectedExistingSubject(null);
+                            setSubjectAQClusters([]);
                             setProgramError("");
                             setCourseCodeError("");
                             setCourseNameError("");
@@ -618,7 +1027,7 @@ export default function CurriculumSubjectsPage() {
                                     </TableCell>
                                     <TableCell>{item.course_name}</TableCell>
                                     <TableCell>{item.program_code || "—"}</TableCell>
-                                    <TableCell>{item.year_term || "—"}</TableCell>
+                                    <TableCell>{item.year_term ? item.year_term.split(" - ")[0] : "—"}</TableCell>
                                     <TableCell>{item.lecture_units}</TableCell>
                                     <TableCell>{item.lab_units}</TableCell>
                                     <TableCell>
@@ -669,6 +1078,177 @@ export default function CurriculumSubjectsPage() {
                 />
             </div>
 
+            {/* --- MODAL: EXCEL OPERATIONS --- */}
+            <Modal show={openExcelModal} onClose={handleCloseModals} size="lg">
+                <ModalHeader>
+                    <div className="flex items-center gap-2">
+                        <FaFileExcel className="text-green-600 h-5 w-5" />
+                        <span>Excel Operations for <span className="font-mono text-blue-600">{curriculumVersion}</span></span>
+                    </div>
+                </ModalHeader>
+                <ModalBody>
+                    <div className="flex flex-col gap-5">
+                        <div className="grid grid-cols-3 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setActiveExcelTab("import")}
+                                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                                    activeExcelTab === "import"
+                                        ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                                }`}
+                            >
+                                <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
+                                <span className="text-xs font-semibold">Import Excel</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setActiveExcelTab("export")}
+                                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                                    activeExcelTab === "export"
+                                        ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                                }`}
+                            >
+                                <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
+                                <span className="text-xs font-semibold">Export Subjects</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setActiveExcelTab("template")}
+                                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                                    activeExcelTab === "template"
+                                        ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                                }`}
+                            >
+                                <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
+                                <span className="text-xs font-semibold">Blank Template</span>
+                            </button>
+                        </div>
+
+                        {activeExcelTab === "import" && (
+                            <div className="space-y-4">
+                                <div
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={handleDrop}
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+                                        isDragging
+                                            ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
+                                            : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                                    }`}
+                                >
+                                    <FileInput
+                                        id="excel-file-input"
+                                        ref={fileInputRef}
+                                        accept=".xlsx, .xls, .csv"
+                                        onChange={(e) =>
+                                            validateAndSelectFile(e.target.files ? e.target.files[0] : null)
+                                        }
+                                        className="hidden"
+                                    />
+                                    <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
+                                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                        {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
+                                    </p>
+                                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                        {importFile
+                                            ? `${(importFile.size / 1024).toFixed(1)} KB`
+                                            : "Strictly accepts .xlsx, .xls, or .csv files"}
+                                    </p>
+                                </div>
+
+                                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+                                    <span className="font-semibold uppercase tracking-wide">Strict Validation Constraint:</span> Rows must specify curriculum <b className="font-mono">{curriculumVersion}</b>. Foreign curricula items will be blocked automatically. Headers: {REQUIRED_HEADERS.join(", ")}
+                                </div>
+
+                                {formatError && (
+                                    <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+                                        <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
+                                        <div>{formatError}</div>
+                                    </div>
+                                )}
+
+                                {importLogs.length > 0 && (
+                                    <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
+                                        {importLogs.map((log, index) => (
+                                            <div
+                                                key={index}
+                                                className={
+                                                    log.includes("Error") || log.includes("Failed") || log.includes("Blocked") || log.includes("Skipped")
+                                                        ? "text-red-400"
+                                                        : log.includes("Completed") || log.includes("Verified")
+                                                            ? "font-bold text-green-400"
+                                                            : "text-gray-300"
+                                                }
+                                            >
+                                                {log}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <Button
+                                    onClick={handleImportSubmit}
+                                    disabled={!importFile || isImporting}
+                                    className="w-full"
+                                >
+                                    {isImporting ? (
+                                        <>
+                                            <Spinner size="sm" className="mr-2" />
+                                            Validating & Importing...
+                                        </>
+                                    ) : (
+                                        `Import Subjects to ${curriculumVersion}`
+                                    )}
+                                </Button>
+                            </div>
+                        )}
+
+                        {activeExcelTab === "export" && (
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                                        Export Subjects for {curriculumVersion}
+                                    </h4>
+                                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                        Generates a structured spreadsheet containing all current subjects registered under this specific curriculum version.
+                                    </p>
+                                </div>
+                                <Button onClick={handleExportExcel} className="w-full" color="green">
+                                    <FaFileExport className="mr-2 h-4 w-4" /> Export {subjectsCount} Subjects to Excel
+                                </Button>
+                            </div>
+                        )}
+
+                        {activeExcelTab === "template" && (
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                                        Download Curriculum Template
+                                    </h4>
+                                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                        Pre-filled template pre-configured with curriculum <b className="font-mono">{curriculumVersion}</b> and required column headers.
+                                    </p>
+                                </div>
+                                <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
+                                    <FaDownload className="mr-2 h-4 w-4" /> Download Blank Excel Template
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                </ModalBody>
+                <ModalFooter className="flex justify-end">
+                    <Button color="alternative" onClick={handleCloseModals}>
+                        Close Window
+                    </Button>
+                </ModalFooter>
+            </Modal>
+
             {/* --- MODAL: ADD SUBJECT --- */}
             <Modal show={openAddModal} onClose={handleCloseModals} size="md">
                 <ModalHeader>
@@ -676,6 +1256,74 @@ export default function CurriculumSubjectsPage() {
                 </ModalHeader>
                 <ModalBody>
                     <div className="flex flex-col gap-4">
+                        <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
+                            <Label htmlFor="toggle-existing-subject" className="font-semibold cursor-pointer">
+                                Add Existing Subject
+                            </Label>
+                            <ToggleSwitch
+                                id="toggle-existing-subject"
+                                checked={isAddingExisting}
+                                onChange={(val) => {
+                                    setIsAddingExisting(val);
+                                    if (!val) {
+                                        setSelectedExistingSubject(null);
+                                        setSubjectAQClusters([]);
+                                        setExistingSubjectSearch("");
+                                        setExistingSubjectSearchResults([]);
+                                        setFormData({ ...initialFormState, curriculum: curriculumVersion });
+                                        setSelectedYear("");
+                                    }
+                                }}
+                            />
+                        </div>
+
+                        {isAddingExisting && (
+                            <div>
+                                <Label htmlFor="search-existing-subject">Search Subject</Label>
+                                <TextInput
+                                    id="search-existing-subject"
+                                    placeholder="Type course code or name..."
+                                    value={existingSubjectSearch}
+                                    onChange={(e) => setExistingSubjectSearch(e.target.value)}
+                                    icon={HiSearch}
+                                />
+                                {isSearchingExisting && (
+                                    <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
+                                        <Spinner size="sm" />
+                                        <span>Searching subjects...</span>
+                                    </div>
+                                )}
+                                <div className="mt-1 max-h-48 overflow-y-auto">
+                                    {existingSubjectSearchResults.map((subj) => {
+                                        const isSelected = selectedExistingSubject?.subject_id === subj.subject_id;
+                                        return (
+                                            <div
+                                                key={`existing-${subj.subject_id}`}
+                                                onClick={() => handleSelectExistingSubject(subj)}
+                                                className={`my-1.5 cursor-pointer rounded-lg border p-3 text-sm transition-all ${
+                                                    isSelected
+                                                        ? "border-blue-500 bg-blue-600 text-white shadow-sm"
+                                                        : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                                                }`}
+                                            >
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <span className="leading-snug font-semibold dark:text-white">
+                                                        {subj.course_name}
+                                                    </span>
+                                                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${isSelected ? "bg-blue-700 text-blue-100" : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"}`}>
+                                                        {subj.curriculum || "Global"}
+                                                    </span>
+                                                </div>
+                                                <div className={`mt-1.5 flex flex-wrap items-center gap-2 text-xs ${isSelected ? "text-blue-100" : "text-gray-500 dark:text-gray-400"}`}>
+                                                    <span className="font-mono font-medium">{subj.course_code}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         <div>
                             <div className="flex items-center justify-between">
                                 <Label htmlFor="course_code">Course Code *</Label>
@@ -688,6 +1336,7 @@ export default function CurriculumSubjectsPage() {
                                 onChange={handleInputChange}
                                 color={courseCodeError ? "failure" : "gray"}
                                 maxLength={10}
+                                disabled={isAddingExisting}
                             />
                             {courseCodeError && <HelperText color="failure">{courseCodeError}</HelperText>}
                         </div>
@@ -704,6 +1353,7 @@ export default function CurriculumSubjectsPage() {
                                 onChange={handleInputChange}
                                 color={courseNameError ? "failure" : "gray"}
                                 maxLength={200}
+                                disabled={isAddingExisting}
                             />
                             {courseNameError && <HelperText color="failure">{courseNameError}</HelperText>}
                         </div>
@@ -985,3 +1635,5 @@ export default function CurriculumSubjectsPage() {
         </div>
     );
 }
+
+/*TODO: DB Function */
