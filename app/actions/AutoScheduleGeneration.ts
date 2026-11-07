@@ -86,7 +86,7 @@ export async function fetchSubjectsForGeneration(
   error?: string;
 }> {
   try {
-    const subjectResult = await fetchSubjectRequirements(curricula, term);
+    const subjectResult = await fetchSubjectRequirements(curricula);
     if (!subjectResult.success || !subjectResult.data) {
       throw new Error(
         subjectResult.error || "Failed to fetch subject requirements.",

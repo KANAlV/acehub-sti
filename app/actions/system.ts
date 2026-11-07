@@ -339,18 +339,15 @@ export async function getRoomsForGeneration(): Promise<{
 
 /* Subjects */
 export async function fetchSubjectRequirements(
-  curricula: string[] | null,
-  term: string | null
+  curricula: string[] | null
 ): Promise<{ success: boolean; data: SubjectRequirementRecord[]; error?: string }> {
   try {
     // Format parameters
     const formattedCurricula = curricula && curricula.length > 0 ? curricula : null;
-    const formattedTerm = term && term.trim() !== '' ? term : null;
 
     const data = await sql`
       SELECT * FROM subject_requirements_read(
-        ${formattedCurricula}::TEXT[],
-        ${formattedTerm}
+        ${formattedCurricula}::TEXT[]
       );
     `;
 
