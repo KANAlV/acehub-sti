@@ -613,9 +613,19 @@ export default function ScheduleTimetableClient({
     return matchesSection && matchesRoom;
   });
 
+  // --- Sort helper: numbers 1-9 first, then letters A-Z --- //
+  const sortAlphanumeric = (a: string, b: string) => {
+    const numA = parseInt(a, 10);
+    const numB = parseInt(b, 10);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    if (!isNaN(numA)) return -1;
+    if (!isNaN(numB)) return 1;
+    return a.localeCompare(b);
+  };
+
   const availableTimetableSections = Array.from(
     new Set(originalEntries.map((e) => e.section).filter(Boolean)),
-  );
+  ).sort(sortAlphanumeric);
 
   const unassignedBlocksCount = changedSchedules.filter(
     (e) => !e.day || e.start_time === undefined || e.start_time <= 0,
@@ -1388,9 +1398,14 @@ export default function ScheduleTimetableClient({
                 }}
               >
                 <option value={currentRoom}>-- All Rooms --</option>
-                {allRooms.map((room) => (
-                  <option key={room.room_id} value={room.room_name ?? ""}>
-                    {room.room_name}
+                {allRooms
+                  .sort(
+                    (a, b) =>
+                      sortAlphanumeric(a.room_name ?? "", b.room_name ?? ""),
+                  )
+                  .map((room) => (
+                    <option key={room.room_id} value={room.room_name ?? ""}>
+                      {room.room_name}
                   </option>
                 ))}
               </Select>
