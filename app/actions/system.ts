@@ -178,6 +178,8 @@ export async function saveScheduleEntries(
       type: e.type || "Lecture",
     }));
 
+    await createLog("", "UPDATE", `Updated timetable entries for schedule ID: ${scheduleId}`);
+
     // Use sql.json() if your driver supports it, or pass as standard JSON parameter string
     await sql`
       SELECT save_schedule_entries_bulk(

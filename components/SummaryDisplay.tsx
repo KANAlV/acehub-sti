@@ -363,12 +363,12 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
     return "text-emerald-500 dark:text-emerald-400";
   }
 
-  // --- Loading Screen while waiting for fetchScheduleData ---
-  if (isLoading && scheduleExists) {
+  // --- Schedule not found ---
+  if (!scheduleExists) {
     return (
       <div className="flex h-screen flex-col items-center justify-center font-sans text-gray-500 dark:text-gray-400">
-        <Spinner size="xl" className="mb-4" />
-        <p className="text-sm font-medium">Loading schedule details...</p>
+        <HiExclamationCircle className="mb-4 h-10 w-10 text-red-500" />
+        <p className="text-sm font-medium">Schedule not found.</p>
       </div>
     );
   }

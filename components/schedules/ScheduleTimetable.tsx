@@ -1183,17 +1183,6 @@ export default function ScheduleTimetableClient({
     return false;
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex h-[75vh] w-full flex-col items-center justify-center gap-3">
-        <Spinner size="xl" />
-        <span className="text-sm text-gray-500 dark:text-gray-400">
-          Loading timetable for {scheduleName}...
-        </span>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="mx-auto mt-12 max-w-lg">

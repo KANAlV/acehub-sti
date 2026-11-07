@@ -296,16 +296,6 @@ export default function ScheduleDashboard() {
       : "text-emerald-500 dark:text-emerald-400";
   }
 
-  // --- Loading Screen ---
-  if (isLoading) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center font-sans text-gray-500 dark:text-gray-400">
-        <Spinner size="xl" className="mb-4" />
-        <p className="text-sm font-medium">Loading your schedule overview...</p>
-      </div>
-    );
-  }
-
   // --- Empty State Screen (No Active Schedule Assigned for Teacher) ---
   if (!scheduleName) {
     return (

@@ -451,17 +451,6 @@ export default function Timetable() {
     return entries.filter((e) => !e.teacher_id || e.teacher_id === "").length;
   }, [entries]);
 
-  if (isLoading) {
-    return (
-      <div className="flex h-[75vh] w-full flex-col items-center justify-center gap-3">
-        <Spinner size="xl" />
-        <span className="text-sm text-gray-500 dark:text-gray-400">
-          Loading timetable...
-        </span>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="mx-auto mt-12 max-w-lg">
