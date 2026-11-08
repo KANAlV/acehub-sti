@@ -1237,9 +1237,12 @@ export default function RoomsManagement() {
                 <ModalBody>
                     <div className="text-center">
                         <HiExclamation className="mx-auto mb-4 h-14 w-14 text-gray-400 dark:text-gray-200" />
-                        <h3 className="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+                        <h3 className="mb-2 text-lg font-normal text-gray-500 dark:text-gray-400">
                             Are you sure you want to delete this room permanently?
                         </h3>
+                        <p className="mb-5 text-sm text-gray-400 dark:text-gray-500">
+                            Deleting this room will cause all schedules assigned to it to become unassigned without rooms.
+                        </p>
                         <div className="flex justify-center gap-4">
                             <Button color="red" onClick={handleRoomDelete}>
                                 Yes, I&#39;m sure

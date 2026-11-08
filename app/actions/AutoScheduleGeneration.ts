@@ -17,8 +17,6 @@ const testMode = false;
 
 /** --- INTERFACES --- **/
 
-/* TODO: Make it so subject cant be assigned to the same day-time it has on another room */
-
 export interface AssignedSubjectDetail {
   subject_id: string;
   course_code: string;
