@@ -65,6 +65,22 @@ import ExcelJS from "exceljs";
 
 const REQUIRED_HEADERS = ["PSCS ID", "Course Name", "Academic Year / Semester", "Status"];
 
+interface DataValidationRule {
+  type: string;
+  operator?: string;
+  allowBlank: boolean;
+  formulae: (string | number)[];
+  showErrorMessage?: boolean;
+  errorTitle?: string;
+  error?: string;
+}
+
+interface WorksheetWithValidation extends ExcelJS.Worksheet {
+  dataValidations: {
+    add: (range: string, validation: DataValidationRule) => void;
+  };
+}
+
 export default function FcceManagement() {
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
@@ -139,14 +155,9 @@ export default function FcceManagement() {
 
   // Edit Form State
   const [editPscsId, setEditPscsId] = useState("");
-  const [editTeacherName, setEditTeacherName] = useState("");
   const [editCourseName, setEditCourseName] = useState("");
   const [editAySem, setEditAySem] = useState("");
   const [editPass, setEditPass] = useState(false);
-
-  const [baseCourseName, setBaseCourseName] = useState("");
-  const [baseAySem, setBaseAySem] = useState("");
-  const [basePass, setBasePass] = useState(false);
 
   // --- Pagination State --- //
   const maxRowFcce = 10;
@@ -171,7 +182,7 @@ export default function FcceManagement() {
     return `${formatYr(startYrStr)}${formatYr(endYrStr)}${termStr}`;
   };
 
-  const handleAddCustomAyChange = (start: string = addAyStartYear, term: string = addAyTerm) => {
+  const handleAddCustomAyChange = useCallback((start: string = addAyStartYear, term: string = addAyTerm) => {
     setAddAyStartYear(start);
     setAddAyTerm(term);
     if (!start) {
@@ -183,7 +194,7 @@ export default function FcceManagement() {
     const endStr = (startNum + 1).toString();
     setAySemError("");
     setAddAySem(formatAySemCode(start, endStr, term));
-  };
+  }, [addAyStartYear, addAyTerm]);
 
   async function loadAcademicYears() {
     const res = await fetchAcademicYears(null, "ay_sem", "DESC", 0, 1);
@@ -204,7 +215,7 @@ export default function FcceManagement() {
     void loadCourseNames();
   }, []);
 
-  const filterCourses = (term: string) => {
+  const filterCourses = useCallback((term: string) => {
     if (!term.trim()) {
       setFilteredCourses([]);
       return;
@@ -212,9 +223,9 @@ export default function FcceManagement() {
     const lower = term.toLowerCase();
     const matches = courseNameList.filter((name) => name.toLowerCase().includes(lower));
     setFilteredCourses(matches.slice(0, 10));
-  };
+  }, [courseNameList]);
 
-  async function searchTeachers(term: string) {
+  const searchTeachers = useCallback(async (term: string) => {
     if (!term.trim()) {
       setTeacherList([]);
       return;
@@ -223,26 +234,53 @@ export default function FcceManagement() {
     if (res?.success && res.data) {
       setTeacherList(res.data);
     }
-  }
+  }, []);
 
-  async function checkUnmatchedCount() {
+  const checkUnmatchedCount = useCallback(async () => {
     const res = await fetchFcceUnmatchedCount(searchTerm, "ALL", archiveFilter);
     if (res?.success) {
       setUnmatchedCount(res.count);
     }
-  }
+  }, [searchTerm, archiveFilter]);
 
   useEffect(() => {
     void checkUnmatchedCount();
-  }, [searchTerm, archiveFilter]);
+  }, [checkUnmatchedCount]);
 
-  const isCourseValid = (courseName: string) => {
+  const isCourseValid = useCallback((courseName: string) => {
     if (!courseName) return false;
     return courseNameList.some((name) => name.toLowerCase().trim() === courseName.toLowerCase().trim());
-  };
+  }, [courseNameList]);
 
   const hasInvalidSubjects = records.some((item) => !isCourseValid(item.course_name));
   const hasArchivedRecords = records.some((item) => item.archived);
+
+  const getFcceCount = useCallback(async (search?: string | null, aySem: string = "ALL", archivedMode: ArchivedMode = archiveFilter, mode: "ALL" | "UNMATCHED" = viewMode) => {
+    const response = mode === "UNMATCHED"
+        ? await fetchFcceUnmatchedCount(search, aySem, archivedMode)
+        : await fetchFcceCount(search, aySem, archivedMode);
+
+    if (response?.success) {
+      setRecordsCount(response.count);
+    } else {
+      setRecordsCount(0);
+    }
+  }, [archiveFilter, viewMode]);
+
+  const getFcceRecords = useCallback(async (search: string | null = searchTerm, aySem: string = "ALL", archivedMode: ArchivedMode = archiveFilter, sortby: string = sortFcceBy, sortdir: string = sortFcceDir, limit: number = maxRowFcce, page: number = currentFccePage, mode: "ALL" | "UNMATCHED" = viewMode) => {
+    setLoading(true);
+    const response = mode === "UNMATCHED"
+        ? await fetchFcceUnmatched(search, aySem, archivedMode, sortby, sortdir, limit, page)
+        : await fetchFcce(search, aySem, archivedMode, sortby, sortdir, limit, page);
+
+    if (response?.success && response.data) {
+      setRecords(response.data);
+    } else {
+      setRecords([]);
+    }
+    setLoading(false);
+    await getFcceCount(search, aySem, archivedMode, mode);
+  }, [searchTerm, archiveFilter, sortFcceBy, sortFcceDir, currentFccePage, viewMode, getFcceCount]);
 
   function handleFcceSorting(sortBy: string) {
     const newDir = sortBy === sortFcceBy && sortFcceDir === "ASC" ? "DESC" : "ASC";
@@ -316,13 +354,6 @@ export default function FcceManagement() {
     setAySemError(!val.trim() ? "Academic Year / Semester is required." : "");
   };
 
-  const handleEditCourseNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = filterAlphanumericDashUnderscoreComma(e.target.value).slice(0, 150);
-    setEditCourseName(val);
-    setEditCourseNameError(!val.trim() ? "Course name is required." : "");
-    filterCourses(val);
-  };
-
   const handleSelectEditAySemChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setEditAySem(val);
@@ -348,16 +379,11 @@ export default function FcceManagement() {
     const selectedRecord = records.find((item) => item.fcce_id === id);
     if (selectedRecord) {
       const pscs = filterAlphanumeric(selectedRecord.pscs_id || "").slice(0, 15);
-      const teacher = selectedRecord.teacher_name || "";
       const course = filterAlphanumericDashUnderscoreComma(selectedRecord.course_name || "").slice(0, 150);
       const aySemVal = selectedRecord.ay_sem || "";
-      const pass = !!selectedRecord.pass;
+      const pass = selectedRecord.pass;
 
-      setBaseCourseName(course);
-      setBaseAySem(aySemVal);
-      setBasePass(pass);
       setEditPscsId(pscs);
-      setEditTeacherName(teacher);
       setEditCourseName(course);
       setEditAySem(aySemVal);
       setEditPass(pass);
@@ -397,7 +423,6 @@ export default function FcceManagement() {
     setAddAyStartYear("");
     setAddAyTerm("T1");
     setEditPscsId("");
-    setEditTeacherName("");
     setEditCourseName("");
     setEditAySem("");
     setEditPass(false);
@@ -408,33 +433,6 @@ export default function FcceManagement() {
     setFormatError("");
     setIsImporting(false);
   };
-
-  async function getFcceCount(search?: string | null, aySem: string = "ALL", archivedMode: ArchivedMode = archiveFilter, mode: "ALL" | "UNMATCHED" = viewMode) {
-    const response = mode === "UNMATCHED"
-      ? await fetchFcceUnmatchedCount(search, aySem, archivedMode)
-      : await fetchFcceCount(search, aySem, archivedMode);
-
-    if (response?.success) {
-      setRecordsCount(response.count);
-    } else {
-      setRecordsCount(0);
-    }
-  }
-
-  async function getFcceRecords(search: string | null = searchTerm, aySem: string = "ALL", archivedMode: ArchivedMode = archiveFilter, sortby: string = sortFcceBy, sortdir: string = sortFcceDir, limit: number = maxRowFcce, page: number = currentFccePage, mode: "ALL" | "UNMATCHED" = viewMode) {
-    setLoading(true);
-    const response = mode === "UNMATCHED"
-      ? await fetchFcceUnmatched(search, aySem, archivedMode, sortby, sortdir, limit, page)
-      : await fetchFcce(search, aySem, archivedMode, sortby, sortdir, limit, page);
-
-    if (response?.success && response.data) {
-      setRecords(response.data);
-    } else {
-      setRecords([]);
-    }
-    setLoading(false);
-    await getFcceCount(search, aySem, archivedMode, mode);
-  }
 
   async function handleFcceSubmit() {
     const pscsError = validatePscsId(addPscsId);
@@ -580,7 +578,7 @@ export default function FcceManagement() {
 
   const handleDownloadTemplate = useCallback(async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Template");
+    const worksheet = workbook.addWorksheet("Template") as unknown as WorksheetWithValidation;
 
     worksheet.columns = [
       { header: "PSCS ID", key: "pscs_id", width: 15 },
@@ -596,7 +594,7 @@ export default function FcceManagement() {
       status: "Passed",
     });
 
-    (worksheet as any).dataValidations.add("D2:D1000", {
+    worksheet.dataValidations.add("D2:D1000", {
       type: "list",
       allowBlank: false,
       formulae: ['"Passed,Failed"'],
@@ -625,7 +623,7 @@ export default function FcceManagement() {
       }
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("FCCE Records");
+      const worksheet = workbook.addWorksheet("FCCE Records") as unknown as WorksheetWithValidation;
 
       worksheet.columns = [
         { header: "PSCS ID", key: "pscs_id", width: 15 },
@@ -643,7 +641,7 @@ export default function FcceManagement() {
         });
       });
 
-      (worksheet as any).dataValidations.add("D2:D1000", {
+      worksheet.dataValidations.add("D2:D1000", {
         type: "list",
         allowBlank: false,
         formulae: ['"Passed,Failed"'],
@@ -705,12 +703,12 @@ export default function FcceManagement() {
       });
 
       const isHeaderValid = REQUIRED_HEADERS.every((reqHeader) =>
-        uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
+          uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
       );
 
       if (!isHeaderValid) {
         setFormatError(
-          `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
+            `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
         );
         setIsImporting(false);
         return;
@@ -808,7 +806,7 @@ export default function FcceManagement() {
     } finally {
       setIsImporting(false);
     }
-  }, [importFile, username]);
+  }, [importFile, username, getFcceRecords]);
 
   function toastTimer() {
     setShowToastTimer(true);
@@ -842,508 +840,507 @@ export default function FcceManagement() {
       void getFcceRecords(searchTerm, "ALL", archiveFilter, sortFcceBy, sortFcceDir, maxRowFcce, currentFccePage, viewMode);
     }, 300);
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, archiveFilter, viewMode]);
+  }, [searchTerm, archiveFilter, viewMode, sortFcceBy, sortFcceDir, currentFccePage, getFcceRecords]);
 
   const isAddFormInvalid = !addPscsId.trim() || !addCourseName.trim() || !addAySem.trim() || containsAlpha(addPscsId) || !!pscsIdError || !!courseNameError || !!aySemError;
   const isEditFormInvalid = !editCourseName.trim() || !editAySem.trim() || !!editCourseNameError || !!editAySemError;
-  const isEditUnchanged = editCourseName === baseCourseName && editAySem === baseAySem && editPass === basePass;
 
   return (
-    <>
-      {showToast && (
-        <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
-          <Toast>
-            <div className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toastType === "success" ? "bg-green-100 text-green-500" : "bg-red-100 text-red-500"}`}>
-              {toastType === "success" ? <HiCheck className="h-5 w-5" /> : <HiExclamation className="h-5 w-5" />}
+      <>
+        {showToast && (
+            <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
+              <Toast>
+                <div className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toastType === "success" ? "bg-green-100 text-green-500" : "bg-red-100 text-red-500"}`}>
+                  {toastType === "success" ? <HiCheck className="h-5 w-5" /> : <HiExclamation className="h-5 w-5" />}
+                </div>
+                <div className="ml-3 text-sm font-normal">{toastMessage}</div>
+                <ToastToggle onDismiss={closeToast} />
+              </Toast>
+              <Progress progress={Math.min(Math.round(progress), 100)} size="sm" className={showToastTimer ? "" : "hidden"} />
             </div>
-            <div className="ml-3 text-sm font-normal">{toastMessage}</div>
-            <ToastToggle onDismiss={closeToast} />
-          </Toast>
-          <Progress progress={Math.min(Math.round(progress), 100)} size="sm" className={showToastTimer ? "" : "hidden"} />
-        </div>
-      )}
-
-      <div>
-        <div className="mb-4">
-          <h2 className="mb-1 text-lg font-bold">FCCE Management</h2>
-          <p className="text-gray-500">Manage and track FCCE student course passing statuses and archive records.</p>
-        </div>
-
-        <div className="my-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-          <div className="relative mb-2 w-full md:w-64">
-            <TextInput
-              id="search-fcce"
-              type="text"
-              placeholder="Search PSCS ID, Course, Teacher..."
-              value={searchTerm}
-              onChange={handleSearchChange}
-              icon={HiSearch}
-            />
-            {searchTerm && (
-              <button type="button" onClick={handleClearSearch} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500">
-                <HiX className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {viewMode === "UNMATCHED" ? (
-              <Tooltip placement={"right"} content={"Click to Go back to all records"}>
-                <IoMdExit className={"h-8 w-8 rotate-180 cursor-pointer"} onClick={handleViewModeToggle} />
-              </Tooltip>
-            ) : (
-              unmatchedCount > 0 && (
-                <Tooltip placement="right" content={`${unmatchedCount} Unmatched Record(s). Click to filter.`}>
-                  <HiExclamation className={"h-8 w-8 cursor-pointer text-yellow-400"} onClick={handleViewModeToggle} />
-                </Tooltip>
-              )
-            )}
-
-            <div className="w-full md:w-40">
-              <Select id="archive-filter" value={archiveFilter} onChange={handleArchiveFilterChange}>
-                <option value="ACTIVE">Active Only</option>
-                <option value="ARCHIVED">Archived Only</option>
-                <option value="BOTH">All Records (Both)</option>
-              </Select>
-            </div>
-
-            <Button
-              color="gray"
-              className="whitespace-nowrap"
-              onClick={() => setOpenExcelModal(true)}
-            >
-              <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
-              Excel Operations
-            </Button>
-
-            <Button color="yellow" className="w-full md:w-48 whitespace-nowrap" onClick={() => setOpenArchiveAllModal(true)}>
-              <HiOutlineArchive className="mr-2 h-4 w-4" /> Archive All Active
-            </Button>
-
-            <Button className="w-full whitespace-nowrap md:w-48" onClick={() => setOpenAddModal(true)}>
-              <FaPlus className="mr-2" /> Add Record
-            </Button>
-          </div>
-        </div>
-
-        {(hasInvalidSubjects || hasArchivedRecords) && (
-          <div className="m-2 flex flex-wrap gap-2">
-            {hasInvalidSubjects && <Badge color="warning">Invalid / Missing Subject</Badge>}
-            {hasArchivedRecords && <Badge color="gray">Archived Record</Badge>}
-          </div>
         )}
 
-        <Card className="overflow-x-auto">
-          <Table hoverable>
-            <TableHead>
-              <TableRow>
-                <TableHeadCell onClick={() => handleFcceSorting("pscs_id")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:underline">
-                    PSCS ID {sortFcceBy === "pscs_id" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                  </div>
-                </TableHeadCell>
-                <TableHeadCell onClick={() => handleFcceSorting("teacher_name")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:underline">
-                    Teacher Name {sortFcceBy === "teacher_name" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                  </div>
-                </TableHeadCell>
-                <TableHeadCell onClick={() => handleFcceSorting("course_name")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:underline">
-                    Course Name {sortFcceBy === "course_name" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                  </div>
-                </TableHeadCell>
-                <TableHeadCell onClick={() => handleFcceSorting("ay_sem")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:underline">
-                    AY / Sem {sortFcceBy === "ay_sem" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                  </div>
-                </TableHeadCell>
-                <TableHeadCell onClick={() => handleFcceSorting("pass")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:underline">
-                    Status {sortFcceBy === "pass" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                  </div>
-                </TableHeadCell>
-                <TableHeadCell onClick={() => handleFcceSorting("created_at")}>
-                  <div className="flex cursor-pointer text-blue-500 hover:underline">
-                    Created At {sortFcceBy === "created_at" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                  </div>
-                </TableHeadCell>
-                <TableHeadCell><span className="sr-only">Actions</span></TableHeadCell>
-              </TableRow>
-            </TableHead>
+        <div>
+          <div className="mb-4">
+            <h2 className="mb-1 text-lg font-bold">FCCE Management</h2>
+            <p className="text-gray-500">Manage and track FCCE student course passing statuses and archive records.</p>
+          </div>
 
-            <TableBody className="divide-y">
-              {isLoading ? (
+          <div className="my-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+            <div className="relative mb-2 w-full md:w-64">
+              <TextInput
+                  id="search-fcce"
+                  type="text"
+                  placeholder="Search PSCS ID, Course, Teacher..."
+                  value={searchTerm}
+                  onChange={handleSearchChange}
+                  icon={HiSearch}
+              />
+              {searchTerm && (
+                  <button type="button" onClick={handleClearSearch} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500">
+                    <HiX className="h-4 w-4" />
+                  </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {viewMode === "UNMATCHED" ? (
+                  <Tooltip placement={"right"} content={"Click to Go back to all records"}>
+                    <IoMdExit className={"h-8 w-8 rotate-180 cursor-pointer"} onClick={handleViewModeToggle} />
+                  </Tooltip>
+              ) : (
+                  unmatchedCount > 0 && (
+                      <Tooltip placement="right" content={`${unmatchedCount} Unmatched Record(s). Click to filter.`}>
+                        <HiExclamation className={"h-8 w-8 cursor-pointer text-yellow-400"} onClick={handleViewModeToggle} />
+                      </Tooltip>
+                  )
+              )}
+
+              <div className="w-full md:w-40">
+                <Select id="archive-filter" value={archiveFilter} onChange={handleArchiveFilterChange}>
+                  <option value="ACTIVE">Active Only</option>
+                  <option value="ARCHIVED">Archived Only</option>
+                  <option value="BOTH">All Records (Both)</option>
+                </Select>
+              </div>
+
+              <Button
+                  color="gray"
+                  className="whitespace-nowrap"
+                  onClick={() => setOpenExcelModal(true)}
+              >
+                <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
+                Excel Operations
+              </Button>
+
+              <Button color="yellow" className="w-full md:w-48 whitespace-nowrap" onClick={() => setOpenArchiveAllModal(true)}>
+                <HiOutlineArchive className="mr-2 h-4 w-4" /> Archive All Active
+              </Button>
+
+              <Button className="w-full whitespace-nowrap md:w-48" onClick={() => setOpenAddModal(true)}>
+                <FaPlus className="mr-2" /> Add Record
+              </Button>
+            </div>
+          </div>
+
+          {(hasInvalidSubjects || hasArchivedRecords) && (
+              <div className="m-2 flex flex-wrap gap-2">
+                {hasInvalidSubjects && <Badge color="warning">Invalid / Missing Subject</Badge>}
+                {hasArchivedRecords && <Badge color="gray">Archived Record</Badge>}
+              </div>
+          )}
+
+          <Card className="overflow-x-auto">
+            <Table hoverable>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={7} className="py-6 text-center italic text-gray-500">
-                    <div className="flex items-center justify-center">
-                      <Spinner />
-                      <span className="ml-4">Fetching records...</span>
+                  <TableHeadCell onClick={() => handleFcceSorting("pscs_id")}>
+                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                      PSCS ID {sortFcceBy === "pscs_id" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                     </div>
-                  </TableCell>
+                  </TableHeadCell>
+                  <TableHeadCell onClick={() => handleFcceSorting("teacher_name")}>
+                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                      Teacher Name {sortFcceBy === "teacher_name" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                    </div>
+                  </TableHeadCell>
+                  <TableHeadCell onClick={() => handleFcceSorting("course_name")}>
+                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                      Course Name {sortFcceBy === "course_name" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                    </div>
+                  </TableHeadCell>
+                  <TableHeadCell onClick={() => handleFcceSorting("ay_sem")}>
+                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                      AY / Sem {sortFcceBy === "ay_sem" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                    </div>
+                  </TableHeadCell>
+                  <TableHeadCell onClick={() => handleFcceSorting("pass")}>
+                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                      Status {sortFcceBy === "pass" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                    </div>
+                  </TableHeadCell>
+                  <TableHeadCell onClick={() => handleFcceSorting("created_at")}>
+                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                      Created At {sortFcceBy === "created_at" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                    </div>
+                  </TableHeadCell>
+                  <TableHeadCell><span className="sr-only">Actions</span></TableHeadCell>
                 </TableRow>
-              ) : records.length > 0 ? (
-                records.map((item) => {
-                  const exists = isCourseValid(item.course_name);
-                  const rowBgClass = item.archived ? "bg-gray-100" : !exists ? "bg-yellow-100" : "bg-white";
-                  return (
-                    <TableRow key={item.fcce_id} className={`${rowBgClass} ${item.archived ? "line-through text-gray-400" : ""}`}>
-                      <TableCell className="font-medium text-gray-900">{item.pscs_id}</TableCell>
-                      <TableCell>{item.teacher_name || "—"}</TableCell>
-                      <TableCell>{item.course_name}</TableCell>
-                      <TableCell>{item.ay_sem || "—"}</TableCell>
-                      <TableCell>
+              </TableHead>
+
+              <TableBody className="divide-y">
+                {isLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-6 text-center italic text-gray-500">
+                        <div className="flex items-center justify-center">
+                          <Spinner />
+                          <span className="ml-4">Fetching records...</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                ) : records.length > 0 ? (
+                    records.map((item) => {
+                      const exists = isCourseValid(item.course_name);
+                      const rowBgClass = item.archived ? "bg-gray-100" : !exists ? "bg-yellow-100" : "bg-white";
+                      return (
+                          <TableRow key={item.fcce_id} className={`${rowBgClass} ${item.archived ? "line-through text-gray-400" : ""}`}>
+                            <TableCell className="font-medium text-gray-900">{item.pscs_id}</TableCell>
+                            <TableCell>{item.teacher_name || "—"}</TableCell>
+                            <TableCell>{item.course_name}</TableCell>
+                            <TableCell>{item.ay_sem || "—"}</TableCell>
+                            <TableCell>
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${item.pass ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
                           {item.pass ? "Passed" : "Failed"}
                         </span>
-                      </TableCell>
-                      <TableCell>{new Date(item.created_at).toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        {item.archived ? (
-                          <a onClick={() => promptUnarchive(item)} className="cursor-pointer font-medium text-green-600 hover:underline">Unarchive</a>
-                        ) : (
-                          <a onClick={() => loadEditData(item.fcce_id)} className="cursor-pointer font-medium text-blue-600 hover:underline">Edit</a>
-                        )}
+                            </TableCell>
+                            <TableCell>{new Date(item.created_at).toLocaleDateString()}</TableCell>
+                            <TableCell>
+                              {item.archived ? (
+                                  <a onClick={() => promptUnarchive(item)} className="cursor-pointer font-medium text-green-600 hover:underline">Unarchive</a>
+                              ) : (
+                                  <a onClick={() => loadEditData(item.fcce_id)} className="cursor-pointer font-medium text-blue-600 hover:underline">Edit</a>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                      );
+                    })
+                ) : (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-6 text-center italic text-gray-500">
+                        No records found.
                       </TableCell>
                     </TableRow>
-                  );
-                })
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-6 text-center italic text-gray-500">
-                    No records found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Card>
+                )}
+              </TableBody>
+            </Table>
+          </Card>
 
-        <div className="mt-4 flex justify-center">
-          <Pagination layout="pagination" currentPage={currentFccePage} totalPages={Math.ceil(recordsCount / maxRowFcce) || 1} onPageChange={onPageChangeFcce} showIcons />
+          <div className="mt-4 flex justify-center">
+            <Pagination layout="pagination" currentPage={currentFccePage} totalPages={Math.ceil(recordsCount / maxRowFcce) || 1} onPageChange={onPageChangeFcce} showIcons />
+          </div>
         </div>
-      </div>
 
-      {/* --- MODAL: EXCEL OPERATIONS --- */}
-      <Modal show={openExcelModal} onClose={handleCloseModals} size="lg">
-        <ModalHeader>
-          <div className="flex items-center gap-2">
-            <FaFileExcel className="text-green-600 h-5 w-5" />
-            <span>Excel Operations & Data Management</span>
-          </div>
-        </ModalHeader>
-        <ModalBody>
-          <div className="flex flex-col gap-5">
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => setActiveExcelTab("import")}
-                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                  activeExcelTab === "import"
-                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                }`}
-              >
-                <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
-                <span className="text-xs font-semibold">Import Excel</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveExcelTab("export")}
-                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                  activeExcelTab === "export"
-                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                }`}
-              >
-                <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
-                <span className="text-xs font-semibold">Export Records</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveExcelTab("template")}
-                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                  activeExcelTab === "template"
-                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                }`}
-              >
-                <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
-                <span className="text-xs font-semibold">Blank Template</span>
-              </button>
+        {/* --- MODAL: EXCEL OPERATIONS --- */}
+        <Modal show={openExcelModal} onClose={handleCloseModals} size="lg">
+          <ModalHeader>
+            <div className="flex items-center gap-2">
+              <FaFileExcel className="text-green-600 h-5 w-5" />
+              <span>Excel Operations & Data Management</span>
             </div>
-
-            {activeExcelTab === "import" && (
-              <div className="space-y-4">
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setIsDragging(false);
-                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                      validateAndSelectFile(e.dataTransfer.files[0]);
-                    }
-                  }}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
-                    isDragging
-                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
-                      : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
-                  }`}
+          </ModalHeader>
+          <ModalBody>
+            <div className="flex flex-col gap-5">
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                    type="button"
+                    onClick={() => setActiveExcelTab("import")}
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                        activeExcelTab === "import"
+                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                    }`}
                 >
-                  <FileInput
-                    id="excel-file-input"
-                    ref={fileInputRef}
-                    accept=".xlsx, .xls, .csv"
-                    onChange={(e) => validateAndSelectFile(e.target.files ? e.target.files[0] : null)}
-                    className="hidden"
-                  />
-                  <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {importFile ? `${(importFile.size / 1024).toFixed(1)} KB` : "Strictly accepts .xlsx, .xls, or .csv files"}
-                  </p>
-                </div>
+                  <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
+                  <span className="text-xs font-semibold">Import Excel</span>
+                </button>
 
-                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                  <span className="font-semibold uppercase tracking-wide">Required Format Headers:</span> {REQUIRED_HEADERS.join(", ")} (Status must be Passed or Failed).
-                </div>
-
-                {formatError && (
-                  <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-                    <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
-                    <div>{formatError}</div>
-                  </div>
-                )}
-
-                {importLogs.length > 0 && (
-                  <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
-                    {importLogs.map((log, index) => (
-                      <div
-                        key={index}
-                        className={
-                          log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
-                            ? "text-red-400"
-                            : log.includes("Completed") || log.includes("Found")
-                              ? "font-bold text-green-400"
-                              : "text-gray-300"
-                        }
-                      >
-                        {log}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <Button
-                  onClick={handleImportSubmit}
-                  disabled={!importFile || isImporting}
-                  className="w-full"
+                <button
+                    type="button"
+                    onClick={() => setActiveExcelTab("export")}
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                        activeExcelTab === "export"
+                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                    }`}
                 >
-                  {isImporting ? (
-                    <>
-                      <Spinner size="sm" className="mr-2" />
-                      Processing & Importing...
-                    </>
-                  ) : (
-                    "Execute Excel Import"
-                  )}
-                </Button>
-              </div>
-            )}
+                  <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
+                  <span className="text-xs font-semibold">Export Records</span>
+                </button>
 
-            {activeExcelTab === "export" && (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                    Export Filtered FCCE Records
-                  </h4>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Generates a standardized Excel spreadsheet containing all active query results with Status dropdown validation.
-                  </p>
-                </div>
-                <Button onClick={handleExportExcel} className="w-full" color="green">
-                  <FaFileExport className="mr-2 h-4 w-4" /> Export {recordsCount} Records to Excel
-                </Button>
-              </div>
-            )}
-
-            {activeExcelTab === "template" && (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                    Download Blank Excel Template
-                  </h4>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Includes columns formatted as: <b className="font-mono">{REQUIRED_HEADERS.join(", ")}</b> with Status dropdown validation.
-                  </p>
-                </div>
-                <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
-                  <FaDownload className="mr-2 h-4 w-4" /> Download Blank Excel Template
-                </Button>
-              </div>
-            )}
-          </div>
-        </ModalBody>
-        <ModalFooter className="flex justify-end">
-          <Button color="alternative" onClick={handleCloseModals}>
-            Close Window
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Add Modal */}
-      <Modal show={openAddModal} onClose={handleCloseModals}>
-        <ModalHeader>Add FCCE Record</ModalHeader>
-        <ModalBody>
-          <div className="space-y-4">
-            <div className="relative">
-              <Label htmlFor="add-pscs-id">PSCS ID</Label>
-              <TextInput id="add-pscs-id" value={addPscsId} onChange={handleAddPscsIdChange} placeholder="Enter PSCS ID" />
-              {pscsIdError && <HelperText className="text-red-600">{pscsIdError}</HelperText>}
-              {teacherList.length > 0 && (
-                <ul className="absolute z-10 max-h-40 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
-                  {teacherList.map((teacher) => (
-                    <li key={teacher.teacher_id} onClick={() => handleSelectAddPscsId(teacher)} className="cursor-pointer px-4 py-2 hover:bg-gray-100">
-                      {teacher.full_name} ({teacher.pscs_id})
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="relative">
-              <Label htmlFor="add-course-name">Course Name</Label>
-              <TextInput id="add-course-name" value={addCourseName} onChange={handleAddCourseNameChange} placeholder="Enter or select course name" />
-              {courseNameError && <HelperText className="text-red-600">{courseNameError}</HelperText>}
-              {filteredCourses.length > 0 && (
-                <ul className="absolute z-10 max-h-40 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
-                  {filteredCourses.map((c, idx) => (
-                    <li key={idx} onClick={() => handleSelectAddCourse(c)} className="cursor-pointer px-4 py-2 hover:bg-gray-100">{c}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <Label>Academic Year / Semester</Label>
-                <button type="button" onClick={() => setIsNewAySem(!isNewAySem)} className="text-xs text-blue-600 hover:underline">
-                  {isNewAySem ? "Select existing AY/Sem" : "+ Enter new AY/Sem"}
+                <button
+                    type="button"
+                    onClick={() => setActiveExcelTab("template")}
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                        activeExcelTab === "template"
+                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                    }`}
+                >
+                  <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
+                  <span className="text-xs font-semibold">Blank Template</span>
                 </button>
               </div>
-              {isNewAySem ? (
-                <div className="flex items-center gap-2">
-                  <Select value={addAyStartYear} onChange={(e) => handleAddCustomAyChange(e.target.value, addAyTerm)}>
-                    <option value="">Start Year</option>
-                    {yearOptions.map((yr) => <option key={yr} value={yr}>{yr}</option>)}
-                  </Select>
-                  <span>-</span>
-                  <div>{addAyStartYear ? parseInt(addAyStartYear, 10) + 1 : "End Year"}</div>
-                  <Select value={addAyTerm} onChange={(e) => handleAddCustomAyChange(addAyStartYear, e.target.value)}>
-                    <option value="T1">Term 1</option>
-                    <option value="T2">Term 2</option>
-                    <option value="T3">Term 3</option>
-                    <option value="T4">Term 4</option>
-                  </Select>
-                </div>
-              ) : (
-                <Select value={addAySem} onChange={handleSelectAddAySemChange}>
-                  <option value="">Select Academic Year / Sem</option>
-                  {academicYearList.map((item) => <option key={item.ay_sem} value={item.ay_sem}>{item.ay_sem}</option>)}
-                </Select>
+
+              {activeExcelTab === "import" && (
+                  <div className="space-y-4">
+                    <div
+                        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                        onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragging(false);
+                          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                            validateAndSelectFile(e.dataTransfer.files[0]);
+                          }
+                        }}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+                            isDragging
+                                ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
+                                : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                        }`}
+                    >
+                      <FileInput
+                          id="excel-file-input"
+                          ref={fileInputRef}
+                          accept=".xlsx, .xls, .csv"
+                          onChange={(e) => validateAndSelectFile(e.target.files ? e.target.files[0] : null)}
+                          className="hidden"
+                      />
+                      <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {importFile ? `${(importFile.size / 1024).toFixed(1)} KB` : "Strictly accepts .xlsx, .xls, or .csv files"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+                      <span className="font-semibold uppercase tracking-wide">Required Format Headers:</span> {REQUIRED_HEADERS.join(", ")} (Status must be Passed or Failed).
+                    </div>
+
+                    {formatError && (
+                        <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+                          <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
+                          <div>{formatError}</div>
+                        </div>
+                    )}
+
+                    {importLogs.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
+                          {importLogs.map((log, index) => (
+                              <div
+                                  key={index}
+                                  className={
+                                    log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
+                                        ? "text-red-400"
+                                        : log.includes("Completed") || log.includes("Found")
+                                            ? "font-bold text-green-400"
+                                            : "text-gray-300"
+                                  }
+                              >
+                                {log}
+                              </div>
+                          ))}
+                        </div>
+                    )}
+
+                    <Button
+                        onClick={handleImportSubmit}
+                        disabled={!importFile || isImporting}
+                        className="w-full"
+                    >
+                      {isImporting ? (
+                          <>
+                            <Spinner size="sm" className="mr-2" />
+                            Processing & Importing...
+                          </>
+                      ) : (
+                          "Execute Excel Import"
+                      )}
+                    </Button>
+                  </div>
+              )}
+
+              {activeExcelTab === "export" && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Export Filtered FCCE Records
+                      </h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Generates a standardized Excel spreadsheet containing all active query results with Status dropdown validation.
+                      </p>
+                    </div>
+                    <Button onClick={handleExportExcel} className="w-full" color="green">
+                      <FaFileExport className="mr-2 h-4 w-4" /> Export {recordsCount} Records to Excel
+                    </Button>
+                  </div>
+              )}
+
+              {activeExcelTab === "template" && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Download Blank Excel Template
+                      </h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Includes columns formatted as: <b className="font-mono">{REQUIRED_HEADERS.join(", ")}</b> with Status dropdown validation.
+                      </p>
+                    </div>
+                    <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
+                      <FaDownload className="mr-2 h-4 w-4" /> Download Blank Excel Template
+                    </Button>
+                  </div>
               )}
             </div>
+          </ModalBody>
+          <ModalFooter className="flex justify-end">
+            <Button color="alternative" onClick={handleCloseModals}>
+              Close Window
+            </Button>
+          </ModalFooter>
+        </Modal>
 
-            <div className="flex items-center justify-between">
-              <Label>Status</Label>
-              <ToggleSwitch checked={addPass} label={addPass ? "Passed" : "Failed"} onChange={setAddPass} />
-            </div>
-          </div>
-        </ModalBody>
-        <ModalFooter>
-          <Button disabled={isAddFormInvalid} onClick={() => void handleFcceSubmit()}>Submit</Button>
-          <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
-        </ModalFooter>
-      </Modal>
+        {/* Add Modal */}
+        <Modal show={openAddModal} onClose={handleCloseModals}>
+          <ModalHeader>Add FCCE Record</ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <div className="relative">
+                <Label htmlFor="add-pscs-id">PSCS ID</Label>
+                <TextInput id="add-pscs-id" value={addPscsId} onChange={handleAddPscsIdChange} placeholder="Enter PSCS ID" />
+                {pscsIdError && <HelperText className="text-red-600">{pscsIdError}</HelperText>}
+                {teacherList.length > 0 && (
+                    <ul className="absolute z-10 max-h-40 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                      {teacherList.map((teacher) => (
+                          <li key={teacher.teacher_id} onClick={() => handleSelectAddPscsId(teacher)} className="cursor-pointer px-4 py-2 hover:bg-gray-100">
+                            {teacher.full_name} ({teacher.pscs_id})
+                          </li>
+                      ))}
+                    </ul>
+                )}
+              </div>
 
-      {/* Edit Modal */}
-      <Modal show={openEditModal} onClose={handleCloseModals}>
-        <ModalHeader>Edit FCCE Record</ModalHeader>
-        <ModalBody>
-          <div className="space-y-4">
-            <div>
-              <Label>PSCS ID</Label>
-              <div className="text-sm font-medium">{editPscsId}</div>
+              <div className="relative">
+                <Label htmlFor="add-course-name">Course Name</Label>
+                <TextInput id="add-course-name" value={addCourseName} onChange={handleAddCourseNameChange} placeholder="Enter or select course name" />
+                {courseNameError && <HelperText className="text-red-600">{courseNameError}</HelperText>}
+                {filteredCourses.length > 0 && (
+                    <ul className="absolute z-10 max-h-40 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                      {filteredCourses.map((c, idx) => (
+                          <li key={idx} onClick={() => handleSelectAddCourse(c)} className="cursor-pointer px-4 py-2 hover:bg-gray-100">{c}</li>
+                      ))}
+                    </ul>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <Label>Academic Year / Semester</Label>
+                  <button type="button" onClick={() => setIsNewAySem(!isNewAySem)} className="text-xs text-blue-600 hover:underline">
+                    {isNewAySem ? "Select existing AY/Sem" : "+ Enter new AY/Sem"}
+                  </button>
+                </div>
+                {isNewAySem ? (
+                    <div className="flex items-center gap-2">
+                      <Select value={addAyStartYear} onChange={(e) => handleAddCustomAyChange(e.target.value, addAyTerm)}>
+                        <option value="">Start Year</option>
+                        {yearOptions.map((yr) => <option key={yr} value={yr}>{yr}</option>)}
+                      </Select>
+                      <span>-</span>
+                      <div>{addAyStartYear ? parseInt(addAyStartYear, 10) + 1 : "End Year"}</div>
+                      <Select value={addAyTerm} onChange={(e) => handleAddCustomAyChange(addAyStartYear, e.target.value)}>
+                        <option value="T1">Term 1</option>
+                        <option value="T2">Term 2</option>
+                        <option value="T3">Term 3</option>
+                        <option value="T4">Term 4</option>
+                      </Select>
+                    </div>
+                ) : (
+                    <Select value={addAySem} onChange={handleSelectAddAySemChange}>
+                      <option value="">Select Academic Year / Sem</option>
+                      {academicYearList.map((item) => <option key={item.ay_sem} value={item.ay_sem}>{item.ay_sem}</option>)}
+                    </Select>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label>Status</Label>
+                <ToggleSwitch checked={addPass} label={addPass ? "Passed" : "Failed"} onChange={setAddPass} />
+              </div>
             </div>
-            <div>
-              <Label>Course Name</Label>
-              <div className="text-sm font-medium">{editCourseName}</div>
-            </div>
-            <div>
-              <Label>Academic Year / Semester</Label>
-              <Select value={editAySem} onChange={handleSelectEditAySemChange}>
-                {academicYearList.map((item) => <option key={item.ay_sem} value={item.ay_sem}>{item.ay_sem}</option>)}
-              </Select>
-            </div>
-            <div className="flex items-center justify-between">
-              <Label>Passing Status</Label>
-              <ToggleSwitch checked={editPass} label={editPass ? "Passed" : "Failed"} onChange={setEditPass} />
-            </div>
-          </div>
-        </ModalBody>
-        <ModalFooter className="flex justify-between">
-          <ButtonGroup>
-            <Button color="yellow" onClick={() => { setOpenEditModal(false); setOpenArchiveSingleModal(true); }}>Archive</Button>
-            <Button color="red" onClick={() => { setOpenEditModal(false); setOpenDeleteModal(true); }}>Delete</Button>
-          </ButtonGroup>
-          <div className="flex gap-2">
-            <Button disabled={isEditFormInvalid} onClick={() => void handleFcceUpdate()}>Save Changes</Button>
+          </ModalBody>
+          <ModalFooter>
+            <Button disabled={isAddFormInvalid} onClick={() => void handleFcceSubmit()}>Submit</Button>
             <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
-          </div>
-        </ModalFooter>
-      </Modal>
+          </ModalFooter>
+        </Modal>
 
-      {/* Confirmation Modals */}
-      <Modal show={openArchiveSingleModal} onClose={handleCloseModals} size="md">
-        <ModalHeader>Confirm Archive</ModalHeader>
-        <ModalBody className="text-center">Are you sure you want to archive this record?</ModalBody>
-        <ModalFooter className="justify-center">
-          <Button color="yellow" onClick={() => void handleArchiveSingleFcce()}>Yes, Archive</Button>
-          <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
-        </ModalFooter>
-      </Modal>
+        {/* Edit Modal */}
+        <Modal show={openEditModal} onClose={handleCloseModals}>
+          <ModalHeader>Edit FCCE Record</ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <div>
+                <Label>PSCS ID</Label>
+                <div className="text-sm font-medium">{editPscsId}</div>
+              </div>
+              <div>
+                <Label>Course Name</Label>
+                <div className="text-sm font-medium">{editCourseName}</div>
+              </div>
+              <div>
+                <Label>Academic Year / Semester</Label>
+                <Select value={editAySem} onChange={handleSelectEditAySemChange}>
+                  {academicYearList.map((item) => <option key={item.ay_sem} value={item.ay_sem}>{item.ay_sem}</option>)}
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label>Passing Status</Label>
+                <ToggleSwitch checked={editPass} label={editPass ? "Passed" : "Failed"} onChange={setEditPass} />
+              </div>
+            </div>
+          </ModalBody>
+          <ModalFooter className="flex justify-between">
+            <ButtonGroup>
+              <Button color="yellow" onClick={() => { setOpenEditModal(false); setOpenArchiveSingleModal(true); }}>Archive</Button>
+              <Button color="red" onClick={() => { setOpenEditModal(false); setOpenDeleteModal(true); }}>Delete</Button>
+            </ButtonGroup>
+            <div className="flex gap-2">
+              <Button disabled={isEditFormInvalid} onClick={() => void handleFcceUpdate()}>Save Changes</Button>
+              <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
+            </div>
+          </ModalFooter>
+        </Modal>
 
-      <Modal show={openDeleteModal} onClose={handleCloseModals} size="md">
-        <ModalHeader>Confirm Delete</ModalHeader>
-        <ModalBody className="text-center">Are you sure you want to delete this record permanently?</ModalBody>
-        <ModalFooter className="justify-center">
-          <Button color="red" onClick={() => void handleDeleteFcce()}>Yes, Delete</Button>
-          <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
-        </ModalFooter>
-      </Modal>
+        {/* Confirmation Modals */}
+        <Modal show={openArchiveSingleModal} onClose={handleCloseModals} size="md">
+          <ModalHeader>Confirm Archive</ModalHeader>
+          <ModalBody className="text-center">Are you sure you want to archive this record?</ModalBody>
+          <ModalFooter className="justify-center">
+            <Button color="yellow" onClick={() => void handleArchiveSingleFcce()}>Yes, Archive</Button>
+            <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
+          </ModalFooter>
+        </Modal>
 
-      <Modal show={openUnarchiveModal} onClose={handleCloseModals} size="md">
-        <ModalHeader>Confirm Unarchive</ModalHeader>
-        <ModalBody className="text-center">Are you sure you want to restore this record?</ModalBody>
-        <ModalFooter className="justify-center">
-          <Button color="green" onClick={() => void handleUnarchiveFcce()}>Yes, Restore</Button>
-          <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
-        </ModalFooter>
-      </Modal>
+        <Modal show={openDeleteModal} onClose={handleCloseModals} size="md">
+          <ModalHeader>Confirm Delete</ModalHeader>
+          <ModalBody className="text-center">Are you sure you want to delete this record permanently?</ModalBody>
+          <ModalFooter className="justify-center">
+            <Button color="red" onClick={() => void handleDeleteFcce()}>Yes, Delete</Button>
+            <Button color="alternative" onClick={handleCloseModals}>Close</Button>
+          </ModalFooter>
+        </Modal>
 
-      <Modal show={openArchiveAllModal} onClose={handleCloseModals} size="md">
-        <ModalHeader>Confirm Archive All Active</ModalHeader>
-        <ModalBody className="text-center">Are you sure you want to archive all active FCCE records?</ModalBody>
-        <ModalFooter className="justify-center">
-          <Button color="yellow" onClick={() => void handleArchiveAllActive()}>Yes, Archive All</Button>
-          <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
-        </ModalFooter>
-      </Modal>
-    </>
+        <Modal show={openUnarchiveModal} onClose={handleCloseModals} size="md">
+          <ModalHeader>Confirm Unarchive</ModalHeader>
+          <ModalBody className="text-center">Are you sure you want to restore this record?</ModalBody>
+          <ModalFooter className="justify-center">
+            <Button color="green" onClick={() => void handleUnarchiveFcce()}>Yes, Restore</Button>
+            <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
+          </ModalFooter>
+        </Modal>
+
+        <Modal show={openArchiveAllModal} onClose={handleCloseModals} size="md">
+          <ModalHeader>Confirm Archive All Active</ModalHeader>
+          <ModalBody className="text-center">Are you sure you want to archive all active FCCE records?</ModalBody>
+          <ModalFooter className="justify-center">
+            <Button color="yellow" onClick={() => void handleArchiveAllActive()}>Yes, Archive All</Button>
+            <Button color="alternative" onClick={handleCloseModals}>Cancel</Button>
+          </ModalFooter>
+        </Modal>
+      </>
   );
 }
