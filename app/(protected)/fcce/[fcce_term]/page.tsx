@@ -54,13 +54,29 @@ import {
 
 const REQUIRED_HEADERS = ["PSCS ID", "Course Name", "Academic Year / Semester", "Status"];
 
+interface DataValidationRule {
+  type: string;
+  operator?: string;
+  allowBlank: boolean;
+  formulae: (string | number)[];
+  showErrorMessage?: boolean;
+  errorTitle?: string;
+  error?: string;
+}
+
+interface WorksheetWithValidation extends ExcelJS.Worksheet {
+  dataValidations: {
+    add: (range: string, validation: DataValidationRule) => void;
+  };
+}
+
 export default function FcceTermDetailPage() {
   const router = useRouter();
   const params = useParams();
 
   const aySemParam = useMemo(
-    () => decodeURIComponent((params?.fcce_term as string) || ""),
-    [params?.fcce_term]
+      () => decodeURIComponent((params?.fcce_term as string) || ""),
+      [params?.fcce_term]
   );
 
   const { instance, accounts } = useMsal();
@@ -121,13 +137,13 @@ export default function FcceTermDetailPage() {
       setIsLoading(true);
       const [resData, resCount] = await Promise.all([
         fetchFcce(
-          debouncedSearch || null,
-          aySemParam,
-          archiveFilter,
-          sortBy,
-          sortDir,
-          maxRow,
-          currentPage,
+            debouncedSearch || null,
+            aySemParam,
+            archiveFilter,
+            sortBy,
+            sortDir,
+            maxRow,
+            currentPage,
         ),
         fetchFcceCount(debouncedSearch || null, aySemParam, archiveFilter),
       ]);
@@ -187,7 +203,7 @@ export default function FcceTermDetailPage() {
 
   const handleDownloadTemplate = useCallback(async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Template");
+    const worksheet = workbook.addWorksheet("Template") as unknown as WorksheetWithValidation;
 
     worksheet.columns = [
       { header: "PSCS ID", key: "pscs_id", width: 15 },
@@ -203,7 +219,7 @@ export default function FcceTermDetailPage() {
       status: "Passed",
     });
 
-    (worksheet as any).dataValidations.add("D2:D1000", {
+    worksheet.dataValidations.add("D2:D1000", {
       type: "list",
       allowBlank: false,
       formulae: ['"Passed,Failed"'],
@@ -228,7 +244,7 @@ export default function FcceTermDetailPage() {
       }
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("FCCE Term Records");
+      const worksheet = workbook.addWorksheet("FCCE Term Records") as unknown as WorksheetWithValidation;
 
       worksheet.columns = [
         { header: "PSCS ID", key: "pscs_id", width: 15 },
@@ -246,7 +262,7 @@ export default function FcceTermDetailPage() {
         });
       });
 
-      (worksheet as any).dataValidations.add("D2:D1000", {
+      worksheet.dataValidations.add("D2:D1000", {
         type: "list",
         allowBlank: false,
         formulae: ['"Passed,Failed"'],
@@ -304,12 +320,12 @@ export default function FcceTermDetailPage() {
       });
 
       const isHeaderValid = REQUIRED_HEADERS.every((reqHeader) =>
-        uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
+          uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
       );
 
       if (!isHeaderValid) {
         setFormatError(
-          `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
+            `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
         );
         setIsImporting(false);
         return;
@@ -414,345 +430,345 @@ export default function FcceTermDetailPage() {
   }, [importFile, aySemParam, actor, loadData, triggerToast]);
 
   return (
-    <div className="m-8">
-      {showToast && (
-        <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
-          <Toast>
-            <div
-              className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                toastType === "success"
-                  ? "bg-green-100 text-green-500 dark:bg-green-800 dark:text-green-200"
-                  : "bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200"
-              }`}
-            >
-              {toastType === "success" ? <HiCheck className="h-5 w-5" /> : <HiExclamation className="h-5 w-5" />}
-            </div>
-            <div className="ml-3 text-sm font-normal">{toastMessage}</div>
-            <ToastToggle onDismiss={() => setShowToast(false)} />
-          </Toast>
-          <Progress progress={progress} size="sm" className={showToastTimer ? "" : "hidden"} />
-        </div>
-      )}
-
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button color="alternative" size="sm" onClick={() => router.push("/fcce")}>
-            <HiArrowLeft className="mr-2 h-4 w-4" /> Back to Terms Directory
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold">
-              Academic Term / Semester: <span className="font-mono text-blue-600">{aySemParam}</span>
-            </h1>
-            <p className="text-sm text-gray-500">
-              Viewing all FCCE student passing records associated with this term.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full md:w-64">
-          <TextInput
-            id="search-fcce-term"
-            type="text"
-            placeholder="Search PSCS ID, course..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            icon={HiSearch}
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              onClick={() => setSearchTerm("")}
-              className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700"
-            >
-              <HiX className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="w-full sm:w-48">
-            <Select
-              id="archive-filter"
-              value={archiveFilter}
-              onChange={(e) => {
-                setArchiveFilter(e.target.value as ArchivedMode);
-                setCurrentPage(1);
-              }}
-            >
-              <option value="ACTIVE">Active Only</option>
-              <option value="ARCHIVED">Archived Only</option>
-              <option value="BOTH">All Records</option>
-            </Select>
-          </div>
-
-          <Button
-            color="gray"
-            className="whitespace-nowrap"
-            onClick={() => setOpenExcelModal(true)}
-          >
-            <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
-            Excel Operations
-          </Button>
-        </div>
-      </div>
-
-      <Card className="overflow-x-auto">
-        <Table hoverable>
-          <TableHead>
-            <TableRow>
-              <TableHeadCell onClick={() => handleSorting("pscs_id")}>
-                <div className="flex cursor-pointer text-blue-500 hover:underline">
-                  PSCS ID {sortBy === "pscs_id" && (sortDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                </div>
-              </TableHeadCell>
-              <TableHeadCell onClick={() => handleSorting("teacher_name")}>
-                <div className="flex cursor-pointer text-blue-500 hover:underline">
-                  Teacher Name {sortBy === "teacher_name" && (sortDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                </div>
-              </TableHeadCell>
-              <TableHeadCell onClick={() => handleSorting("course_name")}>
-                <div className="flex cursor-pointer text-blue-500 hover:underline">
-                  Course Name {sortBy === "course_name" && (sortDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                </div>
-              </TableHeadCell>
-              <TableHeadCell onClick={() => handleSorting("pass")}>
-                <div className="flex cursor-pointer text-blue-500 hover:underline">
-                  Status {sortBy === "pass" && (sortDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
-                </div>
-              </TableHeadCell>
-              <TableHeadCell>Actions</TableHeadCell>
-            </TableRow>
-          </TableHead>
-          <TableBody className="divide-y">
-            {records.length > 0 ? (
-              records.map((item) => (
-                <TableRow
-                  key={item.fcce_id}
-                  className={`bg-white dark:border-gray-700 dark:bg-gray-800 ${item.archived ? "opacity-60 line-through" : ""}`}
+      <div className="m-8">
+        {showToast && (
+            <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
+              <Toast>
+                <div
+                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        toastType === "success"
+                            ? "bg-green-100 text-green-500 dark:bg-green-800 dark:text-green-200"
+                            : "bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200"
+                    }`}
                 >
-                  <TableCell className="font-medium text-gray-900 dark:text-white">{item.pscs_id}</TableCell>
-                  <TableCell>{item.teacher_name || "—"}</TableCell>
-                  <TableCell>{item.course_name}</TableCell>
-                  <TableCell>
+                  {toastType === "success" ? <HiCheck className="h-5 w-5" /> : <HiExclamation className="h-5 w-5" />}
+                </div>
+                <div className="ml-3 text-sm font-normal">{toastMessage}</div>
+                <ToastToggle onDismiss={() => setShowToast(false)} />
+              </Toast>
+              <Progress progress={progress} size="sm" className={showToastTimer ? "" : "hidden"} />
+            </div>
+        )}
+
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button color="alternative" size="sm" onClick={() => router.push("/fcce")}>
+              <HiArrowLeft className="mr-2 h-4 w-4" /> Back to Terms Directory
+            </Button>
+            <div>
+              <h1 className="text-xl font-bold">
+                Academic Term / Semester: <span className="font-mono text-blue-600">{aySemParam}</span>
+              </h1>
+              <p className="text-sm text-gray-500">
+                Viewing all FCCE student passing records associated with this term.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full md:w-64">
+            <TextInput
+                id="search-fcce-term"
+                type="text"
+                placeholder="Search PSCS ID, course..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                icon={HiSearch}
+            />
+            {searchTerm && (
+                <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700"
+                >
+                  <HiX className="h-4 w-4" />
+                </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="w-full sm:w-48">
+              <Select
+                  id="archive-filter"
+                  value={archiveFilter}
+                  onChange={(e) => {
+                    setArchiveFilter(e.target.value as ArchivedMode);
+                    setCurrentPage(1);
+                  }}
+              >
+                <option value="ACTIVE">Active Only</option>
+                <option value="ARCHIVED">Archived Only</option>
+                <option value="BOTH">All Records</option>
+              </Select>
+            </div>
+
+            <Button
+                color="gray"
+                className="whitespace-nowrap"
+                onClick={() => setOpenExcelModal(true)}
+            >
+              <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
+              Excel Operations
+            </Button>
+          </div>
+        </div>
+
+        <Card className="overflow-x-auto">
+          <Table hoverable>
+            <TableHead>
+              <TableRow>
+                <TableHeadCell onClick={() => handleSorting("pscs_id")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:underline">
+                    PSCS ID {sortBy === "pscs_id" && (sortDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                  </div>
+                </TableHeadCell>
+                <TableHeadCell onClick={() => handleSorting("teacher_name")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:underline">
+                    Teacher Name {sortBy === "teacher_name" && (sortDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                  </div>
+                </TableHeadCell>
+                <TableHeadCell onClick={() => handleSorting("course_name")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:underline">
+                    Course Name {sortBy === "course_name" && (sortDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                  </div>
+                </TableHeadCell>
+                <TableHeadCell onClick={() => handleSorting("pass")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:underline">
+                    Status {sortBy === "pass" && (sortDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
+                  </div>
+                </TableHeadCell>
+                <TableHeadCell>Actions</TableHeadCell>
+              </TableRow>
+            </TableHead>
+            <TableBody className="divide-y">
+              {records.length > 0 ? (
+                  records.map((item) => (
+                      <TableRow
+                          key={item.fcce_id}
+                          className={`bg-white dark:border-gray-700 dark:bg-gray-800 ${item.archived ? "opacity-60 line-through" : ""}`}
+                      >
+                        <TableCell className="font-medium text-gray-900 dark:text-white">{item.pscs_id}</TableCell>
+                        <TableCell>{item.teacher_name || "—"}</TableCell>
+                        <TableCell>{item.course_name}</TableCell>
+                        <TableCell>
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${item.pass ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
                       {item.pass ? "Passed" : "Failed"}
                     </span>
-                  </TableCell>
-                  <TableCell>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleArchiveStatus(item)}
-                      className={`text-sm font-medium hover:underline ${item.archived ? "text-green-600" : "text-yellow-600"}`}
-                    >
-                      {item.archived ? "Restore" : "Archive"}
-                    </button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center italic text-gray-500">
-                  <div className="flex items-center justify-center">
-                    <Spinner size="sm" />
-                    <span className="ml-3">Loading term records...</span>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center italic text-gray-500">
-                  No records found for term {aySemParam}.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
-
-      <div className="mt-4 flex justify-center">
-        <Pagination
-          layout="pagination"
-          currentPage={currentPage}
-          totalPages={Math.ceil(recordsCount / maxRow) || 1}
-          onPageChange={(p) => setCurrentPage(p)}
-          showIcons
-        />
-      </div>
-
-      {/* --- MODAL: EXCEL OPERATIONS --- */}
-      <Modal show={openExcelModal} onClose={() => setOpenExcelModal(false)} size="lg">
-        <ModalHeader>
-          <div className="flex items-center gap-2">
-            <FaFileExcel className="text-green-600 h-5 w-5" />
-            <span>Excel Operations for <span className="font-mono text-blue-600">{aySemParam}</span></span>
-          </div>
-        </ModalHeader>
-        <ModalBody>
-          <div className="flex flex-col gap-5">
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => setActiveExcelTab("import")}
-                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                  activeExcelTab === "import"
-                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                }`}
-              >
-                <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
-                <span className="text-xs font-semibold">Import Excel</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveExcelTab("export")}
-                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                  activeExcelTab === "export"
-                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                }`}
-              >
-                <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
-                <span className="text-xs font-semibold">Export Records</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveExcelTab("template")}
-                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                  activeExcelTab === "template"
-                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                }`}
-              >
-                <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
-                <span className="text-xs font-semibold">Blank Template</span>
-              </button>
-            </div>
-
-            {activeExcelTab === "import" && (
-              <div className="space-y-4">
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setIsDragging(false);
-                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                      validateAndSelectFile(e.dataTransfer.files[0]);
-                    }
-                  }}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
-                    isDragging
-                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
-                      : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
-                  }`}
-                >
-                  <FileInput
-                    id="excel-file-input"
-                    ref={fileInputRef}
-                    accept=".xlsx, .xls, .csv"
-                    onChange={(e) => validateAndSelectFile(e.target.files ? e.target.files[0] : null)}
-                    className="hidden"
-                  />
-                  <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {importFile ? `${(importFile.size / 1024).toFixed(1)} KB` : "Strictly accepts .xlsx, .xls, or .csv files"}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                  <span className="font-semibold uppercase tracking-wide">Validation Constraint:</span> Rows must specify AY/Sem <b className="font-mono">{aySemParam}</b> and Status must be <b className="font-mono">Passed</b> or <b className="font-mono">Failed</b>. Headers: {REQUIRED_HEADERS.join(", ")}
-                </div>
-
-                {formatError && (
-                  <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-                    <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
-                    <div>{formatError}</div>
-                  </div>
-                )}
-
-                {importLogs.length > 0 && (
-                  <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
-                    {importLogs.map((log, index) => (
-                      <div
-                        key={index}
-                        className={
-                          log.includes("Error") || log.includes("Failed") || log.includes("Blocked") || log.includes("Skipped")
-                            ? "text-red-400"
-                            : log.includes("Completed") || log.includes("Verified")
-                              ? "font-bold text-green-400"
-                              : "text-gray-300"
-                        }
-                      >
-                        {log}
+                        </TableCell>
+                        <TableCell>
+                          <button
+                              type="button"
+                              onClick={() => handleToggleArchiveStatus(item)}
+                              className={`text-sm font-medium hover:underline ${item.archived ? "text-green-600" : "text-yellow-600"}`}
+                          >
+                            {item.archived ? "Restore" : "Archive"}
+                          </button>
+                        </TableCell>
+                      </TableRow>
+                  ))
+              ) : isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-6 text-center italic text-gray-500">
+                      <div className="flex items-center justify-center">
+                        <Spinner size="sm" />
+                        <span className="ml-3">Loading term records...</span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </TableCell>
+                  </TableRow>
+              ) : (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-6 text-center italic text-gray-500">
+                      No records found for term {aySemParam}.
+                    </TableCell>
+                  </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
 
-                <Button
-                  onClick={handleImportSubmit}
-                  disabled={!importFile || isImporting}
-                  className="w-full"
+        <div className="mt-4 flex justify-center">
+          <Pagination
+              layout="pagination"
+              currentPage={currentPage}
+              totalPages={Math.ceil(recordsCount / maxRow) || 1}
+              onPageChange={(p) => setCurrentPage(p)}
+              showIcons
+          />
+        </div>
+
+        {/* --- MODAL: EXCEL OPERATIONS --- */}
+        <Modal show={openExcelModal} onClose={() => setOpenExcelModal(false)} size="lg">
+          <ModalHeader>
+            <div className="flex items-center gap-2">
+              <FaFileExcel className="text-green-600 h-5 w-5" />
+              <span>Excel Operations for <span className="font-mono text-blue-600">{aySemParam}</span></span>
+            </div>
+          </ModalHeader>
+          <ModalBody>
+            <div className="flex flex-col gap-5">
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                    type="button"
+                    onClick={() => setActiveExcelTab("import")}
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                        activeExcelTab === "import"
+                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                    }`}
                 >
-                  {isImporting ? (
-                    <>
-                      <Spinner size="sm" className="mr-2" />
-                      Validating & Importing...
-                    </>
-                  ) : (
-                    `Import Records to ${aySemParam}`
-                  )}
-                </Button>
-              </div>
-            )}
+                  <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
+                  <span className="text-xs font-semibold">Import Excel</span>
+                </button>
 
-            {activeExcelTab === "export" && (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                    Export Records for {aySemParam}
-                  </h4>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Generates a structured spreadsheet containing all current student records registered under this specific term with Status dropdown validation.
-                  </p>
-                </div>
-                <Button onClick={handleExportExcel} className="w-full" color="green">
-                  <FaFileExport className="mr-2 h-4 w-4" /> Export {recordsCount} Records to Excel
-                </Button>
-              </div>
-            )}
+                <button
+                    type="button"
+                    onClick={() => setActiveExcelTab("export")}
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                        activeExcelTab === "export"
+                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                    }`}
+                >
+                  <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
+                  <span className="text-xs font-semibold">Export Records</span>
+                </button>
 
-            {activeExcelTab === "template" && (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                    Download Term Template
-                  </h4>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Pre-filled template pre-configured with term <b className="font-mono">{aySemParam}</b> and Status dropdown validation (<b className="font-mono">Passed, Failed</b>).
-                  </p>
-                </div>
-                <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
-                  <FaDownload className="mr-2 h-4 w-4" /> Download Blank Excel Template
-                </Button>
+                <button
+                    type="button"
+                    onClick={() => setActiveExcelTab("template")}
+                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                        activeExcelTab === "template"
+                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                    }`}
+                >
+                  <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
+                  <span className="text-xs font-semibold">Blank Template</span>
+                </button>
               </div>
-            )}
-          </div>
-        </ModalBody>
-        <ModalFooter className="flex justify-end">
-          <Button color="alternative" onClick={() => setOpenExcelModal(false)}>
-            Close Window
-          </Button>
-        </ModalFooter>
-      </Modal>
-    </div>
+
+              {activeExcelTab === "import" && (
+                  <div className="space-y-4">
+                    <div
+                        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                        onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragging(false);
+                          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                            validateAndSelectFile(e.dataTransfer.files[0]);
+                          }
+                        }}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+                            isDragging
+                                ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
+                                : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                        }`}
+                    >
+                      <FileInput
+                          id="excel-file-input"
+                          ref={fileInputRef}
+                          accept=".xlsx, .xls, .csv"
+                          onChange={(e) => validateAndSelectFile(e.target.files ? e.target.files[0] : null)}
+                          className="hidden"
+                      />
+                      <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {importFile ? `${(importFile.size / 1024).toFixed(1)} KB` : "Strictly accepts .xlsx, .xls, or .csv files"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+                      <span className="font-semibold uppercase tracking-wide">Validation Constraint:</span> Rows must specify AY/Sem <b className="font-mono">{aySemParam}</b> and Status must be <b className="font-mono">Passed</b> or <b className="font-mono">Failed</b>. Headers: {REQUIRED_HEADERS.join(", ")}
+                    </div>
+
+                    {formatError && (
+                        <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+                          <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
+                          <div>{formatError}</div>
+                        </div>
+                    )}
+
+                    {importLogs.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
+                          {importLogs.map((log, index) => (
+                              <div
+                                  key={index}
+                                  className={
+                                    log.includes("Error") || log.includes("Failed") || log.includes("Blocked") || log.includes("Skipped")
+                                        ? "text-red-400"
+                                        : log.includes("Completed") || log.includes("Verified")
+                                            ? "font-bold text-green-400"
+                                            : "text-gray-300"
+                                  }
+                              >
+                                {log}
+                              </div>
+                          ))}
+                        </div>
+                    )}
+
+                    <Button
+                        onClick={handleImportSubmit}
+                        disabled={!importFile || isImporting}
+                        className="w-full"
+                    >
+                      {isImporting ? (
+                          <>
+                            <Spinner size="sm" className="mr-2" />
+                            Validating & Importing...
+                          </>
+                      ) : (
+                          `Import Records to ${aySemParam}`
+                      )}
+                    </Button>
+                  </div>
+              )}
+
+              {activeExcelTab === "export" && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Export Records for {aySemParam}
+                      </h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Generates a structured spreadsheet containing all current student records registered under this specific term with Status dropdown validation.
+                      </p>
+                    </div>
+                    <Button onClick={handleExportExcel} className="w-full" color="green">
+                      <FaFileExport className="mr-2 h-4 w-4" /> Export {recordsCount} Records to Excel
+                    </Button>
+                  </div>
+              )}
+
+              {activeExcelTab === "template" && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Download Term Template
+                      </h4>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Pre-filled template pre-configured with term <b className="font-mono">{aySemParam}</b> and Status dropdown validation (<b className="font-mono">Passed, Failed</b>).
+                      </p>
+                    </div>
+                    <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
+                      <FaDownload className="mr-2 h-4 w-4" /> Download Blank Excel Template
+                    </Button>
+                  </div>
+              )}
+            </div>
+          </ModalBody>
+          <ModalFooter className="flex justify-end">
+            <Button color="alternative" onClick={() => setOpenExcelModal(false)}>
+              Close Window
+            </Button>
+          </ModalFooter>
+        </Modal>
+      </div>
   );
 }
