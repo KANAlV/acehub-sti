@@ -280,9 +280,9 @@ export async function assignSubjectsToSections(
                     : "4th",
             );
 
-          const termMatched = yt.includes(`${targetTermNum}`);
-
-          return yearMatched && termMatched;
+          // Tertiary year_term only stores the year (e.g. "1st Year"), not the term.
+          // The term is already encoded in the section code, so we only match by year.
+          return yearMatched;
         }
       });
 

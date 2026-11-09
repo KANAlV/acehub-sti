@@ -159,6 +159,7 @@ export default function ScheduleManagement() {
 
   // Add Form State (Common / Template mode)
   const [addScheduleName, setAddScheduleName] = useState("");
+  const [addScheduleDescription, setAddScheduleDescription] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("");
 
   // Auto Assign / Generation Specific State
@@ -240,6 +241,7 @@ export default function ScheduleManagement() {
     setCreationMode("auto");
     setAutoAssignRoom(false);
     setAddScheduleName("");
+    setAddScheduleDescription("");
     setSelectedTerm("Term 1");
     setSelectedTemplate("");
     setCurriculumAdd([]);
@@ -576,7 +578,7 @@ export default function ScheduleManagement() {
       const savePayload = {
         scheduleName,
         generationConfig: {
-          description: `Generated for term ${term} (Auto Room: ${autoAssignRoom})`,
+          description: addScheduleDescription.trim() || `Generated for term ${term} (Auto Room: ${autoAssignRoom})`,
         },
         entries: entriesPayload,
       };
@@ -986,7 +988,7 @@ export default function ScheduleManagement() {
         </ModalHeader>
         <ModalBody>
           {addStep === "selection" ? (
-            <div className="space-y-4">
+            <div className="space-y-4 select-none">
               <p className="text-sm text-gray-600 dark:text-gray-300">
                 Please select how you would like to generate or create this
                 schedule:
@@ -1005,7 +1007,7 @@ export default function ScheduleManagement() {
                       Auto Assign / Generation
                     </span>
                     <span className="text-xs text-gray-500">
-                      Automatically map and generate time slots based on system
+                      Automatically map teachers and generate time slots based on system
                       rules and constraints.
                     </span>
                   </Label>
@@ -1065,7 +1067,19 @@ export default function ScheduleManagement() {
               </div>
 
               <div>
-                <Label htmlFor="term-select">Select Term / Semester *</Label>
+                <Label htmlFor="schedule-description">Description</Label>
+                <textarea
+                  id="schedule-description"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+                  rows={3}
+                  placeholder="Enter a brief description for this schedule..."
+                  value={addScheduleDescription}
+                  onChange={(e) => setAddScheduleDescription(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="term-select">Select Term / Semester * (for tertiary section generation only)</Label>
                 <Select
                   id="term-select"
                   value={selectedTerm}
@@ -1262,6 +1276,18 @@ export default function ScheduleManagement() {
                 {scheduleNameError && (
                   <HelperText color="failure">{scheduleNameError}</HelperText>
                 )}
+              </div>
+
+              <div>
+                <Label htmlFor="template-schedule-description">Description</Label>
+                <textarea
+                  id="template-schedule-description"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+                  rows={3}
+                  placeholder="Enter a brief description for this schedule..."
+                  value={addScheduleDescription}
+                  onChange={(e) => setAddScheduleDescription(e.target.value)}
+                />
               </div>
             </div>
           )}

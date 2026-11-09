@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Badge,
   Button,
   Card,
+  Label,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Select,
   Spinner,
   Table,
   TableBody,
@@ -12,15 +19,19 @@ import {
   TableHead,
   TableHeadCell,
   TableRow,
+  TextInput,
 } from "flowbite-react";
 import {
   HiArrowLeft,
   HiOutlineExternalLink,
   HiOutlineExclamationCircle,
+  HiX,
 } from "react-icons/hi";
 import {
   fetchActiveScheduleName,
   fetchTeacherDetailedMetrics,
+  fetchRooms,
+  RoomRecord,
 } from "@/app/actions/system";
 import { fetchPscsIdByEmail } from "@/app/actions/user";
 
@@ -52,6 +63,26 @@ interface ScheduleEntry {
   section: string;
   units: number;
   code: string;
+}
+
+interface TeacherPreferences {
+  preferred_rooms: string[];
+  preferred_times: string[];
+}
+
+/** Convert minutes-from-midnight (e.g. 600 = 10:00 AM, 930 = 3:30 PM) to 12-hour format */
+function formatTime(timeStr: string | null | undefined): string {
+  if (!timeStr) return "";
+  const totalMinutes = parseInt(timeStr.toString().trim(), 10);
+  if (isNaN(totalMinutes)) return "";
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHours = hours % 12 || 12;
+  const mm = minutes.toString().padStart(2, "0");
+  return `${displayHours}:${mm} ${period}`;
 }
 
 export default function TeacherSchedule() {
@@ -91,6 +122,178 @@ export default function TeacherSchedule() {
 
   // --- Schedule & Breakdown States ---
   const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([]);
+
+  // --- Preferences States ---
+  const [teacherPreferences, setTeacherPreferences] = useState<TeacherPreferences>({
+    preferred_rooms: [],
+    preferred_times: [],
+  });
+  const [openPreferencesModal, setOpenPreferencesModal] = useState(false);
+  
+  // --- Preferences Modal Form States ---
+  const [roomSearchQuery, setRoomSearchQuery] = useState("");
+  const [roomSearchResults, setRoomSearchResults] = useState<RoomRecord[]>([]);
+  const [roomSearchLoading, setRoomSearchLoading] = useState(false);
+  const [showRoomDropdown, setShowRoomDropdown] = useState(false);
+  const [selectedRoomId, setSelectedRoomId] = useState("");
+  const [selectedRoomName, setSelectedRoomName] = useState("");
+  const [selectedDay, setSelectedDay] = useState("");
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
+  const [timeCollision, setTimeCollision] = useState(false);
+  const roomSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // --- Generate time slots from 07:00 to 21:00 in 30-min intervals ---
+  const TIME_SLOTS = (() => {
+    const slots: string[] = [];
+    for (let hour = 7; hour < 21; hour++) {
+      for (let min = 0; min < 60; min += 30) {
+        const start = `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+        const nextMin = min + 30;
+        const nextHour = nextMin >= 60 ? hour + 1 : hour;
+        const nextMinDisplay = nextMin >= 60 ? 0 : nextMin;
+        const end = `${String(nextHour).padStart(2, "0")}:${String(nextMinDisplay).padStart(2, "0")}`;
+        slots.push(`${start} - ${end}`);
+      }
+    }
+    return slots;
+  })();
+
+  // --- Debounced room search ---
+  const searchRooms = (query: string) => {
+    // Clear previous timeout
+    if (roomSearchTimeoutRef.current) {
+      clearTimeout(roomSearchTimeoutRef.current);
+    }
+
+    // Only search if query has 2+ characters
+    if (query.length < 2) {
+      setRoomSearchResults([]);
+      setShowRoomDropdown(false);
+      return;
+    }
+
+    // Debounce for 300ms
+    roomSearchTimeoutRef.current = setTimeout(async () => {
+      setRoomSearchLoading(true);
+      const res = await fetchRooms(query, "room_name", "ASC", -1, 1);
+      if (res.success && res.data) {
+        // Filter out rooms already in preferences
+        const filtered = res.data.filter(
+          (r) => !teacherPreferences.preferred_rooms.includes(r.room_name)
+        );
+        setRoomSearchResults(filtered);
+        setShowRoomDropdown(true);
+      } else {
+        setRoomSearchResults([]);
+        setShowRoomDropdown(false);
+      }
+      setRoomSearchLoading(false);
+    }, 300);
+  };
+
+  // --- Cleanup timeout on unmount ---
+  useEffect(() => {
+    return () => {
+      if (roomSearchTimeoutRef.current) {
+        clearTimeout(roomSearchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // --- Check if selected time slot collides with existing schedule entries ---
+  const checkTimeCollision = (day: string, timeSlot: string) => {
+    if (!day || !timeSlot) {
+      setTimeCollision(false);
+      return;
+    }
+    
+    const [slotStart, slotEnd] = timeSlot.split(" - ");
+    const slotStartMinutes = timeToMinutes(slotStart);
+    const slotEndMinutes = timeToMinutes(slotEnd);
+    
+    // Check against existing schedule entries for the same day
+    const hasCollision = scheduleEntries.some(entry => {
+      if (entry.day !== day) return false;
+      const entryStart = parseInt(entry.start_time, 10);
+      const entryEnd = parseInt(entry.end_time, 10);
+      // Collision if ranges overlap
+      return slotStartMinutes < entryEnd && slotEndMinutes > entryStart;
+    });
+    
+    // Also check against already added preferred times for the same day
+    const preferredTimeCollision = teacherPreferences.preferred_times.some(pref => {
+      const parts = pref.split(" ");
+      const prefDay = parts[0];
+      if (prefDay !== day) return false;
+      const timePart = parts.slice(1).join(" ");
+      const [prefStart, prefEnd] = timePart.split(" - ");
+      const prefStartMinutes = timeToMinutes(prefStart);
+      const prefEndMinutes = timeToMinutes(prefEnd);
+      return slotStartMinutes < prefEndMinutes && slotEndMinutes > prefStartMinutes;
+    });
+    
+    setTimeCollision(hasCollision || preferredTimeCollision);
+  };
+  
+  // Helper: convert "HH:MM" to minutes from midnight
+  const timeToMinutes = (timeStr: string): number => {
+    const [h, m] = timeStr.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  
+  // --- Add preferred room ---
+  const addPreferredRoom = () => {
+    if (!selectedRoomId || !selectedRoomName) return;
+    if (teacherPreferences.preferred_rooms.includes(selectedRoomName)) {
+      setSelectedRoomId("");
+      setSelectedRoomName("");
+      setRoomSearchQuery("");
+      setShowRoomDropdown(false);
+      return;
+    }
+    setTeacherPreferences(prev => ({
+      ...prev,
+      preferred_rooms: [...prev.preferred_rooms, selectedRoomName],
+    }));
+    setSelectedRoomId("");
+    setSelectedRoomName("");
+    setRoomSearchQuery("");
+    setShowRoomDropdown(false);
+  };
+  
+  // --- Remove preferred room ---
+  const removePreferredRoom = (roomName: string) => {
+    setTeacherPreferences(prev => ({
+      ...prev,
+      preferred_rooms: prev.preferred_rooms.filter(r => r !== roomName),
+    }));
+  };
+  
+  // --- Add preferred time ---
+  const addPreferredTime = () => {
+    if (!selectedDay || !selectedTimeSlot || timeCollision) return;
+    const prefKey = `${selectedDay} ${selectedTimeSlot}`;
+    if (teacherPreferences.preferred_times.includes(prefKey)) {
+      setSelectedDay("");
+      setSelectedTimeSlot("");
+      return;
+    }
+    setTeacherPreferences(prev => ({
+      ...prev,
+      preferred_times: [...prev.preferred_times, prefKey],
+    }));
+    setSelectedDay("");
+    setSelectedTimeSlot("");
+    setTimeCollision(false);
+  };
+  
+  // --- Remove preferred time ---
+  const removePreferredTime = (prefKey: string) => {
+    setTeacherPreferences(prev => ({
+      ...prev,
+      preferred_times: prev.preferred_times.filter(t => t !== prefKey),
+    }));
+  };
 
   // --- Initial Setup Effect (Fetch Schedule Name & User PSCS ID) ---
   useEffect(() => {
@@ -282,69 +485,38 @@ export default function TeacherSchedule() {
         </div>
       </div>
 
-      {/* Main Grid: Teacher Information & Units Analysis */}
+      {/* Main Grid: Teacher Profile & Preferences */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Teacher Information Card */}
-        <Card className="lg:col-span-1">
-          <div className={"h-full"}>
-            <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+        {/* Teacher Profile Card (Info + Units Analysis) */}
+        <Card className="lg:col-span-2">
+          {/* Teacher Information Section */}
+          <div className="mb-6 flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-gray-200 pb-4 text-sm dark:border-gray-700">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
               👥 Teacher Information
             </h3>
-            <div className="space-y-4 text-sm">
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
               <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Full Name
-                </p>
-                <p className="font-semibold text-gray-900 dark:text-white">
-                  {teacherInfo.name !== null ? (
-                    teacherInfo.name
-                  ) : (
-                    <Spinner size="sm" />
-                  )}
-                </p>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">PSCS ID: </span>
+                <span className="font-mono text-gray-900 dark:text-white">
+                  {teacherInfo.pscs_id !== null ? teacherInfo.pscs_id : <Spinner size="sm" />}
+                </span>
               </div>
               <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  PSCS ID
-                </p>
-                <p className="font-mono text-gray-900 dark:text-white">
-                  {teacherInfo.pscs_id !== null ? (
-                    teacherInfo.pscs_id
-                  ) : (
-                    <Spinner size="sm" />
-                  )}
-                </p>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Code: </span>
+                <span className="font-mono text-gray-900 dark:text-white">
+                  {teacherInfo.teacher_code !== null ? teacherInfo.teacher_code : <Spinner size="sm" />}
+                </span>
               </div>
               <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Teacher Code
-                </p>
-                <p className="font-mono text-gray-900 dark:text-white">
-                  {teacherInfo.teacher_code !== null ? (
-                    teacherInfo.teacher_code
-                  ) : (
-                    <Spinner size="sm" />
-                  )}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Employment Type
-                </p>
-                <p className="text-gray-900 dark:text-white">
-                  {teacherInfo.employment_type !== null ? (
-                    teacherInfo.employment_type
-                  ) : (
-                    <Spinner size="sm" />
-                  )}
-                </p>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Employment: </span>
+                <span className="text-gray-900 dark:text-white">
+                  {teacherInfo.employment_type !== null ? teacherInfo.employment_type : <Spinner size="sm" />}
+                </span>
               </div>
             </div>
           </div>
-        </Card>
 
-        {/* Units Analysis Card */}
-        <Card className="lg:col-span-2">
+          {/* Units Analysis Section */}
           <h3 className="mb-6 text-sm font-semibold text-gray-900 dark:text-white">
             🕒 Units Analysis
           </h3>
@@ -459,7 +631,250 @@ export default function TeacherSchedule() {
             </div>
           </div>
         </Card>
+
+        {/* Preferences Card */}
+        <Card className="lg:col-span-1">
+          <div className="h-full">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                ⚙️ Preferences
+              </h3>
+              <Button
+                size="xs"
+                color="blue"
+                className="cursor-pointer"
+                onClick={() => setOpenPreferencesModal(true)}
+              >
+                Edit
+              </Button>
+            </div>
+
+            {/* Preferred Rooms */}
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                Preferred Rooms
+              </p>
+              {teacherPreferences.preferred_rooms.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {teacherPreferences.preferred_rooms.map((room, idx) => (
+                    <Badge key={idx} color="blue">
+                      {room}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs italic text-gray-400">No preferred rooms set</p>
+              )}
+            </div>
+
+            {/* Preferred Times */}
+            <div>
+              <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                Preferred Times
+              </p>
+              {teacherPreferences.preferred_times.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {teacherPreferences.preferred_times.map((time, idx) => (
+                    <Badge key={idx} color="success">
+                      {time}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs italic text-gray-400">No preferred times set</p>
+              )}
+            </div>
+          </div>
+        </Card>
       </div>
+
+      {/* Preferences Modal */}
+      <Modal show={openPreferencesModal} onClose={() => setOpenPreferencesModal(false)}>
+        <ModalHeader>Teacher Preferences</ModalHeader>
+        <ModalBody>
+          <div className="space-y-6">
+            {/* Preferred Rooms Section */}
+            <div>
+              <h4 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
+                Preferred Rooms
+              </h4>
+              
+              {/* Add Room Search */}
+              <div className="mb-3 flex gap-2">
+                <div className="flex-1 relative">
+                  <Label>Room</Label>
+                  <TextInput
+                    placeholder="Type 2+ characters to search..."
+                    value={selectedRoomName || roomSearchQuery}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setRoomSearchQuery(value);
+                      setSelectedRoomId("");
+                      setSelectedRoomName("");
+                      searchRooms(value);
+                    }}
+                    onFocus={() => {
+                      if (roomSearchResults.length > 0) {
+                        setShowRoomDropdown(true);
+                      }
+                    }}
+                    onBlur={() => {
+                      // Delay to allow click on dropdown items
+                      setTimeout(() => setShowRoomDropdown(false), 200);
+                    }}
+                  />
+                  {roomSearchLoading && (
+                    <div className="absolute right-3 top-8">
+                      <Spinner size="sm" />
+                    </div>
+                  )}
+                  {/* Dropdown Suggestions */}
+                  {showRoomDropdown && roomSearchResults.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                      {roomSearchResults.map((room) => (
+                        <button
+                          key={room.room_id}
+                          type="button"
+                          className="block w-full px-4 py-2 text-left text-sm text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+                          onClick={() => {
+                            setSelectedRoomId(room.room_id);
+                            setSelectedRoomName(room.room_name);
+                            setRoomSearchQuery(room.room_name);
+                            setShowRoomDropdown(false);
+                          }}
+                        >
+                          {room.room_name}
+                          {room.floor_level != null && (
+                            <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                              (Floor {room.floor_level})
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {showRoomDropdown && roomSearchResults.length === 0 && roomSearchQuery.length >= 2 && !roomSearchLoading && (
+                    <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-500 shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                      No rooms found
+                    </div>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  color="blue"
+                  className="self-end mb-0.5 cursor-pointer"
+                  onClick={addPreferredRoom}
+                  disabled={!selectedRoomId || !selectedRoomName}
+                >
+                  Add
+                </Button>
+              </div>
+              
+              {/* Room Badges */}
+              {teacherPreferences.preferred_rooms.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {teacherPreferences.preferred_rooms.map((room, idx) => (
+                    <span key={idx} className="inline-flex items-center gap-1">
+                      <Badge color="blue">{room}</Badge>
+                      <button
+                        onClick={() => removePreferredRoom(room)}
+                        className="text-gray-400 hover:text-red-500"
+                      >
+                        <HiX className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm italic text-gray-400">No preferred rooms configured yet.</p>
+              )}
+            </div>
+
+            {/* Preferred Times Section */}
+            <div>
+              <h4 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
+                Preferred Times
+              </h4>
+              
+              {/* Add Time Day + Slot */}
+              <div className="mb-3 flex gap-2">
+                <div className="flex-1">
+                  <Label>Day</Label>
+                  <Select
+                    value={selectedDay}
+                    onChange={(e) => {
+                      setSelectedDay(e.target.value);
+                      checkTimeCollision(e.target.value, selectedTimeSlot);
+                    }}
+                  >
+                    <option value="">-- Select a day --</option>
+                    {DAYS_OF_WEEK.map(day => (
+                      <option key={day} value={day}>{day}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="flex-1">
+                  <Label>Time Slot</Label>
+                  <Select
+                    value={selectedTimeSlot}
+                    onChange={(e) => {
+                      setSelectedTimeSlot(e.target.value);
+                      checkTimeCollision(selectedDay, e.target.value);
+                    }}
+                    className={timeCollision ? "border-red-500" : ""}
+                  >
+                    <option value="">-- Select a time --</option>
+                    {TIME_SLOTS.map(slot => (
+                      <option key={slot} value={slot}>{slot}</option>
+                    ))}
+                  </Select>
+                  {timeCollision && (
+                    <p className="mt-1 text-xs text-red-500">Time slot conflicts with existing schedule</p>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  color="blue"
+                  className="self-end mb-0.5 cursor-pointer"
+                  onClick={addPreferredTime}
+                  disabled={!selectedDay || !selectedTimeSlot || timeCollision}
+                >
+                  Add
+                </Button>
+              </div>
+              
+              {/* Time Badges */}
+              {teacherPreferences.preferred_times.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {teacherPreferences.preferred_times.map((pref, idx) => {
+                    const parts = pref.split(" ");
+                    const day = parts[0];
+                    const timeSlot = parts.slice(1).join(" ");
+                    return (
+                      <span key={idx} className="inline-flex items-center gap-1">
+                        <Badge color="success">{day} {timeSlot}</Badge>
+                        <button
+                          onClick={() => removePreferredTime(pref)}
+                          className="text-gray-400 hover:text-red-500"
+                        >
+                          <HiX className="h-3 w-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm italic text-gray-400">No preferred times configured yet.</p>
+              )}
+            </div>
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button color="gray" onClick={() => setOpenPreferencesModal(false)}>
+            Close
+          </Button>
+        </ModalFooter>
+      </Modal>
 
       {/* Schedule by Day Section */}
       <div>
@@ -500,7 +915,7 @@ export default function TeacherSchedule() {
                                 {entry.subject_name}
                               </p>
                               <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {entry.start_time} - {entry.end_time}
+                                {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
                               </p>
                               <p className="text-xs text-gray-500 dark:text-gray-400">
                                 Room: {entry.room_name} • Section:{" "}
@@ -576,7 +991,7 @@ export default function TeacherSchedule() {
                       </span>
                     </TableCell>
                     <TableCell className="text-gray-500 dark:text-gray-400">
-                      {item.day} {item.start_time} - {item.end_time}
+                      {item.day} {formatTime(item.start_time)} - {formatTime(item.end_time)}
                     </TableCell>
                   </TableRow>
                 ))

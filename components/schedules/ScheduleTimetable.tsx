@@ -14,6 +14,7 @@ import {
   Modal,
   ModalBody,
   ModalHeader,
+  ModalFooter,
   Spinner,
   Select,
   Accordion,
@@ -23,6 +24,7 @@ import {
   Badge,
   Tooltip,
   useThemeMode,
+  TextInput,
 } from "flowbite-react";
 import {
   HiArrowLeft,
@@ -37,7 +39,9 @@ import {
   HiUserAdd,
   HiExclamationCircle,
   HiClock,
+  HiSearch,
 } from "react-icons/hi";
+import { FaFileExcel } from "react-icons/fa6";
 import {
   fetchScheduleByName,
   fetchTimetableEntriesByScheduleId,
@@ -57,6 +61,17 @@ import {
 import { HiCheck, HiExclamationTriangle } from "react-icons/hi2";
 import TeacherAssignmentModal from "@/components/schedules/TeacherAssignmentModal";
 import { GiCoffeeCup } from "react-icons/gi";
+import {
+  exportByFloor,
+  exportByProgram,
+  exportByYear,
+  exportBySection,
+  getUniqueFloors,
+  getUniquePrograms,
+  getUniqueYears,
+  getUniqueSections,
+} from "@/utils/timetableExport";
+import { generateSubjectAbv } from "@/utils/NameAbbreviator";
 
 interface ScheduleTimetableClientProps {
   scheduleName: string;
@@ -209,6 +224,28 @@ export default function ScheduleTimetableClient({
     useState<string>("ALL");
   const [selectedTimetableRoom, setSelectedTimetableRoom] =
     useState<string>("ALL");
+  const [flashingEntryId, setFlashingEntryId] = useState<string | null>(null);
+
+  // --- Excel Export Modal State --- //
+  const [openExportModal, setOpenExportModal] = useState(false);
+  const [exportTab, setExportTab] = useState<
+    "floor" | "program" | "year" | "section"
+  >("section");
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Floor checkboxes
+  const [selectedFloors, setSelectedFloors] = useState<number[]>([]);
+
+  // Program selection
+  const [selectedPrograms, setSelectedPrograms] = useState<string[]>([]);
+
+  // Year checkboxes
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
+
+  // Section checkboxes
+  const [selectedExportSections, setSelectedExportSections] = useState<
+    string[]
+  >([]);
 
   const DAYS_CONFIG = [
     { id: 0, name: "Whole Week" },
@@ -239,7 +276,7 @@ export default function ScheduleTimetableClient({
     "Saturday",
   ];
 
-  // 12-hour format time slots grid (7:00 AM to 8:30 PM in 30-minute increments)
+  // 12-hour format time slots grid (7:00 AM to 9:30 PM in 30-minute increments)
   const timeSlotsGrid = [
     "07:00 AM",
     "07:30 AM",
@@ -269,6 +306,8 @@ export default function ScheduleTimetableClient({
     "07:30 PM",
     "08:00 PM",
     "08:30 PM",
+    "09:00 PM",
+    "09:30 PM",
   ];
 
   const GRID_START_MINS = 7 * 60; // 7:00 AM in minutes
@@ -718,13 +757,13 @@ export default function ScheduleTimetableClient({
     }
 
     const targetEndMins = targetStartMins + duration;
-    const MAX_DAY_LIMIT = 20 * 60 + 30;
+    const MAX_DAY_LIMIT = 22 * 60;
 
-    if (targetEndMins > MAX_DAY_LIMIT + 30) {
+    if (targetEndMins > MAX_DAY_LIMIT) {
       setConflictModalData({
         show: true,
         title: `Scheduling Conflict`,
-        message: `Class cannot end past 9:00 PM (Attempted end time: ${formatTime(targetEndMins)}).`,
+        message: `Class cannot end past 10:00 PM (Attempted end time: ${formatTime(targetEndMins)}).`,
       });
       return;
     }
@@ -1220,7 +1259,28 @@ export default function ScheduleTimetableClient({
   }
 
   return (
-    <div className="scrollbar-track-transparent relative flex scrollbar-thumb-gray-400 overflow-y-auto">
+    <>
+      <style>{`
+        @keyframes flash-border {
+          0%, 100% { border-color: transparent; }
+          25% { border-color: black; }
+          50% { border-color: transparent; }
+          75% { border-color: black; }
+        }
+        .dark .animate-flash-border {
+          animation: flash-border-dark 1.5s ease-in-out;
+        }
+        @keyframes flash-border-dark {
+          0%, 100% { border-color: transparent; }
+          25% { border-color: white; }
+          50% { border-color: transparent; }
+          75% { border-color: white; }
+        }
+        .animate-flash-border {
+          animation: flash-border 1.5s ease-in-out;
+        }
+      `}</style>
+      <div className="scrollbar-track-transparent relative flex scrollbar-thumb-gray-400 overflow-y-auto">
       {/* --- Main Div --- */}
       <div className="scrollbar-track-transparent flex-1 scrollbar-thumb-gray-400 space-y-4 overflow-y-auto p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1272,6 +1332,14 @@ export default function ScheduleTimetableClient({
               size="sm"
               className="cursor-pointer bg-cyan-600 text-white hover:bg-cyan-700"
               hidden={isEditMode}
+              onClick={() => {
+                // Initialize selections with all options
+                setSelectedFloors(getUniqueFloors(allRooms));
+                setSelectedPrograms(getUniquePrograms(changedSchedules));
+                setSelectedYears(getUniqueYears(changedSchedules));
+                setSelectedExportSections(getUniqueSections(changedSchedules));
+                setOpenExportModal(true);
+              }}
             >
               <HiOutlineExternalLink className="mr-1.5 h-4 w-4" />
               Export Timetable
@@ -1535,10 +1603,10 @@ export default function ScheduleTimetableClient({
                   dragPreview.innerHTML = `
                     <div>
                       <div class="flex items-center justify-between">
-                        <div class="text-xs font-bold truncate">${entry.course_name}</div>
+                        <div class="text-xs font-bold truncate">${generateSubjectAbv(entry.course_name)}</div>
                         <span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase bg-cyan-200 text-cyan-900">${entry.type || "Lecture"}</span>
                       </div>
-                      <div class="text-[10px] font-medium opacity-80 truncate">${entry.course_code}</div>
+                      <div class="text-[10px] font-medium opacity-80 truncate">${entry.course_name}</div>
                     </div>
                     <div class="space-y-0.5 text-[10px] font-semibold opacity-90">
                       <div>Sec: ${entry.section}</div>
@@ -1578,7 +1646,11 @@ export default function ScheduleTimetableClient({
                   setDragOverCell(null);
                 }}
                 className={`absolute flex flex-col overflow-hidden rounded border p-2 backdrop-blur-xs transition-all ${zIndexClass} ${
-                  isBeingDragged ? "opacity-30 border-dashed border-cyan-400 bg-cyan-50/50" : ""
+                  flashingEntryId === entry.schedule_entry_id
+                    ? "animate-flash-border border-2"
+                    : isBeingDragged
+                      ? "border-dashed border-cyan-400 bg-cyan-50/50 opacity-30"
+                      : ""
                 } ${blockStyle} ${isEditMode && !isGhost ? "cursor-grab active:cursor-grabbing" : ""}`}
                 style={{
                   top: `${topOffsetPx + 45}px`,
@@ -1590,7 +1662,7 @@ export default function ScheduleTimetableClient({
               >
                 {/* --- Original Position Marker Banner when Dragging --- */}
                 {isBeingDragged && (
-                  <div className="absolute inset-0 z-35 flex items-center justify-center gap-1 bg-cyan-100/90 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/90 dark:text-cyan-200 pointer-events-none">
+                  <div className="pointer-events-none absolute inset-0 z-35 flex items-center justify-center gap-1 bg-cyan-100/90 p-1 text-center text-[10px] font-semibold text-cyan-800 dark:bg-cyan-900/90 dark:text-cyan-200">
                     <HiLocationMarker className="h-3.5 w-3.5 animate-bounce" />
                     <span>Original Position (Drop here)</span>
                   </div>
@@ -1610,19 +1682,24 @@ export default function ScheduleTimetableClient({
                   </button>
                 )}
                 <div className="flex items-center justify-between pr-4">
-                  <div className="truncate text-xs font-bold">
-                    {entry.course_name}
+                  <div className="truncate text-sm font-bold">
+                    {generateSubjectAbv(entry.course_name)}
                   </div>
                 </div>
                 <div className="truncate text-[10px] font-medium opacity-90">
-                  {entry.course_code} {isGhost ? "(Other Section/Room)" : ""}
+                  {entry.course_name} {isGhost ? "(Other Section/Room)" : ""}
                 </div>
                 <div className="mt-auto space-y-0.5 text-[10px] font-semibold opacity-90">
-                  <div>Teacher: {entry.teacher_code || "Unassigned"}</div>
-                  <div>Sec: {entry.section}</div>
-                  <div>Room: {entry.room_name || "TBA"}</div>
+                  <div className={"text-xs"}>
+                    Teacher: {entry.teacher_code || "Unassigned"}
+                  </div>
+                  <div className={"text-xs"}>Sec: {entry.section}</div>
+                  <div className={"text-xs"}>
+                    Room: {entry.room_name || "TBA"}
+                  </div>
                   <div className="font-mono">
-                    {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                    {formatTime(entry.start_time)} -{" "}
+                    {formatTime(entry.end_time)}
                   </div>
                 </div>
               </div>
@@ -1747,7 +1824,7 @@ export default function ScheduleTimetableClient({
                                 height: `${((matchedBreak.end_time - matchedBreak.start_time) / 30) * ROW_HEIGHT_PX - 12}px`,
                               }}
                             >
-                              <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-violet-900 dark:text-violet-100">
+                              <div className="flex w-full justify-center space-x-2 truncate text-sm font-bold text-violet-900 dark:text-violet-100">
                                 <GiCoffeeCup />
                                 <div>{matchedBreak.break_description}</div>
                               </div>
@@ -1908,15 +1985,16 @@ export default function ScheduleTimetableClient({
                                 if (blockElement) {
                                   blockElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
                                 }
+                                // Trigger flash animation on grid block
+                                setFlashingEntryId(scheduleEntryId);
+                                setTimeout(() => setFlashingEntryId(null), 1500);
                               }}
-                              className={`relative rounded border p-2 text-xs transition-all ${
-                                selectedTimetableRoom === "ALL"
-                                  ? "cursor-pointer border-gray-200 bg-gray-100/60 text-gray-400 hover:bg-gray-200/60 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500 dark:hover:bg-gray-700/60"
-                                  : hasConflict
-                                    ? "cursor-pointer border-red-200/50 bg-red-50/30 hover:bg-red-100/50 dark:border-red-800/50 dark:bg-red-950/10 text-gray-800 dark:text-gray-200"
+                              className={`relative rounded border-2 p-2 text-xs ${
+                                hasConflict
+                                    ? "cursor-pointer border-red-500 bg-red-50/50 hover:bg-red-100/50 dark:border-red-400 dark:bg-red-950/20 text-gray-800 dark:text-gray-200"
                                     : hasFatigue
-                                      ? "cursor-pointer border-amber-200/50 bg-amber-50/30 hover:bg-amber-100/50 dark:border-amber-800/50 dark:bg-amber-950/10 text-gray-800 dark:text-gray-200"
-                                      : isPlaced
+                                      ? "cursor-pointer border-amber-500 bg-amber-50/50 hover:bg-amber-100/50 dark:border-amber-400 dark:bg-amber-950/20 text-gray-800 dark:text-gray-200"
+                                      : selectedTimetableRoom === "ALL" || isPlaced
                                         ? "cursor-pointer border-gray-200 bg-gray-100/60 text-gray-400 hover:bg-gray-200/60 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-500 dark:hover:bg-gray-700/60"
                                         : `cursor-grab ${isLabType ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/80 dark:border-emerald-800 dark:bg-emerald-950/20" : "border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/20"} text-gray-800 dark:text-gray-200`
                               }`}
@@ -1925,7 +2003,7 @@ export default function ScheduleTimetableClient({
                                 <div
                                   className={`font-bold`}
                                 >
-                                  {subj.course_code}
+                                  {generateSubjectAbv(subj.course_name)}
                                 </div>
                                 <div className="relative flex items-center gap-1">
                                   <span
@@ -2311,6 +2389,16 @@ export default function ScheduleTimetableClient({
         </ModalBody>
       </Modal>
 
+      {/* Loading Spinner Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-white/70 backdrop-blur-sm dark:bg-gray-900/70">
+          <Spinner size="xl" />
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Fetching schedules
+          </p>
+        </div>
+      )}
+
       {/* Page Does Not Exist Modal */}
       <Modal
         show={!scheduleExists && !isLoading}
@@ -2340,6 +2428,283 @@ export default function ScheduleTimetableClient({
           </div>
         </ModalBody>
       </Modal>
+
+      {/* --- EXCEL EXPORT MODAL --- */}
+      <Modal
+        show={openExportModal}
+        onClose={() => setOpenExportModal(false)}
+        size="xl"
+      >
+        <ModalHeader>
+          <div className="flex items-center gap-2">
+            <FaFileExcel className="text-green-600 h-5 w-5" />
+            <span>Export Timetable to Excel</span>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          <div className="flex flex-col gap-5">
+            {/* Tab switcher */}
+            <div className="grid grid-cols-4 gap-2">
+              {(
+                [
+                  { key: "floor", label: "By Floor" },
+                  { key: "program", label: "By Program" },
+                  { key: "year", label: "By Year" },
+                  { key: "section", label: "By Section" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setExportTab(tab.key)}
+                  className={`rounded-lg border p-3 text-center text-sm font-medium transition-all ${
+                    exportTab === tab.key
+                      ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* TAB: By Floor */}
+            {exportTab === "floor" && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Select Floors
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Each selected floor will be exported as a separate sheet
+                    containing the rooms assigned to it.
+                  </p>
+                </div>
+                <div className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <div className="grid grid-cols-4 gap-2 select-none">
+                    {getUniqueFloors(allRooms).map((floor) => (
+                      <label
+                        key={floor}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedFloors.includes(floor)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedFloors((prev) => [
+                                ...prev,
+                                floor,
+                              ]);
+                            } else {
+                              setSelectedFloors((prev) =>
+                                prev.filter((f) => f !== floor),
+                              );
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-700 dark:text-gray-300">
+                          Floor {floor}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: By Program/Strand */}
+            {exportTab === "program" && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Select Programs / Strands
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Each selected program will be exported as a separate sheet.
+                  </p>
+                </div>
+                <div className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <div className="grid grid-cols-4 gap-2 select-none">
+                    {getUniquePrograms(changedSchedules).map((program) => (
+                      <label
+                        key={program}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedPrograms.includes(program)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedPrograms((prev) => [
+                                ...prev,
+                                program,
+                              ]);
+                            } else {
+                              setSelectedPrograms((prev) =>
+                                prev.filter((p) => p !== program),
+                              );
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {program}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: By Year */}
+            {exportTab === "year" && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Select Year Levels
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Each selected year level will be exported as a separate
+                    sheet.
+                  </p>
+                </div>
+                <div className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <div className="grid grid-cols-4 gap-2 select-none">
+                    {getUniqueYears(changedSchedules).map((year) => (
+                      <label
+                        key={year}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedYears.includes(year)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedYears((prev) => [...prev, year]);
+                            } else {
+                              setSelectedYears((prev) =>
+                                prev.filter((y) => y !== year),
+                              );
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {year}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: By Section */}
+            {exportTab === "section" && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Select Sections
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Each selected section will be exported as a separate sheet
+                    with one timetable.
+                  </p>
+                </div>
+                <div className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <div className="grid grid-cols-4 gap-2 select-none">
+                    {getUniqueSections(changedSchedules).map((section) => (
+                      <label
+                        key={section}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedExportSections.includes(section)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedExportSections((prev) => [
+                                ...prev,
+                                section,
+                              ]);
+                            } else {
+                              setSelectedExportSections((prev) =>
+                                prev.filter((s) => s !== section),
+                              );
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {section}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            color="green"
+            onClick={async () => {
+              setIsExporting(true);
+              try {
+                const entries = changedSchedules.filter(
+                  (e) => e.day && e.start_time && e.start_time > 0,
+                );
+                if (exportTab === "floor") {
+                  await exportByFloor(
+                    entries,
+                    allRooms,
+                    selectedFloors,
+                    scheduleName,
+                  );
+                } else if (exportTab === "program") {
+                  await exportByProgram(
+                    entries,
+                    selectedPrograms,
+                    scheduleName,
+                  );
+                } else if (exportTab === "year") {
+                  await exportByYear(entries, selectedYears, scheduleName);
+                } else if (exportTab === "section") {
+                  await exportBySection(
+                    entries,
+                    selectedExportSections,
+                    scheduleName,
+                  );
+                }
+                setOpenExportModal(false);
+              } finally {
+                setIsExporting(false);
+              }
+            }}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <>
+                <Spinner size="sm" className="mr-2" />
+                Generating Excel...
+              </>
+            ) : (
+              <>
+                <FaFileExcel className="mr-2 h-4 w-4" />
+                Export to Excel
+              </>
+            )}
+          </Button>
+          <Button color="alternative" onClick={() => setOpenExportModal(false)}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
+    </>
   );
 }
