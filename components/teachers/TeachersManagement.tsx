@@ -24,10 +24,19 @@ import {
   ToastToggle,
   Tooltip,
   useThemeMode,
+  FileInput,
 } from "flowbite-react";
-import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
+import {
+  FaPlus,
+  FaSortDown,
+  FaSortUp,
+  FaFileExcel,
+  FaFileImport,
+  FaFileExport,
+  FaDownload,
+} from "react-icons/fa6";
 import { HiCheck } from "react-icons/hi2";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   HiExclamation,
   HiX,
@@ -35,6 +44,7 @@ import {
   HiArchive,
   HiRefresh,
 } from "react-icons/hi";
+import ExcelJS from "exceljs";
 import {
   filterAlpha,
   filterAlphaDashSpace,
@@ -84,6 +94,35 @@ const DEFAULT_FULLTIME_AVAILABILITY: AvailabilitySlot[] = [
   },
 ];
 
+const REQUIRED_HEADERS = [
+  "PSCS ID",
+  "Teacher Code",
+  "First Name",
+  "Middle Name",
+  "Surname",
+  "Suffix",
+  "Email",
+  "Department",
+  "Employment Type",
+  "Status",
+];
+
+interface DataValidationRule {
+  type: string;
+  operator?: string;
+  allowBlank: boolean;
+  formulae: (string | number)[];
+  showErrorMessage?: boolean;
+  errorTitle?: string;
+  error?: string;
+}
+
+interface WorksheetWithValidation extends ExcelJS.Worksheet {
+  dataValidations: {
+    add: (range: string, validation: DataValidationRule) => void;
+  };
+}
+
 export default function TeachersManagement() {
   const { computedMode } = useThemeMode();
   const isDarkMode = computedMode === "dark";
@@ -110,8 +149,18 @@ export default function TeachersManagement() {
   const [openEditTeacherModal, setOpenEditTeacherModal] = useState(false);
   const [openArchiveModal, setOpenArchiveModal] = useState(false);
   const [openUnarchiveModal, setOpenUnarchiveModal] = useState(false);
+  const [openExcelModal, setOpenExcelModal] = useState(false);
   const [selectedUnarchiveTeacher, setSelectedUnarchiveTeacher] =
     useState<TeacherRecord | null>(null);
+
+  // Excel Operations States
+  const [activeExcelTab, setActiveExcelTab] = useState<"import" | "export" | "template">("import");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const [importLogs, setImportLogs] = useState<string[]>([]);
+  const [formatError, setFormatError] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Form Error States --- //
   const [rowID, setRowID] = useState("");
@@ -201,18 +250,18 @@ export default function TeachersManagement() {
   const [showToastTimer, setShowToastTimer] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  /** --- Time Formatting Helper --- **/
-  const formatTime12hr = (time24: string) => {
+  /** --- Time Formatting Helper (Memoized) --- **/
+  const formatTime12hr = useCallback((time24: string) => {
     if (!time24) return "";
     const [h, m] = time24.split(":");
     let hours = parseInt(h, 10);
     const suffix = hours >= 12 ? "PM" : "AM";
     hours = hours % 12 || 12;
     return `${hours}:${m} ${suffix}`;
-  };
+  }, []);
 
   /** --- Availability Display Formatter --- **/
-  const renderAvailability = (item: TeacherRecord) => {
+  const renderAvailability = useCallback((item: TeacherRecord) => {
     const isStrictPartTime = item.employment_type === "Part-Time";
     let avail: AvailabilitySlot[] = [];
 
@@ -256,12 +305,12 @@ export default function TeachersManagement() {
         ))}
       </div>
     );
-  };
+  }, []);
 
   /** --- Validation Utilities --- **/
-  const validateEmailFormat = (email: string): boolean => {
+  const validateEmailFormat = useCallback((email: string): boolean => {
     return email.toLowerCase().endsWith("@alabang.sti.edu.ph");
-  };
+  }, []);
 
   /** --- Initial Load: Fetch All Departments --- **/
   useEffect(() => {
@@ -277,8 +326,315 @@ export default function TeachersManagement() {
     void loadAllDepartments();
   }, []);
 
+  /** --- Excel Operations --- **/
+  const downloadWorkbook = useCallback((buffer: ArrayBuffer, filename: string) => {
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  }, []);
+
+  const handleDownloadTemplate = useCallback(async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Teachers Template") as WorksheetWithValidation;
+
+    worksheet.columns = [
+      { header: "PSCS ID", key: "pscs_id", width: 18 },
+      { header: "Teacher Code", key: "teacher_code", width: 15 },
+      { header: "First Name", key: "f_name", width: 25 },
+      { header: "Middle Name", key: "m_name", width: 20 },
+      { header: "Surname", key: "surname", width: 25 },
+      { header: "Suffix", key: "suffix", width: 10 },
+      { header: "Email", key: "email", width: 35 },
+      { header: "Department", key: "department", width: 25 },
+      { header: "Employment Type", key: "employment_type", width: 20 },
+      { header: "Status", key: "status", width: 15 },
+    ];
+
+    worksheet.addRow({
+      pscs_id: "1234567890123",
+      teacher_code: "JMR",
+      f_name: "James",
+      m_name: "M.",
+      surname: "Resurreccion",
+      suffix: "",
+      email: "j.resurreccion@alabang.sti.edu.ph",
+      department: allDepartments[0] || "Information Technology",
+      employment_type: "Full-Time",
+      status: "Active",
+    });
+
+    worksheet.dataValidations.add("I2:I1000", {
+      type: "list",
+      allowBlank: false,
+      formulae: ['"Full-Time,Part-Time Full Load,Part-Time"'],
+      showErrorMessage: true,
+      errorTitle: "Invalid Employment Type",
+      error: "Please select a valid employment type from the dropdown.",
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadWorkbook(buffer, "Teachers_Management_Template.xlsx");
+    setToastMessage("Blank Excel template downloaded successfully!");
+    setToastType("success");
+    setShowToast(true);
+  }, [allDepartments, downloadWorkbook]);
+
+  const handleExportExcel = useCallback(async () => {
+    try {
+      const response = await fetchTeachers(
+        searchTerm || null,
+        statusFilter,
+        departmentFilter,
+        sortTeachersBy,
+        sortTeachersDir,
+        10000,
+        1,
+      );
+
+      const exportList = response?.success && Array.isArray(response.data) ? response.data : [];
+
+      if (exportList.length === 0) {
+        setToastMessage("No teacher records available to export.");
+        setToastType("warning");
+        setShowToast(true);
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Teachers Export") as WorksheetWithValidation;
+
+      worksheet.columns = [
+        { header: "PSCS ID", key: "pscs_id", width: 18 },
+        { header: "Teacher Code", key: "teacher_code", width: 15 },
+        { header: "First Name", key: "f_name", width: 25 },
+        { header: "Middle Name", key: "m_name", width: 20 },
+        { header: "Surname", key: "surname", width: 25 },
+        { header: "Suffix", key: "suffix", width: 10 },
+        { header: "Email", key: "email", width: 35 },
+        { header: "Department", key: "department", width: 25 },
+        { header: "Employment Type", key: "employment_type", width: 20 },
+        { header: "Status", key: "status", width: 15 },
+      ];
+
+      exportList.forEach((item: TeacherRecord) => {
+        worksheet.addRow({
+          pscs_id: item.pscs_id || "",
+          teacher_code: item.teacher_code || "",
+          f_name: item.f_name || "",
+          m_name: item.m_name || "",
+          surname: item.surname || "",
+          suffix: item.suffix || "",
+          email: item.email || "",
+          department: item.department || "",
+          employment_type: item.employment_type || "Full-Time",
+          status: item.status || "Active",
+        });
+      });
+
+      worksheet.dataValidations.add("I2:I1000", {
+        type: "list",
+        allowBlank: false,
+        formulae: ['"Full-Time,Part-Time Full Load,Part-Time"'],
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      downloadWorkbook(buffer, `Teachers_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
+      setToastMessage("Teachers exported to Excel successfully");
+      setToastType("success");
+      setShowToast(true);
+    } catch (err) {
+      console.error(err);
+      setToastMessage("Failed to export records to Excel");
+      setToastType("error");
+      setShowToast(true);
+    }
+  }, [searchTerm, statusFilter, departmentFilter, sortTeachersBy, sortTeachersDir, downloadWorkbook]);
+
+  const validateAndSelectFile = useCallback((file: File | null) => {
+    setFormatError("");
+    setImportLogs([]);
+    if (!file) return;
+
+    const validExtensions = [".xlsx", ".xls", ".csv"];
+    const fileName = file.name.toLowerCase();
+    const isValid = validExtensions.some((ext) => fileName.endsWith(ext));
+
+    if (!isValid) {
+      setFormatError("Invalid file type. Strictly accepts Excel files (.xlsx, .xls) or .csv.");
+      setImportFile(null);
+      return;
+    }
+    setImportFile(file);
+  }, []);
+
+  const handleImportSubmit = useCallback(async () => {
+    if (!importFile) return;
+
+    setIsImporting(true);
+    setFormatError("");
+    setImportLogs(["Reading Excel workbook with ExcelJS..."]);
+
+    try {
+      const buffer = await importFile.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet || worksheet.rowCount === 0) {
+        setFormatError("The uploaded Excel file contains no worksheets or data.");
+        setIsImporting(false);
+        return;
+      }
+
+      const headerRow = worksheet.getRow(1);
+      const uploadedHeaders: string[] = [];
+      headerRow.eachCell((cell) => {
+        if (cell.value) uploadedHeaders.push(String(cell.value).trim());
+      });
+
+      const isHeaderValid = REQUIRED_HEADERS.every((reqHeader) =>
+        uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
+      );
+
+      if (!isHeaderValid) {
+        setFormatError(
+          `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
+        );
+        setIsImporting(false);
+        return;
+      }
+
+      setImportLogs((prev) => [...prev, `Headers verified. Validating rows against system rules...`]);
+
+      let successCount = 0;
+      let failCount = 0;
+      const logs: string[] = [];
+
+      const headerIndexMap: Record<string, number> = {};
+      headerRow.eachCell((cell, colNumber) => {
+        if (cell.value) {
+          headerIndexMap[String(cell.value).trim().toLowerCase()] = colNumber;
+        }
+      });
+
+      const pscsCol = headerIndexMap["pscs id"] || 1;
+      const codeCol = headerIndexMap["teacher code"] || 2;
+      const fNameCol = headerIndexMap["first name"] || 3;
+      const mNameCol = headerIndexMap["middle name"] || 4;
+      const surnameCol = headerIndexMap["surname"] || 5;
+      const suffixCol = headerIndexMap["suffix"] || 6;
+      const emailCol = headerIndexMap["email"] || 7;
+      const deptCol = headerIndexMap["department"] || 8;
+      const empCol = headerIndexMap["employment type"] || 9;
+      const statusCol = headerIndexMap["status"] || 10;
+
+      const rowsToProcess: {
+        rowNum: number;
+        pscs_id: string;
+        teacher_code: string;
+        f_name: string;
+        m_name: string;
+        surname: string;
+        suffix: string;
+        email: string;
+        department: string;
+        employment_type: string;
+        status: string;
+      }[] = [];
+
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        const pscs_id = filterNumeric(String(row.getCell(pscsCol).value || "")).slice(0, 13);
+        const teacher_code = filterAlphaNoSpace(String(row.getCell(codeCol).value || "")).slice(0, 6).toUpperCase();
+        const f_name = filterAlphaDashSpace(String(row.getCell(fNameCol).value || "")).slice(0, 50).toUpperCase();
+        const m_name = filterAlphaDashSpace(String(row.getCell(mNameCol).value || "")).slice(0, 50).toUpperCase();
+        const surname = filterAlphaDashSpace(String(row.getCell(surnameCol).value || "")).slice(0, 50).toUpperCase();
+        const suffix = filterAlpha(String(row.getCell(suffixCol).value || "")).slice(0, 10).toUpperCase();
+        const email = filterEmail(String(row.getCell(emailCol).value || "")).slice(0, 100);
+        const department = String(row.getCell(deptCol).value || "").trim();
+        const employment_type = String(row.getCell(empCol).value || "Full-Time").trim();
+        const status = String(row.getCell(statusCol).value || "Active").trim();
+
+        if (!pscs_id || !teacher_code || !f_name || !surname || !email) {
+          logs.push(`Row ${rowNumber}: Skipped. Mandatory fields are missing.`);
+          failCount++;
+          return;
+        }
+
+        if (!email.toLowerCase().endsWith("@alabang.sti.edu.ph")) {
+          logs.push(`Row ${rowNumber} (${teacher_code}): Skipped. Email must use domain @alabang.sti.edu.ph.`);
+          failCount++;
+          return;
+        }
+
+        rowsToProcess.push({
+          rowNum: rowNumber,
+          pscs_id,
+          teacher_code,
+          f_name,
+          m_name,
+          surname,
+          suffix,
+          email,
+          department,
+          employment_type: ["Full-Time", "Part-Time Full Load", "Part-Time"].includes(employment_type)
+            ? employment_type
+            : "Full-Time",
+          status: ["Active", "On Leave", "Inactive"].includes(status) ? status : "Active",
+        });
+      });
+
+      for (const item of rowsToProcess) {
+        const payload = {
+          pscs_id: item.pscs_id,
+          email: item.email,
+          f_name: item.f_name,
+          m_name: item.m_name || undefined,
+          surname: item.surname,
+          suffix: item.suffix || undefined,
+          teacher_code: item.teacher_code,
+          department: item.department || undefined,
+          employment_type: item.employment_type,
+          status: item.status,
+          availability: DEFAULT_FULLTIME_AVAILABILITY,
+        };
+
+        const res = await createTeacher(username ?? "system", payload);
+        if (res?.success) {
+          successCount++;
+        } else {
+          logs.push(`Row ${item.rowNum} (${item.teacher_code}): ${res?.error || "Creation failed."}`);
+          failCount++;
+        }
+      }
+
+      setImportLogs((prev) => [
+        ...prev,
+        `Import Completed: ${successCount} successful, ${failCount} failed.`,
+        ...logs,
+      ]);
+
+      if (successCount > 0) {
+        setToastMessage(`Imported ${successCount} teacher records successfully.`);
+        setToastType("success");
+        setShowToast(true);
+      }
+    } catch (err) {
+      console.error(err);
+      setFormatError("Error: Unable to parse Excel workbook format using ExcelJS.");
+    } finally {
+      setIsImporting(false);
+    }
+  }, [importFile, username]);
+
   /** --- Employment Type Switch Logic --- **/
-  const handleAddEmploymentChange = (type: string) => {
+  const handleAddEmploymentChange = useCallback((type: string) => {
     setInputEmploymentType(type);
     setAvailError("");
     if (type === "Part-Time") {
@@ -286,9 +642,9 @@ export default function TeachersManagement() {
     } else {
       setAvailabilityList(DEFAULT_FULLTIME_AVAILABILITY);
     }
-  };
+  }, []);
 
-  const handleEditEmploymentChange = (type: string) => {
+  const handleEditEmploymentChange = useCallback((type: string) => {
     editEmploymentType(type);
     setEditAvailError("");
     if (type === "Part-Time") {
@@ -296,10 +652,10 @@ export default function TeachersManagement() {
     } else {
       setEditAvailabilityList(DEFAULT_FULLTIME_AVAILABILITY);
     }
-  };
+  }, []);
 
   /** --- Add Availability Slot Actions --- **/
-  const handleAddAvailabilitySlot = () => {
+  const handleAddAvailabilitySlot = useCallback(() => {
     if (!addAvailStart || !addAvailEnd) {
       setAvailError("Please specify both start and end times.");
       return;
@@ -314,33 +670,36 @@ export default function TeachersManagement() {
     const formattedStart = formatTime12hr(addAvailStart);
     const formattedEnd = formatTime12hr(addAvailEnd);
 
-    const isDuplicate = availabilityList.some(
-      (slot) =>
-        slot.day === selectedDayName &&
-        slot.startTime === formattedStart &&
-        slot.endTime === formattedEnd,
-    );
+    setAvailabilityList((prev) => {
+      const isDuplicate = prev.some(
+        (slot) =>
+          slot.day === selectedDayName &&
+          slot.startTime === formattedStart &&
+          slot.endTime === formattedEnd,
+      );
 
-    if (isDuplicate) {
-      setAvailError("This availability slot has already been added.");
-      return;
-    }
+      if (isDuplicate) {
+        setAvailError("This availability slot has already been added.");
+        return prev;
+      }
 
-    const newSlot: AvailabilitySlot = {
-      day: selectedDayName,
-      startTime: formattedStart,
-      endTime: formattedEnd,
-    };
+      setAvailError("");
+      return [
+        ...prev,
+        {
+          day: selectedDayName,
+          startTime: formattedStart,
+          endTime: formattedEnd,
+        },
+      ];
+    });
+  }, [addAvailStart, addAvailEnd, addAvailDay, formatTime12hr]);
 
-    setAvailabilityList((prev) => [...prev, newSlot]);
-    setAvailError("");
-  };
-
-  const handleRemoveAvailabilitySlot = (index: number) => {
+  const handleRemoveAvailabilitySlot = useCallback((index: number) => {
     setAvailabilityList((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, []);
 
-  const handleEditAddAvailabilitySlot = () => {
+  const handleEditAddAvailabilitySlot = useCallback(() => {
     if (!editAvailStart || !editAvailEnd) {
       setEditAvailError("Please specify both start and end times.");
       return;
@@ -355,141 +714,101 @@ export default function TeachersManagement() {
     const formattedStart = formatTime12hr(editAvailStart);
     const formattedEnd = formatTime12hr(editAvailEnd);
 
-    const isDuplicate = editAvailabilityList.some(
-      (slot) =>
-        slot.day === selectedDayName &&
-        slot.startTime === formattedStart &&
-        slot.endTime === formattedEnd,
-    );
+    setEditAvailabilityList((prev) => {
+      const isDuplicate = prev.some(
+        (slot) =>
+          slot.day === selectedDayName &&
+          slot.startTime === formattedStart &&
+          slot.endTime === formattedEnd,
+      );
 
-    if (isDuplicate) {
-      setEditAvailError("This availability slot has already been added.");
-      return;
-    }
+      if (isDuplicate) {
+        setEditAvailError("This availability slot has already been added.");
+        return prev;
+      }
 
-    const newSlot: AvailabilitySlot = {
-      day: selectedDayName,
-      startTime: formattedStart,
-      endTime: formattedEnd,
-    };
+      setEditAvailError("");
+      return [
+        ...prev,
+        {
+          day: selectedDayName,
+          startTime: formattedStart,
+          endTime: formattedEnd,
+        },
+      ];
+    });
+  }, [editAvailStart, editAvailEnd, editAvailDay, formatTime12hr]);
 
-    setEditAvailabilityList((prev) => [...prev, newSlot]);
-    setEditAvailError("");
-  };
-
-  const handleEditRemoveAvailabilitySlot = (index: number) => {
+  const handleEditRemoveAvailabilitySlot = useCallback((index: number) => {
     setEditAvailabilityList((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, []);
 
   /** --- Table Functions --- **/
-  function handleTeacherSorting(sortBy: string) {
-    const newDir =
-      sortBy === sortTeachersBy && sortTeachersDir === "ASC" ? "DESC" : "ASC";
-    setSortTeachersBy(sortBy);
-    setSortTeachersDir(newDir);
+  const handleTeacherSorting = useCallback((sortBy: string) => {
+    setSortTeachersBy((prevSort) => {
+      setSortTeachersDir((prevDir) => {
+        const newDir = sortBy === prevSort && prevDir === "ASC" ? "DESC" : "ASC";
+        return newDir;
+      });
+      return sortBy;
+    });
     setTeachers([]);
     setCurrentTeacherPage(1);
-    void getTeachers(
-      searchTerm,
-      statusFilter,
-      departmentFilter,
-      sortBy,
-      newDir,
-      maxRowTeacher,
-      1,
-    );
-  }
+  }, []);
 
-  function onPageChangeTeachers(page: number) {
-    if (pageChangingTeachers) return;
-
+  const onPageChangeTeachers = useCallback((page: number) => {
     setPageChangingTeachers(true);
     setTeachers([]);
-
-    void getTeachers(
-      searchTerm,
-      statusFilter,
-      departmentFilter,
-      sortTeachersBy,
-      sortTeachersDir,
-      maxRowTeacher,
-      page,
-    );
-
-    setPageChangingTeachers(false);
     setCurrentTeacherPage(page);
-  }
+    setPageChangingTeachers(false);
+  }, []);
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
     setCurrentTeacherPage(1);
-  };
+  }, []);
 
-  const handleClearSearch = () => {
+  const handleClearSearch = useCallback(() => {
     setSearchTerm("");
     setCurrentTeacherPage(1);
-  };
+  }, []);
 
-  const handleStatusFilterChange = (
-    e: React.ChangeEvent<HTMLSelectElement>,
-  ) => {
-    const selectedStatus = e.target.value as TeacherStatusFilter;
-    setStatusFilter(selectedStatus);
+  const handleStatusFilterChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setStatusFilter(e.target.value as TeacherStatusFilter);
     setCurrentTeacherPage(1);
-    void getTeachers(
-      searchTerm,
-      selectedStatus,
-      departmentFilter,
-      sortTeachersBy,
-      sortTeachersDir,
-      maxRowTeacher,
-      1,
-    );
-  };
+  }, []);
 
-  const handleDepartmentFilterChange = (
-    e: React.ChangeEvent<HTMLSelectElement>,
-  ) => {
-    const selectedDept = e.target.value;
-    setDepartmentFilter(selectedDept);
+  const handleDepartmentFilterChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setDepartmentFilter(e.target.value);
     setCurrentTeacherPage(1);
-    void getTeachers(
-      searchTerm,
-      statusFilter,
-      selectedDept,
-      sortTeachersBy,
-      sortTeachersDir,
-      maxRowTeacher,
-      1,
-    );
-  };
+  }, []);
 
   /** --- Input Handlers (Add Form) --- **/
-  const handlePscsIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePscsIdChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterNumeric(e.target.value).slice(0, 13);
     setInputPscsId(val);
     setPscsIdError(!val ? "PSCS ID is required." : "");
-  };
+  }, []);
 
-  const handleTeacherCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTeacherCodeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterAlphaNoSpace(e.target.value).slice(0, 6).toUpperCase();
     setInputTeacherCode(val);
     setTeacherCodeError(!val ? "Teacher code is required." : "");
-  };
+  }, []);
 
-  const handleFNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterAlphaDashSpace(e.target.value).slice(0, 50).toUpperCase();
     setInputFName(val);
     setFNameError(!val.trim() ? "First name is required." : "");
-  };
+  }, []);
 
-  const handleSurnameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSurnameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterAlphaDashSpace(e.target.value).slice(0, 50).toUpperCase();
     setInputSurname(val);
     setSurnameError(!val.trim() ? "Surname is required." : "");
-  };
+  }, []);
 
-  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterEmail(e.target.value).slice(0, 100);
     setInputEmail(val);
 
@@ -500,36 +819,34 @@ export default function TeachersManagement() {
     } else {
       setEmailError("");
     }
-  };
+  }, [validateEmailFormat]);
 
   /** --- Input Handlers (Edit Form) --- **/
-  const handleNewPscsIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNewPscsIdChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterNumeric(e.target.value).slice(0, 13);
     editPscsId(val);
     setEditPscsIdError(!val ? "PSCS ID is required." : "");
-  };
+  }, []);
 
-  const handleNewTeacherCodeChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleNewTeacherCodeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterAlphaNoSpace(e.target.value).slice(0, 6).toUpperCase();
     editTeacherCode(val);
     setEditTeacherCodeError(!val ? "Teacher code is required." : "");
-  };
+  }, []);
 
-  const handleNewFNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNewFNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterAlphaDashSpace(e.target.value).slice(0, 50).toUpperCase();
     editFName(val);
     setEditFNameError(!val.trim() ? "First name is required." : "");
-  };
+  }, []);
 
-  const handleNewSurnameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNewSurnameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterAlphaDashSpace(e.target.value).slice(0, 50).toUpperCase();
     editSurname(val);
     setEditSurnameError(!val.trim() ? "Surname is required." : "");
-  };
+  }, []);
 
-  const handleNewEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNewEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = filterEmail(e.target.value).slice(0, 100);
     editEmail(val);
 
@@ -540,9 +857,9 @@ export default function TeachersManagement() {
     } else {
       setEditEmailError("");
     }
-  };
+  }, [validateEmailFormat]);
 
-  const handleCloseTeacherModals = () => {
+  const handleCloseTeacherModals = useCallback(() => {
     setRowID("");
     setPscsIdError("");
     setTeacherCodeError("");
@@ -564,6 +881,7 @@ export default function TeachersManagement() {
     setOpenEditTeacherModal(false);
     setOpenArchiveModal(false);
     setOpenUnarchiveModal(false);
+    setOpenExcelModal(false);
     setSelectedUnarchiveTeacher(null);
 
     setInputPscsId("");
@@ -589,14 +907,19 @@ export default function TeachersManagement() {
     editEmploymentType("Full-Time");
     editStatus("Active");
     setEditAvailabilityList([]);
-  };
 
-  function openUnarchiveConfirmation(item: TeacherRecord) {
+    setImportFile(null);
+    setImportLogs([]);
+    setFormatError("");
+    setIsImporting(false);
+  }, []);
+
+  const openUnarchiveConfirmation = useCallback((item: TeacherRecord) => {
     setSelectedUnarchiveTeacher(item);
     setOpenUnarchiveModal(true);
-  }
+  }, []);
 
-  function loadEditData(row_id: string) {
+  const loadEditData = useCallback((row_id: string) => {
     setRowID(row_id);
     const selectedTeacher = teachers.find((item) => item.teacher_id === row_id);
 
@@ -669,56 +992,113 @@ export default function TeachersManagement() {
 
       setOpenEditTeacherModal(true);
     }
-  }
+  }, [teachers, allDepartments]);
 
-  const isAddFormInvalid =
-    !inputPscsId.trim() ||
-    !inputTeacherCode.trim() ||
-    !inputFName.trim() ||
-    !inputSurname.trim() ||
-    !inputEmail.trim() ||
-    !inputDepartment.trim() ||
-    !!pscsIdError ||
-    !!teacherCodeError ||
-    !!fNameError ||
-    !!surnameError ||
-    !!emailError ||
-    !!departmentError;
+  const isAddFormInvalid = useMemo(() => {
+    return (
+      !inputPscsId.trim() ||
+      !inputTeacherCode.trim() ||
+      !inputFName.trim() ||
+      !inputSurname.trim() ||
+      !inputEmail.trim() ||
+      !inputDepartment.trim() ||
+      !!pscsIdError ||
+      !!teacherCodeError ||
+      !!fNameError ||
+      !!surnameError ||
+      !!emailError ||
+      !!departmentError
+    );
+  }, [
+    inputPscsId,
+    inputTeacherCode,
+    inputFName,
+    inputSurname,
+    inputEmail,
+    inputDepartment,
+    pscsIdError,
+    teacherCodeError,
+    fNameError,
+    surnameError,
+    emailError,
+    departmentError,
+  ]);
 
-  const isEditFormInvalid =
-    !newPscsId.trim() ||
-    !newTeacherCode.trim() ||
-    !newFName.trim() ||
-    !newSurname.trim() ||
-    !newEmail.trim() ||
-    !newDepartment.trim() ||
-    !!editPscsIdError ||
-    !!editTeacherCodeError ||
-    !!editFNameError ||
-    !!editSurnameError ||
-    !!editEmailError ||
-    !!editDepartmentError;
+  const isEditFormInvalid = useMemo(() => {
+    return (
+      !newPscsId.trim() ||
+      !newTeacherCode.trim() ||
+      !newFName.trim() ||
+      !newSurname.trim() ||
+      !newEmail.trim() ||
+      !newDepartment.trim() ||
+      !!editPscsIdError ||
+      !!editTeacherCodeError ||
+      !!editFNameError ||
+      !!editSurnameError ||
+      !!editEmailError ||
+      !!editDepartmentError
+    );
+  }, [
+    newPscsId,
+    newTeacherCode,
+    newFName,
+    newSurname,
+    newEmail,
+    newDepartment,
+    editPscsIdError,
+    editTeacherCodeError,
+    editFNameError,
+    editSurname,
+    editEmailError,
+    editDepartmentError,
+  ]);
 
-  const isEditFormUnchanged =
-    newPscsId === basePscsId &&
-    newEmail === baseEmail &&
-    newFName === baseFName &&
-    newMName === baseMName &&
-    newSurname === baseSurname &&
-    newSuffix === baseSuffix &&
-    newTeacherCode === baseTeacherCode &&
-    newDepartment === baseDepartment &&
-    newEmploymentType === baseEmploymentType &&
-    newStatus === baseStatus &&
-    JSON.stringify(editAvailabilityList) ===
-    JSON.stringify(baseAvailabilityList);
+  const isEditFormUnchanged = useMemo(() => {
+    return (
+      newPscsId === basePscsId &&
+      newEmail === baseEmail &&
+      newFName === baseFName &&
+      newMName === baseMName &&
+      newSurname === baseSurname &&
+      newSuffix === baseSuffix &&
+      newTeacherCode === baseTeacherCode &&
+      newDepartment === baseDepartment &&
+      newEmploymentType === baseEmploymentType &&
+      newStatus === baseStatus &&
+      JSON.stringify(editAvailabilityList) === JSON.stringify(baseAvailabilityList)
+    );
+  }, [
+    newPscsId,
+    basePscsId,
+    newEmail,
+    baseEmail,
+    newFName,
+    baseFName,
+    newMName,
+    baseMName,
+    newSurname,
+    baseSurname,
+    newSuffix,
+    baseSuffix,
+    newTeacherCode,
+    baseTeacherCode,
+    newDepartment,
+    baseDepartment,
+    newEmploymentType,
+    baseEmploymentType,
+    newStatus,
+    baseStatus,
+    editAvailabilityList,
+    baseAvailabilityList,
+  ]);
 
   /** --- Database Integration --- **/
-  async function getTeacherCount(
+  const getTeacherCount = useCallback(async (
     search: string | null = searchTerm,
     status: TeacherStatusFilter = statusFilter,
     department: string = departmentFilter,
-  ) {
+  ) => {
     const response = await fetchTeachersCount(search, status, department);
 
     if (response?.success) {
@@ -731,9 +1111,9 @@ export default function TeachersManagement() {
       setShowToast(true);
       setTeachersCount(0);
     }
-  }
+  }, [searchTerm, statusFilter, departmentFilter]);
 
-  async function getTeachers(
+  const getTeachers = useCallback(async (
     search: string | null = searchTerm,
     status: TeacherStatusFilter = statusFilter,
     department: string = departmentFilter,
@@ -741,7 +1121,7 @@ export default function TeachersManagement() {
     sortdir: string = sortTeachersDir,
     limit: number = maxRowTeacher,
     page: number = currentTeacherPage,
-  ) {
+  ) => {
     setLoading(true);
 
     const response = await fetchTeachers(
@@ -767,9 +1147,9 @@ export default function TeachersManagement() {
 
     setLoading(false);
     await getTeacherCount(search, status, department);
-  }
+  }, [searchTerm, statusFilter, departmentFilter, sortTeachersBy, sortTeachersDir, currentTeacherPage, getTeacherCount]);
 
-  async function handleTeacherSubmit() {
+  const handleTeacherSubmit = useCallback(async () => {
     if (isAddFormInvalid) return;
 
     const payload = {
@@ -791,7 +1171,9 @@ export default function TeachersManagement() {
     if (response?.success) {
       setToastMessage("Instructor added successfully");
       setToastType("success");
-      toastTimer();
+      setShowToastTimer(true);
+      setShowToast(true);
+      setProgress(0);
     } else {
       setToastMessage(
         response?.error ?? "[AddTeacher]: An unexpected error occurred",
@@ -810,9 +1192,31 @@ export default function TeachersManagement() {
       maxRowTeacher,
       currentTeacherPage,
     );
-  }
+  }, [
+    isAddFormInvalid,
+    inputPscsId,
+    inputEmail,
+    inputFName,
+    inputMName,
+    inputSurname,
+    inputSuffix,
+    inputTeacherCode,
+    inputDepartment,
+    inputEmploymentType,
+    inputStatus,
+    availabilityList,
+    username,
+    handleCloseTeacherModals,
+    getTeachers,
+    searchTerm,
+    statusFilter,
+    departmentFilter,
+    sortTeachersBy,
+    sortTeachersDir,
+    currentTeacherPage,
+  ]);
 
-  async function handleTeacherUpdate() {
+  const handleTeacherUpdate = useCallback(async () => {
     if (isEditFormInvalid || isEditFormUnchanged) return;
 
     const payload = {
@@ -834,7 +1238,9 @@ export default function TeachersManagement() {
     if (response?.success) {
       setToastMessage("Instructor updated successfully");
       setToastType("success");
-      toastTimer();
+      setShowToastTimer(true);
+      setShowToast(true);
+      setProgress(0);
     } else {
       setToastMessage(
         response?.error ?? "[UpdateTeacher]: An unexpected error occurred",
@@ -853,9 +1259,33 @@ export default function TeachersManagement() {
       maxRowTeacher,
       currentTeacherPage,
     );
-  }
+  }, [
+    isEditFormInvalid,
+    isEditFormUnchanged,
+    newPscsId,
+    newEmail,
+    newFName,
+    newMName,
+    newSurname,
+    newSuffix,
+    newTeacherCode,
+    newDepartment,
+    newEmploymentType,
+    newStatus,
+    editAvailabilityList,
+    username,
+    rowID,
+    handleCloseTeacherModals,
+    getTeachers,
+    searchTerm,
+    statusFilter,
+    departmentFilter,
+    sortTeachersBy,
+    sortTeachersDir,
+    currentTeacherPage,
+  ]);
 
-  async function handleTeacherUnarchive() {
+  const handleTeacherUnarchive = useCallback(async () => {
     if (!selectedUnarchiveTeacher) return;
 
     let parsedAvailability = selectedUnarchiveTeacher.availability;
@@ -890,7 +1320,9 @@ export default function TeachersManagement() {
     if (response?.success) {
       setToastMessage("Instructor record restored successfully");
       setToastType("success");
-      toastTimer();
+      setShowToastTimer(true);
+      setShowToast(true);
+      setProgress(0);
     } else {
       setToastMessage(
         response?.error ?? "[UnarchiveTeacher]: An unexpected error occurred",
@@ -909,15 +1341,28 @@ export default function TeachersManagement() {
       maxRowTeacher,
       currentTeacherPage,
     );
-  }
+  }, [
+    selectedUnarchiveTeacher,
+    username,
+    handleCloseTeacherModals,
+    getTeachers,
+    searchTerm,
+    statusFilter,
+    departmentFilter,
+    sortTeachersBy,
+    sortTeachersDir,
+    currentTeacherPage,
+  ]);
 
-  async function handleTeacherArchive() {
+  const handleTeacherArchive = useCallback(async () => {
     const response = await archiveTeacher(username ?? "system", rowID);
 
     if (response?.success) {
       setToastMessage("Instructor record archived successfully");
       setToastType("success");
-      toastTimer();
+      setShowToastTimer(true);
+      setShowToast(true);
+      setProgress(0);
     } else {
       setToastMessage(
         response?.error ?? "[ArchiveTeacher]: An unexpected error occurred",
@@ -936,38 +1381,25 @@ export default function TeachersManagement() {
       maxRowTeacher,
       currentTeacherPage,
     );
-  }
+  }, [
+    username,
+    rowID,
+    handleCloseTeacherModals,
+    getTeachers,
+    searchTerm,
+    statusFilter,
+    departmentFilter,
+    sortTeachersBy,
+    sortTeachersDir,
+    currentTeacherPage,
+  ]);
 
-  /** --- Toast Utility --- **/
-  function toastTimer() {
-    setShowToastTimer(true);
-    setShowToast(true);
-    setProgress(0);
-
-    const duration = 5000;
-    const intervalTime = 50;
-    const step = 100 / (duration / intervalTime);
-
-    const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev + step >= 100) {
-          clearInterval(timer);
-          closeToast();
-          return 100;
-        }
-        return prev + step;
-      });
-    }, intervalTime);
-
-    return () => clearInterval(timer);
-  }
-
-  function closeToast() {
+  const closeToast = useCallback(() => {
     setShowToast(false);
     setToastType("");
     setToastMessage("");
     setShowToastTimer(false);
-  }
+  }, []);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -983,7 +1415,7 @@ export default function TeachersManagement() {
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, statusFilter, departmentFilter]);
+  }, [searchTerm, statusFilter, departmentFilter, sortTeachersBy, sortTeachersDir, currentTeacherPage, getTeachers]);
 
   return (
     <>
@@ -1005,7 +1437,7 @@ export default function TeachersManagement() {
               {toastType === "error" && <HiX className="h-5 w-5" />}
             </div>
             <div className="ml-3 text-sm font-normal">{toastMessage}</div>
-            <ToastToggle onDismiss={() => closeToast()} />
+            <ToastToggle onDismiss={closeToast} />
           </Toast>
           <Progress
             progress={Math.min(Math.round(progress), 100)}
@@ -1015,7 +1447,6 @@ export default function TeachersManagement() {
         </div>
       )}
 
-      {/* Main Content Wrapper */}
       {/* Header Bar */}
       <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
         <div className={"mb-2"}>
@@ -1026,7 +1457,6 @@ export default function TeachersManagement() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Department Dropdown Filter */}
           <div className="w-full md:w-48">
             <Select
               id="department-filter"
@@ -1042,7 +1472,6 @@ export default function TeachersManagement() {
             </Select>
           </div>
 
-          {/* Status Dropdown Filter */}
           <div className="w-full md:w-52">
             <Select
               id="status-filter"
@@ -1088,6 +1517,15 @@ export default function TeachersManagement() {
               </button>
             )}
           </div>
+
+          <Button
+            color="gray"
+            className="whitespace-nowrap"
+            onClick={() => setOpenExcelModal(true)}
+          >
+            <FaFileExcel className="mr-2 h-4 w-4 text-green-600" />
+            Excel Operations
+          </Button>
 
           <Button
             className="whitespace-nowrap"
@@ -1336,6 +1774,179 @@ export default function TeachersManagement() {
           showIcons
         />
       </div>
+
+      {/* MODAL: EXCEL OPERATIONS */}
+      <Modal show={openExcelModal} onClose={handleCloseTeacherModals} size="lg">
+        <ModalHeader>
+          <div className="flex items-center gap-2">
+            <FaFileExcel className="h-5 w-5 text-green-600" />
+            <span>Excel Operations & Data Management</span>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveExcelTab("import")}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "import"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
+                <span className="text-xs font-semibold">Import Excel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveExcelTab("export")}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "export"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
+                <span className="text-xs font-semibold">Export Records</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveExcelTab("template")}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "template"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
+                <span className="text-xs font-semibold">Blank Template</span>
+              </button>
+            </div>
+
+            {activeExcelTab === "import" && (
+              <div className="space-y-4">
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      validateAndSelectFile(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+                    isDragging
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
+                      : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  <FileInput
+                    id="excel-file-input"
+                    ref={fileInputRef}
+                    accept=".xlsx, .xls, .csv"
+                    onChange={(e) => validateAndSelectFile(e.target.files ? e.target.files[0] : null)}
+                    className="hidden"
+                  />
+                  <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {importFile ? `${(importFile.size / 1024).toFixed(1)} KB` : "Strictly accepts .xlsx, .xls, or .csv files"}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+                  <span className="font-semibold uppercase tracking-wide">Required Format Headers:</span> {REQUIRED_HEADERS.join(", ")} (Employment type has dropdown validation).
+                </div>
+
+                {formatError && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+                    <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
+                    <div>{formatError}</div>
+                  </div>
+                )}
+
+                {importLogs.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
+                    {importLogs.map((log, index) => (
+                      <div
+                        key={index}
+                        className={
+                          log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
+                            ? "text-red-400"
+                            : log.includes("Completed") || log.includes("Verified")
+                              ? "font-bold text-green-400"
+                              : "text-gray-300"
+                        }
+                      >
+                        {log}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleImportSubmit}
+                  disabled={!importFile || isImporting}
+                  className="w-full"
+                >
+                  {isImporting ? (
+                    <>
+                      <Spinner size="sm" className="mr-2" />
+                      Processing & Importing...
+                    </>
+                  ) : (
+                    "Execute Excel Import"
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {activeExcelTab === "export" && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Export Filtered Teachers
+                  </h4>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Generates a standardized Excel spreadsheet containing all active query results with employment dropdown rules.
+                  </p>
+                </div>
+                <Button onClick={handleExportExcel} className="w-full" color="green">
+                  <FaFileExport className="mr-2 h-4 w-4" /> Export {teachersCount} Records to Excel
+                </Button>
+              </div>
+            )}
+
+            {activeExcelTab === "template" && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Download Blank Excel Template
+                  </h4>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Includes columns formatted as: <b className="font-mono">{REQUIRED_HEADERS.join(", ")}</b> with built-in employment type dropdown lists.
+                  </p>
+                </div>
+                <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
+                  <FaDownload className="mr-2 h-4 w-4" /> Download Blank Excel Template
+                </Button>
+              </div>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter className="flex justify-end">
+          <Button color="alternative" onClick={handleCloseTeacherModals}>
+            Close Window
+          </Button>
+        </ModalFooter>
+      </Modal>
 
       {/* Modal: Add Teacher */}
       <Modal
