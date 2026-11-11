@@ -138,14 +138,16 @@ function inferProgramFromSection(section: string): string {
 // ---------------------------------------------------------------------------
 
 interface GridSheetConfig {
-  title: string; // e.g. "TERTIARY" or "SENIOR HIGH SCHOOL"
-  sy: string; // e.g. "2025-2026"
-  program: string;
-  section: string;
+  title?: string; // e.g. "TERTIARY" or "SENIOR HIGH SCHOOL"
+  sy?: string; // e.g. "2025-2026"
+  program?: string;
+  section?: string;
   room?: string;
   adviser?: string;
   track?: string;
   entries: LocalTimetableEntry[];
+  /** When true, replaces the multi-row header with a single row showing the room name centered. */
+  roomOnlyHeader?: boolean;
 }
 
 /**
@@ -161,7 +163,7 @@ function buildTimetableGridSheet(
   startRow: number = 1,
   startCol: number = 1,
 ): { rowsUsed: number; colsUsed: number } {
-  const { title, sy, program, section, room, adviser, track, entries } = config;
+  const { title, sy, program, section, room, adviser, track, entries, roomOnlyHeader } = config;
 
   // Layout: 1 time column + 6 days with 19px gap columns between each day
   // Total: 1 time + 6 day cols + 5 gap cols between days = 12 columns
@@ -173,66 +175,82 @@ function buildTimetableGridSheet(
 
   let row = startRow;
 
-  // Row 1: CLASS SCHEDULE
-  for (let c = startCol; c < startCol + totalCols; c++) {
-    worksheet.getCell(row, c).value = null;
-  }
-  worksheet.getCell(row, startCol).value = "CLASS SCHEDULE";
-  worksheet.getRow(row).font = { bold: true, size: 14 };
-  worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
-  row++;
-
-  // Row 2: title (TERTIARY / SENIOR HIGH SCHOOL)
-  for (let c = startCol; c < startCol + totalCols; c++) {
-    worksheet.getCell(row, c).value = null;
-  }
-  worksheet.getCell(row, startCol).value = title;
-  worksheet.getRow(row).font = { bold: true, size: 12 };
-  worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
-  row++;
-
-  // Row 3: SY | value   ROOM | value
-  for (let c = startCol; c < startCol + totalCols; c++) {
-    worksheet.getCell(row, c).value = null;
-  }
-  worksheet.getCell(row, startCol).value = "SY";
-  worksheet.getCell(row, startCol + 1).value = sy;
-  worksheet.getCell(row, startCol + 3).value = "ROOM";
-  worksheet.getCell(row, startCol + 4).value = room || "";
-  worksheet.mergeCells(row, startCol, row, startCol);
-  worksheet.mergeCells(row, startCol + 1, row, startCol + totalCols - 1);
-  row++;
-
-  // Row 4: PROGRAM | value   ADVISER | value
-  for (let c = startCol; c < startCol + totalCols; c++) {
-    worksheet.getCell(row, c).value = null;
-  }
-  if (track) {
-    worksheet.getCell(row, startCol).value = "TRACK";
-    worksheet.getCell(row, startCol + 1).value = track;
-    worksheet.getCell(row, startCol + 3).value = "ADVISER";
-    worksheet.getCell(row, startCol + 4).value = adviser || "";
+  if (roomOnlyHeader) {
+    // Single row header with room name centered vertically and horizontally
+    for (let c = startCol; c < startCol + totalCols; c++) {
+      worksheet.getCell(row, c).value = null;
+    }
+    worksheet.getCell(row, startCol).value = room || "";
+    worksheet.getRow(row).font = { bold: true, size: 14 };
+    worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
+    const mergedHeaderCell = worksheet.getCell(row, startCol);
+    mergedHeaderCell.alignment = {
+      horizontal: "center" as const,
+      vertical: "middle" as const,
+    };
+    row++;
   } else {
-    worksheet.getCell(row, startCol).value = "PROGRAM";
-    worksheet.getCell(row, startCol + 1).value = program;
-    worksheet.getCell(row, startCol + 3).value = "ADVISER";
-    worksheet.getCell(row, startCol + 4).value = adviser || "";
-  }
-  worksheet.mergeCells(row, startCol, row, startCol);
-  worksheet.mergeCells(row, startCol + 1, row, startCol + totalCols - 1);
-  row++;
+    // Row 1: CLASS SCHEDULE
+    for (let c = startCol; c < startCol + totalCols; c++) {
+      worksheet.getCell(row, c).value = null;
+    }
+    worksheet.getCell(row, startCol).value = "CLASS SCHEDULE";
+    worksheet.getRow(row).font = { bold: true, size: 14 };
+    worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
+    row++;
 
-  // Row 5: SECTION | value
-  for (let c = startCol; c < startCol + totalCols; c++) {
-    worksheet.getCell(row, c).value = null;
-  }
-  worksheet.getCell(row, startCol).value = "SECTION";
-  worksheet.getCell(row, startCol + 1).value = section;
-  worksheet.mergeCells(row, startCol, row, startCol);
-  worksheet.mergeCells(row, startCol + 1, row, startCol + totalCols - 1);
-  row++;
+    // Row 2: title (TERTIARY / SENIOR HIGH SCHOOL)
+    for (let c = startCol; c < startCol + totalCols; c++) {
+      worksheet.getCell(row, c).value = null;
+    }
+    worksheet.getCell(row, startCol).value = title;
+    worksheet.getRow(row).font = { bold: true, size: 12 };
+    worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
+    row++;
 
-  // Row 6: header – time column + day columns
+    // Row 3: SY | value   ROOM | value
+    for (let c = startCol; c < startCol + totalCols; c++) {
+      worksheet.getCell(row, c).value = null;
+    }
+    worksheet.getCell(row, startCol).value = "SY";
+    worksheet.getCell(row, startCol + 1).value = sy;
+    worksheet.getCell(row, startCol + 3).value = "ROOM";
+    worksheet.getCell(row, startCol + 4).value = room || "";
+    worksheet.mergeCells(row, startCol, row, startCol);
+    worksheet.mergeCells(row, startCol + 1, row, startCol + totalCols - 1);
+    row++;
+
+    // Row 4: PROGRAM | value   ADVISER | value
+    for (let c = startCol; c < startCol + totalCols; c++) {
+      worksheet.getCell(row, c).value = null;
+    }
+    if (track) {
+      worksheet.getCell(row, startCol).value = "TRACK";
+      worksheet.getCell(row, startCol + 1).value = track;
+      worksheet.getCell(row, startCol + 3).value = "ADVISER";
+      worksheet.getCell(row, startCol + 4).value = adviser || "";
+    } else {
+      worksheet.getCell(row, startCol).value = "PROGRAM";
+      worksheet.getCell(row, startCol + 1).value = program;
+      worksheet.getCell(row, startCol + 3).value = "ADVISER";
+      worksheet.getCell(row, startCol + 4).value = adviser || "";
+    }
+    worksheet.mergeCells(row, startCol, row, startCol);
+    worksheet.mergeCells(row, startCol + 1, row, startCol + totalCols - 1);
+    row++;
+
+    // Row 5: SECTION | value
+    for (let c = startCol; c < startCol + totalCols; c++) {
+      worksheet.getCell(row, c).value = null;
+    }
+    worksheet.getCell(row, startCol).value = "SECTION";
+    worksheet.getCell(row, startCol + 1).value = section;
+    worksheet.mergeCells(row, startCol, row, startCol);
+    worksheet.mergeCells(row, startCol + 1, row, startCol + totalCols - 1);
+    row++;
+  }
+
+  // Header row – time column + day columns
   const headerRow = worksheet.getRow(row);
   headerRow.getCell(startCol).value = null;
   DAYS_ORDER.forEach((day, idx) => {
@@ -362,7 +380,10 @@ function buildTimetableGridSheet(
   }
 
   // Set row height to 15pt for all time slot rows and apply wrapText
-  const firstTimeSlotRow = startRow + 6; // After header rows (1-5) + day header row (6)
+  // With roomOnlyHeader: 1 header row + 1 day header row = 2 rows before time slots
+  // Without roomOnlyHeader: 5 header rows + 1 day header row = 6 rows before time slots
+  const headerRowsCount = roomOnlyHeader ? 2 : 6;
+  const firstTimeSlotRow = startRow + headerRowsCount;
   const rows = worksheet.getRows(firstTimeSlotRow, TIME_SLOTS.length);
   if (rows) {
     rows.forEach((rowObj) => {
@@ -437,27 +458,24 @@ export async function exportByFloor(
       properties: { tabColor: { argb: "FF4CAF50" } },
     });
 
-    // Group entries by section for this floor
-    const sections = Array.from(
-      new Set(floorEntries.map((e) => e.section).filter(Boolean)),
+    // Group entries by room for this floor
+    const rooms = Array.from(
+      new Set(floorEntries.map((e) => e.room_name).filter(Boolean)),
     );
 
     const currentRow = 1;
     let currentCol = 1;
 
-    // For each section on this floor, write a mini timetable side by side
-    for (const section of sections) {
-      const sectionEntries = floorEntries.filter((e) => e.section === section);
-      const program = inferProgramFromSection(section);
+    // For each room on this floor, write a mini timetable side by side
+    for (const roomName of rooms) {
+      const roomEntries = floorEntries.filter((e) => e.room_name === roomName);
 
       const result = buildTimetableGridSheet(
         ws,
         {
-          title: program.startsWith("BS") ? "TERTIARY" : "SENIOR HIGH SCHOOL",
-          sy: "2025-2026",
-          program,
-          section,
-          entries: sectionEntries,
+          room: roomName,
+          entries: roomEntries,
+          roomOnlyHeader: true,
         },
         currentRow,
         currentCol,
