@@ -64,7 +64,7 @@ import {
 import Image from "next/image";
 
 // For Debugging Only (Developer-controlled code flag)
-const testMode = false;
+const testMode = true;
 
 // --- Types matching database statement schema --- //
 export interface ScheduleRecord {

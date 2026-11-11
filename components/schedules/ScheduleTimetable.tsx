@@ -927,7 +927,7 @@ export default function ScheduleTimetableClient({
             setConflictModalData({
               show: true,
               title: `Room Type Mismatch`,
-              message: `Laboratory block requires room type [${requiredLabTypeName}], but room [${activeRoom}] is classified as [${roomTypeName}].`,
+              message: `Laboratory block requires room type [${requiredLabTypeName}], However room [${activeRoom}] is classified as [${roomTypeName}].`,
             });
             return;
           }

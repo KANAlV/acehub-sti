@@ -390,6 +390,7 @@ export async function generateRoomAndClassSchedules(
     const occupiedRoomSlots = new Set<string>();
     const occupiedSectionSlots = new Set<string>();
     const occupiedCourseSlots = new Set<string>();
+    const occupiedSubjectTimeSlots = new Set<string>();
     const sectionActiveDays = new Map<string, Set<string>>();
 
     const tierVacantDays = new Map<string, Set<string>>();
@@ -456,6 +457,7 @@ export async function generateRoomAndClassSchedules(
               occupiedRoomSlots,
               occupiedSectionSlots,
               occupiedCourseSlots,
+              occupiedSubjectTimeSlots,
               sectionActiveDays,
               scheduleEntries,
               preferredVacantDay,
@@ -480,6 +482,7 @@ export async function generateRoomAndClassSchedules(
                 occupiedRoomSlots,
                 occupiedSectionSlots,
                 occupiedCourseSlots,
+                occupiedSubjectTimeSlots,
                 sectionActiveDays,
                 scheduleEntries,
                 breakPeriods,
@@ -498,6 +501,7 @@ export async function generateRoomAndClassSchedules(
               occupiedRoomSlots,
               occupiedSectionSlots,
               occupiedCourseSlots,
+              occupiedSubjectTimeSlots,
               sectionActiveDays,
               scheduleEntries,
               preferredVacantDay,
@@ -522,6 +526,7 @@ export async function generateRoomAndClassSchedules(
                 occupiedRoomSlots,
                 occupiedSectionSlots,
                 occupiedCourseSlots,
+                occupiedSubjectTimeSlots,
                 sectionActiveDays,
                 scheduleEntries,
                 breakPeriods,
@@ -542,6 +547,7 @@ export async function generateRoomAndClassSchedules(
               occupiedRoomSlots,
               occupiedSectionSlots,
               occupiedCourseSlots,
+              occupiedSubjectTimeSlots,
               sectionActiveDays,
               scheduleEntries,
               preferredVacantDay,
@@ -563,6 +569,7 @@ export async function generateRoomAndClassSchedules(
               occupiedRoomSlots,
               occupiedSectionSlots,
               occupiedCourseSlots,
+              occupiedSubjectTimeSlots,
               sectionActiveDays,
               scheduleEntries,
               preferredVacantDay,
@@ -714,6 +721,7 @@ function scheduleSession(
   occupiedRoomSlots: Set<string>,
   occupiedSectionSlots: Set<string>,
   occupiedCourseSlots: Set<string>,
+  occupiedSubjectTimeSlots: Set<string>,
   sectionActiveDays: Map<string, Set<string>>,
   scheduleEntries: ScheduleEntry[],
   preferredVacantDay: string,
@@ -772,6 +780,12 @@ function scheduleSession(
       );
       if (!isCourseFree) continue;
 
+      const isSubjectTimeFree = sessionSlots.every(
+        (slot: string) =>
+          !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
+      );
+      if (!isSubjectTimeFree) continue;
+
       for (const room of fallbackRooms) {
         const isRoomFree = sessionSlots.every(
           (slot: string) =>
@@ -785,6 +799,7 @@ function scheduleSession(
             occupiedCourseSlots.add(
               `${subject.course_code}_${componentType}_${day}_${slot}`,
             );
+            occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
           });
           activeDays.add(day);
 
@@ -852,11 +867,18 @@ function scheduleSession(
       );
       if (!isCourseFree) continue;
 
+      const isSubjectTimeFree = sessionSlots.every(
+        (slot: string) =>
+          !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
+      );
+      if (!isSubjectTimeFree) continue;
+
       sessionSlots.forEach((slot: string) => {
         occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
         occupiedCourseSlots.add(
           `${subject.course_code}_${componentType}_${day}_${slot}`,
         );
+        occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
       });
       activeDays.add(day);
 
@@ -905,6 +927,7 @@ function scheduleSessionStartingAtRoom(
   occupiedRoomSlots: Set<string>,
   occupiedSectionSlots: Set<string>,
   occupiedCourseSlots: Set<string>,
+  occupiedSubjectTimeSlots: Set<string>,
   sectionActiveDays: Map<string, Set<string>>,
   scheduleEntries: ScheduleEntry[],
   breakPeriods: BreakPeriodRecord[],
@@ -935,6 +958,12 @@ function scheduleSessionStartingAtRoom(
   );
   if (!isCourseFree) return false;
 
+  const isSubjectTimeFree = sessionSlots.every(
+    (slot: string) =>
+      !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
+  );
+  if (!isSubjectTimeFree) return false;
+
   // Check if the exact target room is free for these slots
   if (targetRoomId) {
     const isRoomFree = sessionSlots.every(
@@ -949,6 +978,7 @@ function scheduleSessionStartingAtRoom(
         occupiedCourseSlots.add(
           `${subject.course_code}_${componentType}_${day}_${slot}`,
         );
+        occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
       });
       activeDays.add(day);
 
@@ -981,6 +1011,7 @@ function scheduleSessionStartingAtRoom(
     occupiedCourseSlots.add(
       `${subject.course_code}_${componentType}_${day}_${slot}`,
     );
+    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
   });
   activeDays.add(day);
 
