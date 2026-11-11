@@ -271,9 +271,24 @@ export async function fetchSchedules(params: {
       )
     `;
 
+    // Parse generation_config if it's returned as a string
+    const parsedData = (data || []).map((row: Record<string, unknown>) => {
+      if (typeof row.generation_config === 'string') {
+        try {
+          return {
+            ...row,
+            generation_config: JSON.parse(row.generation_config),
+          };
+        } catch {
+          return row;
+        }
+      }
+      return row;
+    });
+
     return {
       success: true,
-      data: data || [],
+      data: parsedData,
     };
   } catch (error) {
     console.error("Failed to fetch schedules:", error);

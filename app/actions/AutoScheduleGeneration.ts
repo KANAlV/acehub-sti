@@ -6,6 +6,7 @@ import {
   fetchFacultyLoadConfig,
   fetchLecRoomID,
   fetchPrograms,
+  fetchRoomTypeList,
   fetchSubjectRequirements,
   getRoomsForGeneration,
   SubjectRequirementRecord,
@@ -243,11 +244,12 @@ export async function assignSubjectsToSections(
 
           if (isSubjectSHS) {
             const targetGradeNum = gradeIndicator === "2" ? "12" : "11";
-            const gradeMatches = yt.includes(targetGradeNum);
+            // Use word boundary to avoid "11" matching inside other numbers
+            const gradeRegex = new RegExp(`\\b${targetGradeNum}\\b`, "i");
+            const gradeMatches = gradeRegex.test(yt);
             const termMatches =
               yt.includes(`term ${sectionTermStr}`) ||
-              yt.includes(`semester ${sectionTermStr}`) ||
-              yt.includes(`${sectionTermStr}`);
+              yt.includes(`semester ${sectionTermStr}`);
 
             return gradeMatches && termMatches;
           }
@@ -258,27 +260,41 @@ export async function assignSubjectsToSections(
 
           const progCode = match[1].trim().toUpperCase();
           const digits = match[2];
-          const indicatorDigit = digits.charAt(0);
+
+          // Section code format: {ProgramCode}{YearTermCode}{SectionNumber}
+          // SectionNumber is always 2 digits (10, 11, 12, ...)
+          // YearTermCode = (year - 1) * 2 + termOffset (where termOffset is 1 or 2)
+          if (digits.length < 3) {
+            return false;
+          }
+
+          const yearTermCodeStr = digits.slice(0, -2);
+          const yearTermCode = Number(yearTermCodeStr);
+          if (isNaN(yearTermCode)) return false;
 
           if (subProg !== progCode || isSubjectSHS) {
             return false;
           }
 
-          const codeDigit = Number(indicatorDigit);
-          const targetYearNum = Math.ceil(codeDigit / 2);
-          const targetTermNum = codeDigit % 2 === 1 ? 1 : 2;
+          // Reverse-calculate the year from yearTermCode.
+          // yearTermCode = (year - 1) * 2 + termOffset
+          // termOffset is 1 (1st term) or 2 (2nd term)
+          // So: year = floor((yearTermCode - 1) / 2) + 1
+          const targetYearNum = Math.floor((yearTermCode - 1) / 2) + 1;
 
-          const yearMatched =
-            yt.includes(`${targetYearNum}`) ||
-            yt.includes(
-              targetYearNum === 1
-                ? "1st"
-                : targetYearNum === 2
-                  ? "2nd"
-                  : targetYearNum === 3
-                    ? "3rd"
-                    : "4th",
-            );
+          // Match year using word boundaries to avoid "2" matching "12"
+          const yearWord =
+            targetYearNum === 1
+              ? "1st"
+              : targetYearNum === 2
+                ? "2nd"
+                : targetYearNum === 3
+                  ? "3rd"
+                  : "4th";
+
+          // Use regex word boundary to match the year ordinal exactly
+          const yearRegex = new RegExp(`\\b${yearWord}\\b`, "i");
+          const yearMatched = yearRegex.test(yt);
 
           // Tertiary year_term only stores the year (e.g. "1st Year"), not the term.
           // The term is already encoded in the section code, so we only match by year.
@@ -351,6 +367,17 @@ export async function generateRoomAndClassSchedules(
     const lectureRoomTypeId =
       lecRoomData.length > 0 ? lecRoomData[0].room_type_id : null;
 
+    // Fetch room types to identify kitchen labs
+    const roomTypesResult = await fetchRoomTypeList(null, "ASC", -1, 1);
+    const kitchenRoomTypeIds = new Set<string>();
+    if (roomTypesResult.success && roomTypesResult.data) {
+      for (const rt of roomTypesResult.data) {
+        if (rt.value && rt.value.toLowerCase().includes("kitchen")) {
+          kitchenRoomTypeIds.add(rt.room_type_id);
+        }
+      }
+    }
+
     let subjectsToUse = precomputedSubjects;
     if (!subjectsToUse || subjectsToUse.length === 0) {
       const fetchedSubjects = await fetchSubjectsForGeneration(
@@ -386,6 +413,7 @@ export async function generateRoomAndClassSchedules(
       "Saturday",
     ];
     const timeSlots: string[] = generateTimeSlots("07:00", "21:00", 30);
+    const shsTimeSlots: string[] = generateTimeSlots("07:00", "18:00", 30);
 
     const occupiedRoomSlots = new Set<string>();
     const occupiedSectionSlots = new Set<string>();
@@ -419,165 +447,241 @@ export async function generateRoomAndClassSchedules(
 
     const scheduleEntries: ScheduleEntry[] = [];
 
-    for (const assignment of sectionAssignments) {
-      const { sectionCode, subjects } = assignment;
-      if (!sectionActiveDays.has(sectionCode)) {
-        sectionActiveDays.set(sectionCode, new Set<string>());
-      }
+    // Helper to schedule a single subject, preserving all existing logic
+    function scheduleSubject(
+      subject: AssignedSubjectDetail,
+      sectionCode: string,
+      sectionTimeSlots: string[],
+      preferredVacantDay: string,
+    ) {
+      const lectureUnits = subject.lecture_units || 0;
+      const labUnits = subject.lab_units || 0;
 
-      const preferredVacantDay =
-        sectionPreferredVacantDay.get(sectionCode) || "Saturday";
+      const lecHours = lectureUnits * 1.0;
+      const labHours = labUnits * 1.0;
 
-      for (const subject of subjects) {
-        const lectureUnits = subject.lecture_units || 0;
-        const labUnits = subject.lab_units || 0;
+      const hasLecture = lectureUnits > 0;
+      const hasLab = labUnits > 0;
 
-        const lecHours = lectureUnits * 1.0;
-        const labHours = labUnits * 1.0;
+      // 50/50 chance for continuous back-to-back scheduling if both components exist
+      // Kitchen labs always schedule independently to avoid sharing the same room
+      const isKitchenLab = subject.lab_type && kitchenRoomTypeIds.has(subject.lab_type);
+      const shouldBeContinuous = hasLecture && hasLab && !isKitchenLab && Math.random() < 0.5;
 
-        const hasLecture = lectureUnits > 0;
-        const hasLab = labUnits > 0;
+      if (shouldBeContinuous) {
+        const lecFirst = Math.random() < 0.5;
 
-        // 50/50 chance for continuous back-to-back scheduling if both components exist
-        const shouldBeContinuous = hasLecture && hasLab && Math.random() < 0.5;
+        if (lecFirst) {
+          // Schedule Lecture first in the lab room
+          const lecResult = scheduleSession(
+            subject,
+            sectionCode,
+            "LECTURE",
+            lecHours,
+            rooms,
+            days,
+            sectionTimeSlots,
+            occupiedRoomSlots,
+            occupiedSectionSlots,
+            occupiedCourseSlots,
+            occupiedSubjectTimeSlots,
+            sectionActiveDays,
+            scheduleEntries,
+            preferredVacantDay,
+            breakPeriods,
+            subject.lab_type,
+            subject.lab_type,
+          );
 
-        if (shouldBeContinuous) {
-          const lecFirst = Math.random() < 0.5;
-
-          if (lecFirst) {
-            // Schedule Lecture first in the lab room
-            const lecResult = scheduleSession(
-              subject,
-              sectionCode,
-              "LECTURE",
-              lecHours,
-              rooms,
-              days,
-              timeSlots,
-              occupiedRoomSlots,
-              occupiedSectionSlots,
-              occupiedCourseSlots,
-              occupiedSubjectTimeSlots,
-              sectionActiveDays,
-              scheduleEntries,
-              preferredVacantDay,
-              breakPeriods,
-              subject.lab_type,
-              subject.lab_type,
-            );
-
-            if (lecResult) {
-              // Force Lab to use the exact same roomId and follow immediately after
-              scheduleSessionStartingAtRoom(
-                subject,
-                sectionCode,
-                "LABORATORY",
-                labHours,
-                rooms,
-                timeSlots,
-                lecResult.day,
-                lecResult.endSlotIndex,
-                lecResult.roomId,
-                lecResult.roomName,
-                occupiedRoomSlots,
-                occupiedSectionSlots,
-                occupiedCourseSlots,
-                occupiedSubjectTimeSlots,
-                sectionActiveDays,
-                scheduleEntries,
-                breakPeriods,
-              );
-            }
-          } else {
-            // Schedule Lab first
-            const labResult = scheduleSession(
+          if (lecResult) {
+            // Force Lab to use the exact same roomId and follow immediately after
+            scheduleSessionStartingAtRoom(
               subject,
               sectionCode,
               "LABORATORY",
               labHours,
               rooms,
-              days,
-              timeSlots,
+              sectionTimeSlots,
+              lecResult.day,
+              lecResult.endSlotIndex,
+              lecResult.roomId,
+              lecResult.roomName,
               occupiedRoomSlots,
               occupiedSectionSlots,
               occupiedCourseSlots,
               occupiedSubjectTimeSlots,
               sectionActiveDays,
               scheduleEntries,
-              preferredVacantDay,
               breakPeriods,
-              subject.lab_type,
-              lectureRoomTypeId,
             );
-
-            if (labResult) {
-              // Force Lecture to use the exact same roomId and follow immediately after
-              scheduleSessionStartingAtRoom(
-                subject,
-                sectionCode,
-                "LECTURE",
-                lecHours,
-                rooms,
-                timeSlots,
-                labResult.day,
-                labResult.endSlotIndex,
-                labResult.roomId,
-                labResult.roomName,
-                occupiedRoomSlots,
-                occupiedSectionSlots,
-                occupiedCourseSlots,
-                occupiedSubjectTimeSlots,
-                sectionActiveDays,
-                scheduleEntries,
-                breakPeriods,
-              );
-            }
           }
         } else {
-          // Standard independent scheduling (separate times/days)
-          if (hasLecture) {
-            scheduleSession(
+          // Schedule Lab first
+          const labResult = scheduleSession(
+            subject,
+            sectionCode,
+            "LABORATORY",
+            labHours,
+            rooms,
+            days,
+            sectionTimeSlots,
+            occupiedRoomSlots,
+            occupiedSectionSlots,
+            occupiedCourseSlots,
+            occupiedSubjectTimeSlots,
+            sectionActiveDays,
+            scheduleEntries,
+            preferredVacantDay,
+            breakPeriods,
+            subject.lab_type,
+            lectureRoomTypeId,
+          );
+
+          if (labResult) {
+            // Force Lecture to use the exact same roomId and follow immediately after
+            scheduleSessionStartingAtRoom(
               subject,
               sectionCode,
               "LECTURE",
               lecHours,
               rooms,
-              days,
-              timeSlots,
+              sectionTimeSlots,
+              labResult.day,
+              labResult.endSlotIndex,
+              labResult.roomId,
+              labResult.roomName,
               occupiedRoomSlots,
               occupiedSectionSlots,
               occupiedCourseSlots,
               occupiedSubjectTimeSlots,
               sectionActiveDays,
               scheduleEntries,
-              preferredVacantDay,
               breakPeriods,
-              subject.lab_type,
-              lectureRoomTypeId,
             );
           }
+        }
+      } else {
+        // Standard independent scheduling (separate times/days)
+        if (hasLecture) {
+          scheduleSession(
+            subject,
+            sectionCode,
+            "LECTURE",
+            lecHours,
+            rooms,
+            days,
+            sectionTimeSlots,
+            occupiedRoomSlots,
+            occupiedSectionSlots,
+            occupiedCourseSlots,
+            occupiedSubjectTimeSlots,
+            sectionActiveDays,
+            scheduleEntries,
+            preferredVacantDay,
+            breakPeriods,
+            subject.lab_type,
+            lectureRoomTypeId,
+          );
+        }
 
-          if (hasLab) {
-            scheduleSession(
-              subject,
-              sectionCode,
-              "LABORATORY",
-              labHours,
-              rooms,
-              days,
-              timeSlots,
-              occupiedRoomSlots,
-              occupiedSectionSlots,
-              occupiedCourseSlots,
-              occupiedSubjectTimeSlots,
-              sectionActiveDays,
-              scheduleEntries,
-              preferredVacantDay,
-              breakPeriods,
-              subject.lab_type,
-              lectureRoomTypeId,
-            );
-          }
+        if (hasLab) {
+          scheduleSession(
+            subject,
+            sectionCode,
+            "LABORATORY",
+            labHours,
+            rooms,
+            days,
+            sectionTimeSlots,
+            occupiedRoomSlots,
+            occupiedSectionSlots,
+            occupiedCourseSlots,
+            occupiedSubjectTimeSlots,
+            sectionActiveDays,
+            scheduleEntries,
+            preferredVacantDay,
+            breakPeriods,
+            subject.lab_type,
+            lectureRoomTypeId,
+          );
+        }
+      }
+    }
+
+    // Categorize sections into SHS and Tertiary
+    const shsAssignments: SectionSubjectAssignment[] = [];
+    const tertiaryAssignments: SectionSubjectAssignment[] = [];
+
+    for (const assignment of sectionAssignments) {
+      const isShsSection = /^([A-Z]+)([12])(\d)(\d+)$/.test(assignment.sectionCode);
+      if (isShsSection) {
+        shsAssignments.push(assignment);
+      } else {
+        tertiaryAssignments.push(assignment);
+      }
+      if (!sectionActiveDays.has(assignment.sectionCode)) {
+        sectionActiveDays.set(assignment.sectionCode, new Set<string>());
+      }
+    }
+
+    // Phase 1: SHS Lab schedules (subjects with lab units, including combined lec+lab)
+    for (const assignment of shsAssignments) {
+      const { sectionCode, subjects } = assignment;
+      const preferredVacantDay =
+        sectionPreferredVacantDay.get(sectionCode) || "Saturday";
+      const sectionTimeSlots = shsTimeSlots;
+
+      for (const subject of subjects) {
+        const labUnits = subject.lab_units || 0;
+        if (labUnits > 0) {
+          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay);
+        }
+      }
+    }
+
+    // Phase 2: Tertiary Lab schedules (subjects with lab units, including combined lec+lab)
+    for (const assignment of tertiaryAssignments) {
+      const { sectionCode, subjects } = assignment;
+      const preferredVacantDay =
+        sectionPreferredVacantDay.get(sectionCode) || "Saturday";
+      const sectionTimeSlots = timeSlots;
+
+      for (const subject of subjects) {
+        const labUnits = subject.lab_units || 0;
+        if (labUnits > 0) {
+          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay);
+        }
+      }
+    }
+
+    // Phase 3: SHS Discussion/Lecture schedules (subjects without lab units)
+    for (const assignment of shsAssignments) {
+      const { sectionCode, subjects } = assignment;
+      const preferredVacantDay =
+        sectionPreferredVacantDay.get(sectionCode) || "Saturday";
+      const sectionTimeSlots = shsTimeSlots;
+
+      for (const subject of subjects) {
+        const labUnits = subject.lab_units || 0;
+        const lectureUnits = subject.lecture_units || 0;
+        if (labUnits === 0 && lectureUnits > 0) {
+          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay);
+        }
+      }
+    }
+
+    // Phase 4: Tertiary Discussion/Lecture schedules (subjects without lab units)
+    for (const assignment of tertiaryAssignments) {
+      const { sectionCode, subjects } = assignment;
+      const preferredVacantDay =
+        sectionPreferredVacantDay.get(sectionCode) || "Saturday";
+      const sectionTimeSlots = timeSlots;
+
+      for (const subject of subjects) {
+        const labUnits = subject.lab_units || 0;
+        const lectureUnits = subject.lecture_units || 0;
+        if (labUnits === 0 && lectureUnits > 0) {
+          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay);
         }
       }
     }
