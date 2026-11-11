@@ -679,6 +679,7 @@ export async function updateActiveSchedule(scheduleId: string | null) {
       SELECT update_active_schedule(${scheduleId});
     `;
 
+    await createLog("", "update_active_schedule", `scheduleId: '${scheduleId}'`);
     return {
       success: true,
       message: "Active schedule successfully updated."
@@ -1292,7 +1293,16 @@ export async function updateRoom(
       );
     `;
 
-    await createLog(actor, "update_room", `room_id: '${roomId}'`);
+    await createLog(
+      actor,
+      "update_room",
+      `
+    room_id: '${roomId}' | 
+        room_name: '${input.room_name ?? null}' | 
+        room_type: '${input.room_type ? input.room_type : null}::UUID' | 
+        floor_level: '${input.floor_level ?? null}'
+    `,
+    );
 
     return { success: true };
   } catch (error) {
@@ -1454,7 +1464,16 @@ export async function updateProgram(
              );
     `;
 
-    await createLog(actor, "update_program", `program_code: '${programCode}'`);
+    await createLog(
+      actor,
+      "update_program",
+      `
+        program_code: '${programCode}' | 
+        program_name: '${input.program_name ?? null}' | 
+        year_level: '${input.year_level ?? null}' | 
+        students: '${input.students ? JSON.stringify(input.students) : null}::json'
+      `,
+    );
 
     return { success: true };
   } catch (error) {
@@ -1742,7 +1761,21 @@ export async function updateSubject(
              );
     `;
 
-    await createLog(actor, "update_subject", `subject_id: '${subjectId}'`);
+    await createLog(
+      actor,
+      "update_subject",
+      `
+        subject_id: '${subjectId}' | 
+        curriculum: '${input.curriculum ?? null}' | 
+        program_code: '${input.program_code ?? null}' | 
+        course_code: '${input.course_code ?? null}' |
+        course_name: '${input.course_name ?? null}' |
+        lecture_units: '${input.lecture_units ?? null}' |  
+        lab_units: '${input.lab_units ?? null}' | 
+        lab_type: '${input.lab_type ?? null}' |
+        year_term: '${input.year_term ?? null}'
+    `,
+    );
 
     return {
       success: true,
@@ -2113,7 +2146,26 @@ export async function updateTeacher(
              );
     `;
 
-    await createLog(actor, "update_teacher", `teacher_id: '${teacherId}'`);
+    await createLog(
+      actor,
+      "update_teacher",
+      `
+        teacher_id: '${teacherId}' | 
+        pscs_id: '${input.pscs_id ?? null}' | 
+        email: '${input.email ?? null}' | 
+        first_name: '${input.f_name ?? null}' | 
+        middle_name: '${input.m_name ?? null}' | 
+        surname: '${input.surname ?? null}' | 
+        suffix: '${input.suffix ?? null}' | 
+        teacher_code: '${input.teacher_code ?? null}' | 
+        department: '${input.department ?? null}' | 
+        requirement_type: '${input.requirement_type ?? null}' | 
+        employment_type: '${input.employment_type ?? null}' | 
+        status: '${input.status ?? null}' | 
+        availability: '${input.availability ? JSON.stringify(input.availability) : null}::jsonb' | 
+        preferences: '${input.preferences ? JSON.stringify(input.preferences) : null}::jsonb'
+      `,
+    );
 
     return { success: true };
   } catch (error) {
@@ -2485,7 +2537,12 @@ export async function updateTeacherPreassignment(
     await createLog(
       "",
       "update_teacher_pre-assignment",
-      `pre-assignment_id: ${preassignmentId}, pre-assignment_name: ${preassignmentName}`,
+      `pre-assignment_id: ${preassignmentId} | 
+              pre-assignment_name: ${preassignmentName} | 
+              teacherId: ${teacherId} | 
+              subjectId: ${subjectId} | 
+              mergeLecLab: ${mergeLecLab}
+      `,
     );
     return { success: true };
   } catch (error) {
@@ -2511,7 +2568,7 @@ export async function updateTeacherPreassignmentConfig(
     await createLog(
       "",
       "update_pre-assignment_constraints",
-      `pre-assignment_name: ${preassignment_name}, constraints: ${config}`,
+      `pre-assignment_name: ${preassignment_name} | constraints: ${config}`,
     );
     return { success: true };
   } catch (error) {
@@ -2756,7 +2813,7 @@ export async function updateTeacherAQ(
     await createLog(
       "",
       "update_teacher_aq",
-      `pscs_id: ${pscsId}, aq: ${aq}, status: ${approved}`,
+      `pscs_id: ${pscsId} | aq: ${aq} | status: ${approved}`,
     );
     return { success: true };
   } catch (error) {
@@ -3244,7 +3301,18 @@ export async function updateFcce(
              );
     `;
 
-    await createLog(actor, "update_fcce", `fcce_id: '${fcceId}'`);
+    await createLog(
+      actor,
+      "update_fcce",
+      `
+        fcce_id: '${fcceId}' | 
+        pscs_id: '${input.pscs_id ?? null}' | 
+        course_name: '${input.course_name ?? null}' | 
+        ay_sem: '${input.ay_sem ?? null}' | 
+        pass: '${input.pass ?? null}' | 
+        archived: '${input.archived ?? null}' | 
+      `,
+    );
 
     return { success: true };
   } catch (error) {
@@ -4396,7 +4464,26 @@ export async function updateRole(
       );
     `;
 
-    await createLog(actor, "update_role", `role_id: '${roleId}'`);
+    await createLog(
+      actor,
+      "update_role",
+      `
+      role_id: '${roleId}' | 
+      role_name: '${input.role_name ?? null}' | 
+      room_reservation: '${input.booking ?? null}' | 
+      personal_schedule: '${input.personal_schedule ?? null}' | 
+      academic_qualification: '${input.academic_qualification ?? null}' | 
+      schedules: '${input.schedules ?? null}' | 
+      courses: '${input.courses ?? null}' | 
+      rooms: '${input.rooms ?? null}' | 
+      subjects: '${input.subjects ?? null}' | 
+      teachers: '${input.teachers ?? null}' | 
+      maq: '${input.maq ?? null}' | 
+      fcce: '${input.fcce ?? null}' | 
+      help: '${input.help ?? null}' | 
+      config: '${input.config ?? null}'
+    `,
+    );
 
     return { success: true };
   } catch (error) {

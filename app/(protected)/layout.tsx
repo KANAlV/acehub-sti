@@ -214,9 +214,14 @@ export default function ProtectedLayout({
 
   useEffect(() => {
     const account = msalInstance.getActiveAccount();
-    if (account && !document.cookie.includes("user_email=")) {
-      const maxAge = 60 * 60 * 24;
-      document.cookie = `user_email=${encodeURIComponent(account.username)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    if (account) {
+      fetch("/api/set-user-cookie", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: account.username }),
+      }).catch((err) =>
+        console.warn("Failed to set user_email cookie:", err)
+      );
     }
   }, []);
 
