@@ -473,6 +473,7 @@ export async function deleteScheduleUsingID(schedule_id: string) {
       SELECT delete_schedule(${schedule_id});
     `;
 
+    await createLog(null, "delete_schedule", schedule_id)
     return {
       success: true,
     };
@@ -485,9 +486,9 @@ export async function deleteScheduleUsingID(schedule_id: string) {
   }
 }
 
-/**********************
- * SCHEDULES SUMMARY  *
- **********************/
+/*********************
+ * SCHEDULES SUMMARY *
+ *********************/
 
 export interface ScheduleByNameRecord {
   schedule_id: string;
