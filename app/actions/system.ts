@@ -445,7 +445,7 @@ export async function saveGeneratedSchedule(payload: {
     }
 
     await createLog(
-        "",
+        null,
         "create_schedule",
         `schedule_name: '${scheduleName}'`,
     );
