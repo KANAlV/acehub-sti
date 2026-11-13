@@ -1077,7 +1077,8 @@ export default function ScheduleTimetableClient({
   const computedTargetDuration =
     splitModalData.matchingDuplicates.length > 0
       ? splitModalData.matchingDuplicates.reduce(
-        (sum, item) => sum + (item.originalDuration || 60),
+        (sum, item) =>
+          sum + (item.originalDuration || (item.end_time - item.start_time) || 60),
         0,
       )
       : splitModalData.entry?.originalDuration || 60;

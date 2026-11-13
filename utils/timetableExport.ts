@@ -45,7 +45,7 @@ interface TimeSlot {
 }
 
 const TIME_SLOTS: TimeSlot[] = [];
-for (let h = 7; h <= 20.5; h++) {
+for (let h = 7; h <= 21; h++) {
   for (let m = 0; m < 60; m += 30) {
     const startMins = h * 60 + m;
     const endMins = startMins + 30;
@@ -84,9 +84,15 @@ function formatTimeSimple(hours: number, mins: number): string {
 function inferYearFromSection(section: string): string | null {
   const s = section.toUpperCase();
 
-  // SHS
-  if (s.startsWith("SHS11")) return "Grade 11";
-  if (s.startsWith("SHS12")) return "Grade 12";
+  // SHS strands: ABM, HUMSS, STEM, TVL, GAS, BSTM, ITMAWD, etc.
+  // Section codes like "STEM111" (Grade 11) or "STEM211" (Grade 12)
+  // The digit after the strand name indicates the grade: 1 = Grade 11, 2 = Grade 12
+  const shsStrandMatch = s.match(/^(ABM|HUMSS|STEM|TVL|GAS|BSTM|ITMAWD)(\d)/);
+  if (shsStrandMatch) {
+    const gradeDigit = parseInt(shsStrandMatch[2], 10);
+    if (gradeDigit === 1) return "Grade 11";
+    if (gradeDigit === 2) return "Grade 12";
+  }
 
   // Tertiary – look for pattern like BSIT1xx, BSBA2xx etc.
   const match = s.match(/(\d)(\d{2})$/);

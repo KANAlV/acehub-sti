@@ -400,14 +400,6 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
               {isDisplayed ? "Already Active" : "Set as Active"}
             </Button>
           </Tooltip>
-
-          <Button
-            color="blue"
-            size="sm"
-            className="bg-cyan-600 text-white hover:bg-cyan-700"
-          >
-            <HiOutlineExternalLink className="mr-1.5 h-4 w-4" /> Export
-          </Button>
         </div>
       </div>
 

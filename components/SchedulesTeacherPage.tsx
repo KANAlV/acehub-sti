@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Badge,
   Button,
   Card,
   Spinner,
@@ -14,7 +15,7 @@ import {
   TableRow,
 } from "flowbite-react";
 import { HiArrowLeft, HiOutlineExternalLink } from "react-icons/hi";
-import { fetchTeacherDetailedMetrics } from "@/app/actions/system";
+import { fetchTeacherDetailedMetrics, fetchTeachers } from "@/app/actions/system";
 import { fetchUserRole } from "@/app/actions/user";
 
 interface ScheduleTeacherProps {
@@ -52,6 +53,13 @@ interface ScheduleEntry {
   code: string;
 }
 
+interface TeacherPreferences {
+  preferred_rooms: string[];
+  preferred_times: string[];
+  preferred_years: string[];
+  preferred_subjects: string[];
+}
+
 export default function SchedulesTeacherPage({
   schedule_name,
   pscs_id,
@@ -86,6 +94,14 @@ export default function SchedulesTeacherPage({
   // --- Schedule & Breakdown States ---
   const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([]);
 
+  // --- Preferences States ---
+  const [teacherPreferences, setTeacherPreferences] = useState<TeacherPreferences>({
+    preferred_rooms: [],
+    preferred_times: [],
+    preferred_years: [],
+    preferred_subjects: [],
+  });
+
   // --- Data Fetching Effect ---
   useEffect(() => {
     async function fetchTeacherDetails() {
@@ -118,8 +134,37 @@ export default function SchedulesTeacherPage({
       setIsLoading(false);
     }
 
+    async function fetchTeacherPreferences() {
+      const res = await fetchTeachers(pscs_id, "All Active & On Leave", "All Departments", "surname", "ASC", -1, 1);
+      if (res.success && res.data && res.data.length > 0) {
+        const teacher = res.data[0];
+        const prefsRaw = teacher.preferences;
+        let prefs: Record<string, unknown> = {};
+        if (prefsRaw) {
+          if (typeof prefsRaw === 'string') {
+            try {
+              prefs = JSON.parse(prefsRaw);
+            } catch {
+              prefs = {};
+            }
+          } else if (typeof prefsRaw === 'object') {
+            prefs = prefsRaw as Record<string, unknown>;
+          }
+        }
+        if (Object.keys(prefs).length > 0) {
+          setTeacherPreferences({
+            preferred_rooms: Array.isArray(prefs.preferred_rooms) ? (prefs.preferred_rooms as string[]) : [],
+            preferred_times: Array.isArray(prefs.preferred_times) ? (prefs.preferred_times as string[]) : [],
+            preferred_years: Array.isArray(prefs.preferred_year) ? (prefs.preferred_year as string[]) : [],
+            preferred_subjects: Array.isArray(prefs.preferred_subjects) ? (prefs.preferred_subjects as string[]) : [],
+          });
+        }
+      }
+    }
+
     if (pscs_id && schedule_name) {
       void fetchTeacherDetails();
+      void fetchTeacherPreferences();
     }
   }, [schedule_name, pscs_id]);
 
@@ -144,6 +189,16 @@ export default function SchedulesTeacherPage({
     "Friday",
     "Saturday",
   ];
+
+  const formatTime = (minutes: number | string) => {
+    const minsVal = typeof minutes === "string" ? parseInt(minutes, 10) : minutes;
+    const hours = Math.floor(minsVal / 60);
+    const mins = minsVal % 60;
+    const period = hours >= 12 ? "PM" : "AM";
+    const formattedHours = hours % 12 === 0 ? 12 : hours % 12;
+    const formattedMins = mins < 10 ? `0${mins}` : mins;
+    return `${formattedHours}:${formattedMins} ${period}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -191,67 +246,70 @@ export default function SchedulesTeacherPage({
         </div>
       </div>
 
-      {/* Main Grid: Teacher Information & Units Analysis */}
+      {/* Main Grid: Teacher Overview & Preferences */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Teacher Information Card */}
-        <Card className="lg:col-span-1">
-          <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-            👥 Teacher Information
-          </h3>
-          <div className="space-y-4 text-sm">
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Full Name
-              </p>
-              <p className="font-semibold text-gray-900 dark:text-white">
-                {teacherInfo.name !== null ? (
-                  teacherInfo.name
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                PSCS ID
-              </p>
-              <p className="font-mono text-gray-900 dark:text-white">
-                {teacherInfo.pscs_id !== null ? (
-                  teacherInfo.pscs_id
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Teacher Code
-              </p>
-              <p className="font-mono text-gray-900 dark:text-white">
-                {teacherInfo.teacher_code !== null ? (
-                  teacherInfo.teacher_code
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Employment Type
-              </p>
-              <p className="text-gray-900 dark:text-white">
-                {teacherInfo.employment_type !== null ? (
-                  teacherInfo.employment_type
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        {/* Units Analysis Card */}
+        {/* Teacher Overview Card (Info + Units Analysis) */}
         <Card className="lg:col-span-2">
+          <div className="grid grid-cols-1 gap-4 items-start md:grid-cols-2">
+            {/* Teacher Information */}
+            <div>
+              <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+                👥 Teacher Information
+              </h3>
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Full Name
+                  </p>
+                  <p className="font-semibold text-gray-900 dark:text-white">
+                    {teacherInfo.name !== null ? (
+                      teacherInfo.name
+                    ) : (
+                      <Spinner size="sm" />
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    PSCS ID
+                  </p>
+                  <p className="font-mono text-gray-900 dark:text-white">
+                    {teacherInfo.pscs_id !== null ? (
+                      teacherInfo.pscs_id
+                    ) : (
+                      <Spinner size="sm" />
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Teacher Code
+                  </p>
+                  <p className="font-mono text-gray-900 dark:text-white">
+                    {teacherInfo.teacher_code !== null ? (
+                      teacherInfo.teacher_code
+                    ) : (
+                      <Spinner size="sm" />
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Employment Type
+                  </p>
+                  <p className="text-gray-900 dark:text-white">
+                    {teacherInfo.employment_type !== null ? (
+                      teacherInfo.employment_type
+                    ) : (
+                      <Spinner size="sm" />
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Units Analysis */}
+            <div>
           <h3 className="mb-6 text-sm font-semibold text-gray-900 dark:text-white">
             🕒 Units Analysis
           </h3>
@@ -334,35 +392,118 @@ export default function SchedulesTeacherPage({
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Prep Utilization
             </p>
-            <div className="mt-2 h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
               <div
                 className="h-2 rounded-full bg-cyan-600 transition-all duration-300"
-                style={{ width: `${unitsAnalysis.prep_utilization ?? 0}%` }}
+                style={{ width: `${Math.min(unitsAnalysis.prep_utilization ?? 0, 100)}%` }}
               ></div>
             </div>
           </div>
 
-          {/* Overall Utilization Rate */}
-          <div className="mt-6">
-            <div className="flex justify-between text-xs font-medium text-gray-700 dark:text-gray-300">
-              <span>Utilization Rate</span>
-              <span>
-                {unitsAnalysis.utilization_rate !== null ? (
-                  `${unitsAnalysis.utilization_rate.toFixed(1)}%`
-                ) : (
-                  <Spinner size="sm" />
-                )}
-              </span>
+              {/* Overall Utilization Rate */}
+              <div className="mt-6">
+                <div className="flex justify-between text-xs font-medium text-gray-700 dark:text-gray-300">
+                  <span>Utilization Rate</span>
+                  <span>
+                    {unitsAnalysis.utilization_rate !== null ? (
+                      `${unitsAnalysis.utilization_rate.toFixed(1)}%`
+                    ) : (
+                      <Spinner size="sm" />
+                    )}
+                  </span>
+                </div>
+                <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                  <div
+                    className="h-2.5 rounded-full bg-blue-600 transition-all duration-300"
+                    style={{ width: `${Math.min(unitsAnalysis.utilization_rate ?? 0, 100)}%` }}
+                  ></div>
+                </div>
+                <div className="mt-1 flex justify-between text-[10px] text-gray-400">
+                  <span>0%</span>
+                  <span>100%</span>
+                </div>
+              </div>
             </div>
-            <div className="mt-2 h-2.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
-              <div
-                className="h-2.5 rounded-full bg-blue-600 transition-all duration-300"
-                style={{ width: `${unitsAnalysis.utilization_rate ?? 0}%` }}
-              ></div>
+          </div>
+        </Card>
+
+        {/* Preferences Card */}
+        <Card className="lg:col-span-1">
+          <div className="h-full">
+            <h3 className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+              ⚙️ Preferences
+            </h3>
+
+            {/* Preferred Rooms */}
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                Preferred Rooms
+              </p>
+              {teacherPreferences.preferred_rooms.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {teacherPreferences.preferred_rooms.map((room, idx) => (
+                    <Badge key={idx} color="blue">
+                      {room}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs italic text-gray-400">No preferred rooms set</p>
+              )}
             </div>
-            <div className="mt-1 flex justify-between text-[10px] text-gray-400">
-              <span>0%</span>
-              <span>100%</span>
+
+            {/* Preferred Times */}
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                Preferred Times
+              </p>
+              {teacherPreferences.preferred_times.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {teacherPreferences.preferred_times.map((time, idx) => (
+                    <Badge key={idx} color="success">
+                      {time}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs italic text-gray-400">No preferred times set</p>
+              )}
+            </div>
+
+            {/* Preferred Years */}
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                Preferred Years
+              </p>
+              {teacherPreferences.preferred_years.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {teacherPreferences.preferred_years.map((year, idx) => (
+                    <Badge key={idx} color="warning">
+                      {year}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs italic text-gray-400">No preferred years set</p>
+              )}
+            </div>
+
+            {/* Preferred Subjects */}
+            <div>
+              <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                Preferred Subjects
+              </p>
+              {teacherPreferences.preferred_subjects.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {teacherPreferences.preferred_subjects.map((subject, idx) => (
+                    <Badge key={idx} color="purple">
+                      {subject}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs italic text-gray-400">No preferred subjects set</p>
+              )}
             </div>
           </div>
         </Card>
@@ -382,8 +523,8 @@ export default function SchedulesTeacherPage({
             );
 
             return (
-              <Card key={day} className="flex flex-col justify-between">
-                <div>
+              <Card key={day} className="flex flex-col">
+                <div className="justify-start">
                   <div className="mb-4 flex items-center justify-between">
                     <h4 className="font-semibold text-gray-900 dark:text-white">
                       {day}
@@ -401,23 +542,16 @@ export default function SchedulesTeacherPage({
                     <div className="space-y-4 divide-y divide-gray-100 dark:divide-gray-800">
                       {dayEntries.map((entry, idx) => (
                         <div key={idx} className={idx > 0 ? "pt-3" : ""}>
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                                {entry.subject_name}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {entry.start_time} - {entry.end_time}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                Room: {entry.room_name} • Section:{" "}
-                                {entry.section}
-                              </p>
-                            </div>
-                            <Button size="xs" color="alternative">
-                              Transfer
-                            </Button>
-                          </div>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                            {entry.subject_name}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Room: {entry.room_name} • Section:{" "}
+                            {entry.section}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -481,7 +615,7 @@ export default function SchedulesTeacherPage({
                       </span>
                     </TableCell>
                     <TableCell className="text-gray-500 dark:text-gray-400">
-                      {item.day} {item.start_time} - {item.end_time}
+                      {item.day} {formatTime(item.start_time)} - {formatTime(item.end_time)}
                     </TableCell>
                   </TableRow>
                 ))

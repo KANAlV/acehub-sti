@@ -108,7 +108,7 @@ export async function fetchSubjectsForGeneration(
 export async function generateProgramSections(
   _name: string,
   _curricula: string[],
-  term: string,
+  tertiaryTerm: string,
 ): Promise<{ success: boolean; sections: string[]; error?: string }> {
   try {
     const configResult = await fetchFacultyLoadConfig();
@@ -134,11 +134,11 @@ export async function generateProgramSections(
       programsResponse?.data || programsResponse || [];
 
     const generatedSections: string[] = [];
-    const termLower = term.toLowerCase();
 
-    const isFirstTerm = termLower.includes("1") || termLower.includes("1st");
-    const termNum = isFirstTerm ? 1 : 2;
-    const termOffset = isFirstTerm ? 1 : 2;
+    // Parse tertiary term
+    const tertiaryTermLower = tertiaryTerm.toLowerCase();
+    const isTertiaryFirstTerm = tertiaryTermLower.includes("1") || tertiaryTermLower.includes("1st");
+    const tertiaryTermOffset = isTertiaryFirstTerm ? 1 : 2;
 
     for (const prog of programs) {
       const progCode = prog.program_code.trim();
@@ -165,14 +165,14 @@ export async function generateProgramSections(
 
           if (isShs) {
             const gradeIndicator = levelKey === "12" ? "2" : "1";
-            const gradeTermCode = `${gradeIndicator}${termNum}`;
+            const gradeTermCode = `${gradeIndicator}1`;
             const sectionNumber = String(s).padStart(1, "0");
             sectionCode = `${progCode}${gradeTermCode}${sectionNumber}`;
           } else {
             const yearNum = Number(levelKey);
             if (isNaN(yearNum)) continue;
 
-            const yearTermCode = (yearNum - 1) * 2 + termOffset;
+            const yearTermCode = (yearNum - 1) * 2 + tertiaryTermOffset;
             const sectionNumber = 10 + s;
             sectionCode = `${progCode}${yearTermCode}${sectionNumber}`;
           }
@@ -199,7 +199,7 @@ export async function generateProgramSections(
 
 export async function assignSubjectsToSections(
   _name: string,
-  term: string,
+  tertiaryTerm: string,
   precomputedSections?: string[],
   precomputedSubjects?: SubjectRequirementRecord[],
 ): Promise<{
@@ -211,7 +211,7 @@ export async function assignSubjectsToSections(
     let sections = precomputedSections;
 
     if (!sections || sections.length === 0) {
-      const sectionResult = await generateProgramSections(_name, [], term);
+      const sectionResult = await generateProgramSections(_name, [], tertiaryTerm);
       if (!sectionResult.success || !sectionResult.sections) {
         throw new Error(sectionResult.error || "Failed to generate sections.");
       }
@@ -235,26 +235,8 @@ export async function assignSubjectsToSections(
         const yt = (subject.year_term || "").toLowerCase().trim();
         const isSubjectSHS = yt.includes("shs") || yt.includes("grade");
 
-        if (shsMatch) {
-          const [, progCode, gradeIndicator, sectionTermStr] = shsMatch;
-
-          const progMatches =
-            subProg === progCode || subProg === "GEN" || subProg === "CORE";
-          if (!progMatches) return false;
-
-          if (isSubjectSHS) {
-            const targetGradeNum = gradeIndicator === "2" ? "12" : "11";
-            // Use word boundary to avoid "11" matching inside other numbers
-            const gradeRegex = new RegExp(`\\b${targetGradeNum}\\b`, "i");
-            const gradeMatches = gradeRegex.test(yt);
-            const termMatches =
-              yt.includes(`term ${sectionTermStr}`) ||
-              yt.includes(`semester ${sectionTermStr}`);
-
-            return gradeMatches && termMatches;
-          }
-          return false;
-        } else {
+        // Helper: try matching as a tertiary section
+        function tryTertiaryMatch(): boolean {
           const match = sectionCode.match(/^([A-Z]+)(\d+)$/);
           if (!match) return false;
 
@@ -300,6 +282,35 @@ export async function assignSubjectsToSections(
           // The term is already encoded in the section code, so we only match by year.
           return yearMatched;
         }
+
+        if (shsMatch) {
+          const [, progCode, gradeIndicator, sectionTermStr] = shsMatch;
+
+          const progMatches =
+            subProg === progCode || subProg === "GEN" || subProg === "CORE";
+          if (!progMatches) return false;
+
+          if (isSubjectSHS) {
+            const targetGradeNum = gradeIndicator === "2" ? "12" : "11";
+            // Use word boundary to avoid "11" matching inside other numbers
+            const gradeRegex = new RegExp(`\\b${targetGradeNum}\\b`, "i");
+            const gradeMatches = gradeRegex.test(yt);
+
+            // SHS year_term may be "SHS 11", "SHS 12", "Grade 11", "Grade 12",
+            // or include term info like "Grade 11 - Term 1".
+            // Match term only if the year_term actually contains term/semester info.
+            const hasTermInfo = yt.includes("term") || yt.includes("semester");
+            const termMatches = hasTermInfo
+              ? yt.includes(`term ${sectionTermStr}`) || yt.includes(`semester ${sectionTermStr}`)
+              : true;
+
+            return gradeMatches && termMatches;
+          }
+          // Section looks like SHS but subject is tertiary — try tertiary matching
+          return tryTertiaryMatch();
+        } else {
+          return tryTertiaryMatch();
+        }
       });
 
       const structuredSubjects: AssignedSubjectDetail[] = matchedSubjects.map(
@@ -336,7 +347,7 @@ export async function assignSubjectsToSections(
 export async function generateRoomAndClassSchedules(
   _name: string,
   _curricula: string[],
-  term: string,
+  tertiaryTerm: string,
   precomputedSections?: string[],
   precomputedSubjects?: SubjectRequirementRecord[],
 ): Promise<ScheduleAssignmentResult> {
@@ -382,7 +393,7 @@ export async function generateRoomAndClassSchedules(
     if (!subjectsToUse || subjectsToUse.length === 0) {
       const fetchedSubjects = await fetchSubjectsForGeneration(
         _curricula,
-        term,
+        tertiaryTerm,
       );
       if (!fetchedSubjects.success) {
         throw new Error(fetchedSubjects.error || "Failed to fetch subjects.");
@@ -392,7 +403,7 @@ export async function generateRoomAndClassSchedules(
 
     const assignmentResult = await assignSubjectsToSections(
       _name,
-      term,
+      tertiaryTerm,
       precomputedSections,
       subjectsToUse,
     );
@@ -1109,7 +1120,55 @@ function scheduleSessionStartingAtRoom(
     }
   }
 
-  // Fallback if target room is occupied: schedule without room constraint
+  // Fallback if target room is occupied: try to find another suitable room
+  const fallbackRooms = getFilteredRooms(
+    componentType,
+    rooms,
+    subject.lab_type || null,
+    componentType === "LECTURE" ? null : undefined,
+  );
+
+  for (const room of fallbackRooms) {
+    const isRoomFree = sessionSlots.every(
+      (slot: string) =>
+        !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+    );
+
+    if (isRoomFree) {
+      sessionSlots.forEach((slot: string) => {
+        occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+        occupiedRoomSlots.add(`${room.room_id}_${day}_${slot}`);
+        occupiedCourseSlots.add(
+          `${subject.course_code}_${componentType}_${day}_${slot}`,
+        );
+        occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+      });
+      activeDays.add(day);
+
+      const startTime = sessionSlots[0].split(" - ")[0];
+      const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
+      const units =
+        componentType === "LECTURE" ? subject.lecture_units : subject.lab_units;
+
+      scheduleEntries.push({
+        sectionCode,
+        subjectId: subject.subject_id,
+        courseCode: subject.course_code,
+        courseName: subject.course_name,
+        componentType,
+        units,
+        roomId: room.room_id,
+        roomName: room.room_name || "Unassigned Room",
+        day,
+        startTime,
+        endTime,
+        type: componentType.toLowerCase(),
+      });
+      return true;
+    }
+  }
+
+  // Last resort: schedule without any room constraint
   sessionSlots.forEach((slot: string) => {
     occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
     occupiedCourseSlots.add(

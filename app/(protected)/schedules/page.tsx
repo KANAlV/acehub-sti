@@ -131,7 +131,7 @@ export default function ScheduleManagement() {
   const [pendingAutoPayload, setPendingAutoPayload] = useState<{
     scheduleName: string;
     curriculumIds: string[];
-    term: string;
+    tertiaryTerm: string;
   } | null>(null);
 
   // --- Testing State: Preview generated data modals --- //
@@ -163,7 +163,7 @@ export default function ScheduleManagement() {
   const [selectedTemplate, setSelectedTemplate] = useState("");
 
   // Auto Assign / Generation Specific State
-  const [selectedTerm, setSelectedTerm] = useState("Term 1");
+  const [selectedTertiaryTerm, setSelectedTertiaryTerm] = useState("Term 1");
 
   // --- Pagination State --- //
   const maxRowSchedule = 10;
@@ -242,7 +242,7 @@ export default function ScheduleManagement() {
     setAutoAssignRoom(false);
     setAddScheduleName("");
     setAddScheduleDescription("");
-    setSelectedTerm("Term 1");
+    setSelectedTertiaryTerm("Term 1");
     setSelectedTemplate("");
     setCurriculumAdd([]);
     setCurriculaSearch("");
@@ -333,7 +333,7 @@ export default function ScheduleManagement() {
     // 1. Fetch subjects first as requested
     const subjectRes = await fetchSubjectsForGeneration(
       curriculumIds,
-      selectedTerm,
+      selectedTertiaryTerm,
     );
     if (testMode) {console.log("=== SUBJECTS FOR GENERATION RESPONSE ===", subjectRes);}
     if (!subjectRes.success || !subjectRes.data) {
@@ -361,7 +361,7 @@ export default function ScheduleManagement() {
       setPendingAutoPayload({
         scheduleName: scheduleNameTrimmed,
         curriculumIds,
-        term: selectedTerm,
+        tertiaryTerm: selectedTertiaryTerm,
       });
       setOpenLoadingModal(false);
       setIsSubmittingAutoGeneration(false);
@@ -373,15 +373,14 @@ export default function ScheduleManagement() {
     await executeAutoGenerationPipeline(
       scheduleNameTrimmed,
       curriculumIds,
-      selectedTerm,
+      selectedTertiaryTerm,
     );
   }
 
-  // --- Step 2: Core Execution Pipeline (Runs Section Generation & Assignment/Scheduling) --- //
   async function executeAutoGenerationPipeline(
     scheduleName: string,
     curriculumIds: string[],
-    term: string,
+    tertiaryTerm: string,
   ) {
     setOpenAqWarningModal(false);
     setOpenLoadingModal(true);
@@ -392,7 +391,7 @@ export default function ScheduleManagement() {
     // 1. Fetch subjects here so they are available to both branches
     const subjectRes = await fetchSubjectsForGeneration(
       curriculumIds,
-      term,
+      tertiaryTerm,
     );
     if (!subjectRes.success || !subjectRes.data) {
       setIsSubmittingAutoGeneration(false);
@@ -413,7 +412,7 @@ export default function ScheduleManagement() {
     const sectionRes = await generateProgramSections(
       scheduleName,
       curriculumIds,
-      term,
+      tertiaryTerm,
     );
     console.log("=== GENERATED SECTIONS RESULT ===", sectionRes);
 
@@ -446,7 +445,7 @@ export default function ScheduleManagement() {
       const roomScheduleRes = await generateRoomAndClassSchedules(
         scheduleName,
         curriculumIds,
-        term,
+        tertiaryTerm,
         sectionRes.sections,
         allSubjects,
       );
@@ -488,7 +487,7 @@ export default function ScheduleManagement() {
 
       const assignRes = await assignSubjectsToSections(
         scheduleName,
-        term,
+        tertiaryTerm,
         sectionRes.sections,
         allSubjects,
       );
@@ -578,7 +577,7 @@ export default function ScheduleManagement() {
       const savePayload = {
         scheduleName,
         generationConfig: {
-          description: addScheduleDescription.trim() || `Generated for term ${term} (Auto Room: ${autoAssignRoom})`,
+          description: addScheduleDescription.trim() || `Generated for ${tertiaryTerm} (Auto Room: ${autoAssignRoom})`,
         },
         entries: entriesPayload,
       };
@@ -1079,11 +1078,12 @@ export default function ScheduleManagement() {
               </div>
 
               <div>
-                <Label htmlFor="term-select">Select Term / Semester * (for tertiary section generation only)</Label>
+                <Label htmlFor="tertiary-term-select">Term / Semester *</Label>
+                <HelperText>Used for section code generation (111, 211, etc.)</HelperText>
                 <Select
-                  id="term-select"
-                  value={selectedTerm}
-                  onChange={(e) => setSelectedTerm(e.target.value)}
+                  id="tertiary-term-select"
+                  value={selectedTertiaryTerm}
+                  onChange={(e) => setSelectedTertiaryTerm(e.target.value)}
                 >
                   <option value="Term 1">Term 1</option>
                   <option value="Term 2">Term 2</option>
@@ -1387,7 +1387,7 @@ export default function ScheduleManagement() {
                 void executeAutoGenerationPipeline(
                   pendingAutoPayload.scheduleName,
                   pendingAutoPayload.curriculumIds,
-                  pendingAutoPayload.term,
+                  pendingAutoPayload.tertiaryTerm,
                 );
               }
             }}
