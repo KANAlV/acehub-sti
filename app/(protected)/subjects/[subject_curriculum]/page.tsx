@@ -80,6 +80,22 @@ export interface RoomType {
     value: string;
 }
 
+interface DataValidationRule {
+    type: string;
+    operator?: string;
+    allowBlank: boolean;
+    formulae: (string | number)[];
+    showErrorMessage?: boolean;
+    errorTitle?: string;
+    error?: string;
+}
+
+interface WorksheetWithValidation extends ExcelJS.Worksheet {
+    dataValidations: {
+        add: (range: string, validation: DataValidationRule) => void;
+    };
+}
+
 const REQUIRED_HEADERS = [
     "Curriculum",
     "Year Level",
@@ -93,12 +109,12 @@ const REQUIRED_HEADERS = [
 
 export default function CurriculumSubjectsPage() {
     const router = useRouter();
-    const params = useParams();
+    const params = useParams() as Record<string, string | string[] | undefined>;
 
-    const curriculumVersion = useMemo(
-        () => decodeURIComponent((params?.subject_curriculum as string) || ""),
-        [params?.subject_curriculum]
-    );
+    const curriculumVersion = useMemo(() => {
+        const paramVal = params?.subject_curriculum || params?.curriculum || "";
+        return decodeURIComponent(Array.isArray(paramVal) ? paramVal[0] : paramVal || "");
+    }, [params]);
 
     const { instance, accounts } = useMsal();
     const activeAccount = useMemo(() => instance.getActiveAccount() || accounts[0], [instance, accounts]);
@@ -138,7 +154,7 @@ export default function CurriculumSubjectsPage() {
     const [isImporting, setIsImporting] = useState<boolean>(false);
     const [importLogs, setImportLogs] = useState<string[]>([]);
     const [formatError, setFormatError] = useState<string>("");
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     const [isAddingExisting, setIsAddingExisting] = useState<boolean>(false);
     const [existingSubjectSearch, setExistingSubjectSearch] = useState<string>("");
@@ -176,7 +192,7 @@ export default function CurriculumSubjectsPage() {
     const [toastType, setToastType] = useState<"success" | "warning" | "error">("success");
     const [progress, setProgress] = useState<number>(0);
     const [showToastTimer, setShowToastTimer] = useState<boolean>(false);
-    const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const toastTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const clearToastTimer = useCallback(() => {
         if (toastTimerRef.current) {
@@ -248,10 +264,10 @@ export default function CurriculumSubjectsPage() {
                     setRoomTypeList(roomTypesRes as RoomType[]);
                 }
 
-                const combinedPrograms: ProgramRecord[] = [
-                    ...(shsProgRes?.success && Array.isArray(shsProgRes.data) ? shsProgRes.data : []),
-                    ...(tertiaryProgRes?.success && Array.isArray(tertiaryProgRes.data) ? tertiaryProgRes.data : []),
-                ];
+                const shsList = shsProgRes?.success && Array.isArray(shsProgRes.data) ? (shsProgRes.data as ProgramRecord[]) : [];
+                const tertiaryList = tertiaryProgRes?.success && Array.isArray(tertiaryProgRes.data) ? (tertiaryProgRes.data as ProgramRecord[]) : [];
+
+                const combinedPrograms: ProgramRecord[] = [...shsList, ...tertiaryList];
                 setAllProgramsFilterList(combinedPrograms);
             } catch (err) {
                 console.error("Failed to load initial dropdown data:", err);
@@ -282,7 +298,7 @@ export default function CurriculumSubjectsPage() {
             const levelFilter = currentEduLevel === "shs" ? "shs" : "tertiary";
             const res = await fetchPrograms(null, levelFilter, "program_code", "ASC", 0, 1);
             if (res.success && res.data) {
-                setProgramsList(res.data);
+                setProgramsList(res.data as ProgramRecord[]);
             } else {
                 setProgramsList([]);
             }
@@ -350,14 +366,15 @@ export default function CurriculumSubjectsPage() {
         if (cleanYear === "Grade 12") cleanYear = "12";
         setSelectedYear(cleanYear);
 
+        const labUnits = subj.lab_units ?? 0;
         setFormData({
             curriculum: curriculumVersion,
             program_code: subj.program_code ?? "",
             course_code: subj.course_code || "",
             course_name: subj.course_name || "",
             lecture_units: subj.lecture_units ?? 3,
-            lab_units: subj.lab_units ?? 0,
-            lab_type: subj.lab_type ?? null,
+            lab_units: labUnits,
+            lab_type: labUnits > 0 ? (subj.lab_type ?? null) : null,
             year_term: subj.year_term ?? null,
         });
 
@@ -462,7 +479,11 @@ export default function CurriculumSubjectsPage() {
                 }
             }
 
-            setFormData((prev) => ({ ...prev, [id]: numVal }));
+            setFormData((prev) => ({
+                ...prev,
+                [id]: numVal,
+                ...(id === "lab_units" && numVal === 0 ? { lab_type: null } : {}),
+            }));
             return;
         }
 
@@ -504,14 +525,15 @@ export default function CurriculumSubjectsPage() {
         if (cleanYear === "Grade 12") cleanYear = "12";
         setSelectedYear(cleanYear);
 
+        const labUnits = Math.min(Math.max(subject.lab_units ?? 0, 0), 8);
         setFormData({
             curriculum: curriculumVersion,
             program_code: subject.program_code ?? "",
             course_code: subject.course_code || "",
             course_name: subject.course_name || "",
             lecture_units: Math.min(Math.max(subject.lecture_units ?? 0, 0), 8),
-            lab_units: Math.min(Math.max(subject.lab_units ?? 0, 0), 8),
-            lab_type: subject.lab_type ?? null,
+            lab_units: labUnits,
+            lab_type: labUnits > 0 ? (subject.lab_type ?? null) : null,
             year_term: subject.year_term ?? null,
         });
         setOpenEditModal(true);
@@ -527,7 +549,12 @@ export default function CurriculumSubjectsPage() {
             return;
         }
 
-        const payload = { ...formData, curriculum: curriculumVersion };
+        const payload = {
+            ...formData,
+            curriculum: curriculumVersion,
+            lab_type: (formData.lab_units ?? 0) === 0 ? null : formData.lab_type,
+        };
+
         const res = await createSubject(actor, payload);
         if (res.success) {
             triggerToast("Subject created successfully under this curriculum!", "success");
@@ -550,7 +577,12 @@ export default function CurriculumSubjectsPage() {
             return;
         }
 
-        const payload = { ...formData, curriculum: curriculumVersion };
+        const payload = {
+            ...formData,
+            curriculum: curriculumVersion,
+            lab_type: (formData.lab_units ?? 0) === 0 ? null : formData.lab_type,
+        };
+
         const res = await updateSubject(actor, selectedSubject.subject_id, payload);
         if (res.success) {
             triggerToast("Subject updated successfully!", "success");
@@ -573,10 +605,9 @@ export default function CurriculumSubjectsPage() {
         }
     }, [selectedSubject, actor, triggerToast, handleCloseModals, loadData]);
 
-    // Excel functions tailored specifically to this curriculum
     const handleDownloadTemplate = useCallback(async () => {
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet("Template");
+        const worksheet = workbook.addWorksheet("Template") as unknown as WorksheetWithValidation;
 
         worksheet.columns = [
             { header: "Curriculum", key: "curriculum", width: 18 },
@@ -586,7 +617,7 @@ export default function CurriculumSubjectsPage() {
             { header: "Course Name", key: "course_name", width: 30 },
             { header: "Lecture", key: "lecture", width: 12 },
             { header: "Laboratory", key: "laboratory", width: 12 },
-            { header: "Laboratory Type", key: "laboratory_type", width: 20 },
+            { header: "Laboratory Type", key: "laboratory_type", width: 25 },
         ];
 
         worksheet.addRow({
@@ -600,10 +631,33 @@ export default function CurriculumSubjectsPage() {
             laboratory_type: "",
         });
 
+        worksheet.addRow({
+            curriculum: curriculumVersion,
+            year_level: "1st Year",
+            program: "BSIT",
+            course_code: "CC102L",
+            course_name: "Computer Programming Lab",
+            lecture: 2,
+            laboratory: 1,
+            laboratory_type: roomTypeList[0]?.value || "Computer Laboratory",
+        });
+
+        const typeValues = roomTypeList.map((rt) => rt.value.replace(/"/g, '""')).join(",");
+        if (typeValues) {
+            worksheet.dataValidations.add("H2:H1000", {
+                type: "list",
+                allowBlank: true,
+                formulae: [`"${typeValues}"`],
+                showErrorMessage: true,
+                errorTitle: "Invalid Laboratory Type",
+                error: "Please select a valid laboratory type from the dropdown list.",
+            });
+        }
+
         const buffer = await workbook.xlsx.writeBuffer();
         downloadWorkbook(buffer, `${curriculumVersion}_Subjects_Template.xlsx`);
-        triggerToast("Blank Excel template downloaded successfully!", "success");
-    }, [curriculumVersion, triggerToast]);
+        triggerToast("Blank Excel template downloaded successfully with dynamic room type validation!", "success");
+    }, [curriculumVersion, roomTypeList, triggerToast]);
 
     const handleExportExcel = useCallback(async () => {
         try {
@@ -617,7 +671,7 @@ export default function CurriculumSubjectsPage() {
             }
 
             const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet("Subjects");
+            const worksheet = workbook.addWorksheet("Subjects") as unknown as WorksheetWithValidation;
 
             worksheet.columns = [
                 { header: "Curriculum", key: "curriculum", width: 18 },
@@ -627,11 +681,11 @@ export default function CurriculumSubjectsPage() {
                 { header: "Course Name", key: "course_name", width: 30 },
                 { header: "Lecture", key: "lecture", width: 12 },
                 { header: "Laboratory", key: "laboratory", width: 12 },
-                { header: "Laboratory Type", key: "laboratory_type", width: 20 },
+                { header: "Laboratory Type", key: "laboratory_type", width: 25 },
             ];
 
             exportList.forEach((item) => {
-                const labTypeName = (item.lab_type ? roomTypeList.find(r => r.room_type_id === item.lab_type)?.value : null) || item.lab_type_name || item.lab_type || "";
+                const labTypeName = (item.lab_type ? roomTypeList.find((r) => r.room_type_id === item.lab_type)?.value : null) || item.lab_type_name || item.lab_type || "";
                 worksheet.addRow({
                     curriculum: item.curriculum || curriculumVersion,
                     year_level: item.year_term ? item.year_term.split(" - ")[0] : "",
@@ -640,9 +694,18 @@ export default function CurriculumSubjectsPage() {
                     course_name: item.course_name || "",
                     lecture: item.lecture_units ?? 0,
                     laboratory: item.lab_units ?? 0,
-                    laboratory_type: labTypeName,
+                    laboratory_type: (item.lab_units ?? 0) > 0 ? labTypeName : "",
                 });
             });
+
+            const typeValues = roomTypeList.map((rt) => rt.value.replace(/"/g, '""')).join(",");
+            if (typeValues) {
+                worksheet.dataValidations.add("H2:H1000", {
+                    type: "list",
+                    allowBlank: true,
+                    formulae: [`"${typeValues}"`],
+                });
+            }
 
             const buffer = await workbook.xlsx.writeBuffer();
             downloadWorkbook(buffer, `${curriculumVersion}_Subjects_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
@@ -725,7 +788,7 @@ export default function CurriculumSubjectsPage() {
                 return;
             }
 
-            setImportLogs((prev) => [...prev, `Headers verified. Enforcing curriculum constraints...`]);
+            setImportLogs((prev) => [...prev, `Headers verified. Enforcing laboratory and curriculum constraints...`]);
 
             let successCount = 0;
             let failCount = 0;
@@ -775,7 +838,6 @@ export default function CurriculumSubjectsPage() {
                 const rawLab = Number(row.getCell(labCol).value || 0);
                 const rawLabType = String(row.getCell(labTypeCol).value || "").trim();
 
-                // STRICT CONSTRAINT CHECK: Block foreign curricula
                 if (rawCurr.toLowerCase() !== curriculumVersion.toLowerCase()) {
                     logs.push(`Row ${rowNumber} (${rawCode}): Blocked. Curriculum version "${rawCurr}" does not match active target curriculum "${curriculumVersion}".`);
                     failCount++;
@@ -794,8 +856,22 @@ export default function CurriculumSubjectsPage() {
                 }
 
                 let matchedLabTypeId: string | null = null;
-                if (rawLab > 0 && rawLabType) {
+                const labUnitsNum = isNaN(rawLab) ? 0 : rawLab;
+
+                if (labUnitsNum > 0) {
+                    if (!rawLabType) {
+                        logs.push(`Row ${rowNumber} (${rawCode}): Failed. Laboratory units are > 0 but Laboratory Type is missing.`);
+                        failCount++;
+                        return;
+                    }
                     matchedLabTypeId = roomTypeNameToIdMap.get(rawLabType.toLowerCase()) || null;
+                    if (!matchedLabTypeId) {
+                        logs.push(`Row ${rowNumber} (${rawCode}): Failed. Laboratory type "${rawLabType}" not recognized.`);
+                        failCount++;
+                        return;
+                    }
+                } else {
+                    matchedLabTypeId = null;
                 }
 
                 rowsToProcess.push({
@@ -805,7 +881,7 @@ export default function CurriculumSubjectsPage() {
                     code: rawCode,
                     name: rawName,
                     lec: isNaN(rawLec) ? 3 : rawLec,
-                    lab: isNaN(rawLab) ? 0 : rawLab,
+                    lab: labUnitsNum,
                     labTypeId: matchedLabTypeId,
                 });
             });
@@ -1031,10 +1107,14 @@ export default function CurriculumSubjectsPage() {
                                     <TableCell>{item.lecture_units}</TableCell>
                                     <TableCell>{item.lab_units}</TableCell>
                                     <TableCell>
-                                        {(item.lab_type ? roomTypeMap.get(item.lab_type) : null) ||
+                                        {(item.lab_units ?? 0) === 0 ? (
+                                            <span className="text-gray-400 italic">No Laboratory</span>
+                                        ) : (
+                                            (item.lab_type ? roomTypeMap.get(item.lab_type) : null) ||
                                             item.lab_type_name ||
                                             item.lab_type ||
-                                            "No Laboratory"}
+                                            "Configured Lab"
+                                        )}
                                     </TableCell>
                                     <TableCell>
                                         <a
@@ -1163,7 +1243,7 @@ export default function CurriculumSubjectsPage() {
                                 </div>
 
                                 <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                                    <span className="font-semibold uppercase tracking-wide">Strict Validation Constraint:</span> Rows must specify curriculum <b className="font-mono">{curriculumVersion}</b>. Foreign curricula items will be blocked automatically. Headers: {REQUIRED_HEADERS.join(", ")}
+                                    <span className="font-semibold uppercase tracking-wide">Strict Validation Rule:</span> Rows must specify curriculum <b className="font-mono">{curriculumVersion}</b>. If <b className="font-mono">Laboratory</b> units = 0, <b className="font-mono">Laboratory Type</b> cannot be configured. Headers: {REQUIRED_HEADERS.join(", ")}
                                 </div>
 
                                 {formatError && (
@@ -1216,7 +1296,7 @@ export default function CurriculumSubjectsPage() {
                                         Export Subjects for {curriculumVersion}
                                     </h4>
                                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                        Generates a structured spreadsheet containing all current subjects registered under this specific curriculum version.
+                                        Generates a structured spreadsheet containing all current subjects registered under this specific curriculum version with dropdown room validations.
                                     </p>
                                 </div>
                                 <Button onClick={handleExportExcel} className="w-full" color="green">
@@ -1232,7 +1312,7 @@ export default function CurriculumSubjectsPage() {
                                         Download Curriculum Template
                                     </h4>
                                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                        Pre-filled template pre-configured with curriculum <b className="font-mono">{curriculumVersion}</b> and required column headers.
+                                        Pre-filled template configured with curriculum <b className="font-mono">{curriculumVersion}</b> and dynamic room type dropdown validations.
                                     </p>
                                 </div>
                                 <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
@@ -1435,7 +1515,7 @@ export default function CurriculumSubjectsPage() {
                         </div>
 
                         <div>
-                            <Label htmlFor="lab_type">Lab Type</Label>
+                            <Label htmlFor="lab_type">Laboratory Type</Label>
                             <Select
                                 id="lab_type"
                                 value={formData.lab_type || ""}
@@ -1443,7 +1523,7 @@ export default function CurriculumSubjectsPage() {
                                 disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
                             >
                                 <option value="" hidden={true}>
-                                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Lab Type..."}
+                                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
                                 </option>
                                 {roomTypeList.map((type) => (
                                     <option key={type.room_type_id} value={type.room_type_id}>
@@ -1571,14 +1651,16 @@ export default function CurriculumSubjectsPage() {
                         </div>
 
                         <div>
-                            <Label htmlFor="lab_type">Lab Type</Label>
+                            <Label htmlFor="lab_type">Laboratory Type</Label>
                             <Select
                                 id="lab_type"
                                 value={formData.lab_type || ""}
                                 onChange={handleInputChange}
                                 disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
                             >
-                                <option value="" hidden={true}>Select Lab Type...</option>
+                                <option value="" hidden={true}>
+                                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
+                                </option>
                                 {roomTypeList.map((type) => (
                                     <option key={type.room_type_id} value={type.room_type_id}>
                                         {type.value}
@@ -1635,5 +1717,3 @@ export default function CurriculumSubjectsPage() {
         </div>
     );
 }
-
-/*TODO: DB Function */

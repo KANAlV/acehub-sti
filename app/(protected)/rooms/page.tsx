@@ -55,6 +55,22 @@ interface RoomTypeItem {
     value: string;
 }
 
+interface DataValidationRule {
+    type: string;
+    operator?: string;
+    allowBlank: boolean;
+    formulae: (string | number)[];
+    showErrorMessage?: boolean;
+    errorTitle?: string;
+    error?: string;
+}
+
+interface WorksheetWithValidation extends ExcelJS.Worksheet {
+    dataValidations: {
+        add: (range: string, validation: DataValidationRule) => void;
+    };
+}
+
 const REQUIRED_HEADERS = ["Room Name", "Room Type", "Floor Level"];
 const MAX_ROW_ROOM = 10;
 
@@ -446,12 +462,13 @@ export default function RoomsManagement() {
     /** --- Excel Operations (ExcelJS) --- **/
     const handleDownloadTemplate = useCallback(async () => {
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet("Template");
+        const worksheet = workbook.addWorksheet("Template") as unknown as WorksheetWithValidation;
 
+        // Generous, un-cramped column width definitions (accounting for dropdown arrow icons)
         worksheet.columns = [
-            { header: "Room Name", key: "room_name", width: 25 },
-            { header: "Room Type", key: "room_type", width: 30 },
-            { header: "Floor Level", key: "floor_level", width: 15 },
+            { header: "Room Name", key: "room_name", width: 32 },
+            { header: "Room Type", key: "room_type", width: 42 },
+            { header: "Floor Level", key: "floor_level", width: 20 },
         ];
 
         worksheet.addRow({
@@ -459,16 +476,23 @@ export default function RoomsManagement() {
             room_type: roomTypes[0]?.value || "Lecture Room",
             floor_level: 1,
         });
-        worksheet.addRow({
-            room_name: "Lab 102",
-            room_type: roomTypes[1]?.value || roomTypes[0]?.value || "Computer Laboratory",
-            floor_level: 1,
+
+        const typeValues = roomTypes.map((rt) => rt.value.replace(/"/g, '""')).join(",");
+        const validationFormula = `"${typeValues}"`;
+
+        worksheet.dataValidations.add("B2:B1000", {
+            type: "list",
+            allowBlank: false,
+            formulae: [validationFormula],
+            showErrorMessage: true,
+            errorTitle: "Invalid Room Type",
+            error: "Please select a valid room type from the dropdown list.",
         });
 
         const buffer = await workbook.xlsx.writeBuffer();
         downloadWorkbook(buffer, "Rooms_Import_Template.xlsx");
 
-        triggerToast("Blank Excel template downloaded successfully!", "success");
+        triggerToast("Blank Excel template downloaded successfully with dynamic room type options!", "success");
     }, [roomTypes, triggerToast]);
 
     const handleExportExcel = useCallback(async () => {
@@ -482,13 +506,13 @@ export default function RoomsManagement() {
             }
 
             const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet("Rooms");
+            const worksheet = workbook.addWorksheet("Rooms") as unknown as WorksheetWithValidation;
 
             worksheet.columns = [
-                { header: "No.", key: "no", width: 8 },
-                { header: "Room Name", key: "room_name", width: 25 },
-                { header: "Room Type", key: "room_type", width: 30 },
-                { header: "Floor Level", key: "floor_level", width: 15 },
+                { header: "No.", key: "no", width: 10 },
+                { header: "Room Name", key: "room_name", width: 32 },
+                { header: "Room Type", key: "room_type", width: 42 },
+                { header: "Floor Level", key: "floor_level", width: 20 },
             ];
 
             exportList.forEach((item, index) => {
@@ -500,6 +524,13 @@ export default function RoomsManagement() {
                 });
             });
 
+            const typeValues = roomTypes.map((rt) => rt.value.replace(/"/g, '""')).join(",");
+            worksheet.dataValidations.add("C2:C1000", {
+                type: "list",
+                allowBlank: false,
+                formulae: [`"${typeValues}"`],
+            });
+
             const buffer = await workbook.xlsx.writeBuffer();
             downloadWorkbook(buffer, `Rooms_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
 
@@ -508,7 +539,7 @@ export default function RoomsManagement() {
             console.error(err);
             triggerToast("Failed to export rooms to Excel", "error");
         }
-    }, [debouncedSearch, sortRoomsBy, sortRoomsDir, rooms, roomTypeMap, triggerToast]);
+    }, [debouncedSearch, sortRoomsBy, sortRoomsDir, rooms, roomTypeMap, roomTypes, triggerToast]);
 
     const validateAndSelectFile = useCallback((file: File | null) => {
         setFormatError("");
@@ -1044,7 +1075,7 @@ export default function RoomsManagement() {
                                         Download Blank Excel Template
                                     </h4>
                                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                        Includes formatted columns (<b className="font-mono">Room Name, Room Type, Floor Level</b>) and sample rows for error-free imports.
+                                        Includes un-cramped formatted columns (<b className="font-mono">Room Name, Room Type, Floor Level</b>) and dynamic dropdown validation populated from active database room types.
                                     </p>
                                 </div>
                                 <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
