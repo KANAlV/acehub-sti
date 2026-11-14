@@ -33,7 +33,9 @@ import {
   HiTrash,
   HiX,
 } from "react-icons/hi";
+import { IoMdDocument } from "react-icons/io";
 import { IoRefresh } from "react-icons/io5";
+import { MdFolderCopy } from "react-icons/md";
 import {
   AQRecord,
   createTeacherAQ,
@@ -41,11 +43,20 @@ import {
   fetchTeacherAQRecords,
   fetchTeachers,
   fetchMaq,
+  fetchMaqClustersWithEntries,
+  MaqClusterEntryItem,
+  MaqClusterWithEntriesRecord,
   MaqRecord,
   TeacherRecord,
   updateTeacherAQ,
   JSONValue,
 } from "@/app/actions/system";
+
+interface SuggestionItem {
+  name: string;
+  type: "maq" | "cluster";
+  entries: MaqClusterEntryItem[];
+}
 
 export default function TeacherAQs() {
   const [isLoading, setLoading] = useState(true);
@@ -72,7 +83,7 @@ export default function TeacherAQs() {
   // --- Add AQ Searchable Modal States --- //
   const [isAddAQOpen, setIsAddAQOpen] = useState(false);
   const [aqSearchQuery, setAqSearchQuery] = useState("");
-  const [aqSearchResults, setAqSearchResults] = useState<string[]>([]);
+  const [aqSearchResults, setAqSearchResults] = useState<SuggestionItem[]>([]);
   const [selectedAQOption, setSelectedAQOption] = useState("");
   const [isAQLocked, setIsAQLocked] = useState(false);
   const [isSearchingAqs, setIsSearchingAqs] = useState(false);
@@ -211,24 +222,53 @@ export default function TeacherAQs() {
     setAqSubmitError("");
 
     try {
-      const res = await fetchMaq(query || undefined, "aq", "ASC", 0);
-      if (res?.success && res.data) {
-        // Get list of AQs already assigned to this teacher to filter them out
-        const existingTeacherAqNames = getTeacherAQs(
-          selectedTeacher?.pscs_id,
-        ).map((rec) => rec.aq.toLowerCase().trim());
+      const [aqRes, clusterRes] = await Promise.all([
+        fetchMaq(query || undefined, "aq", "ASC", 0),
+        fetchMaqClustersWithEntries(query || undefined, "cluster_name", "ASC", 10, 1),
+      ]);
 
-        const results = res.data
-          .map((item: MaqRecord) => item.aq)
-          .filter(
-            (aq: string) =>
-              !existingTeacherAqNames.includes(aq.toLowerCase().trim()),
-          );
+      // Get list of AQs already assigned to this teacher to filter them out
+      const existingTeacherAqNames = getTeacherAQs(
+        selectedTeacher?.pscs_id,
+      ).map((rec) => rec.aq.toLowerCase().trim());
 
-        setAqSearchResults(results);
-      } else {
-        setAqSearchResults([]);
+      const combinedSuggestions: SuggestionItem[] = [];
+      const addedNames = new Set<string>();
+
+      // Add clusters first
+      if (clusterRes?.success && clusterRes.data) {
+        clusterRes.data.forEach((cluster: MaqClusterWithEntriesRecord) => {
+          if (cluster.cluster_name && !addedNames.has(cluster.cluster_name)) {
+            addedNames.add(cluster.cluster_name);
+            combinedSuggestions.push({
+              name: cluster.cluster_name,
+              type: "cluster",
+              entries: cluster.entries || [],
+            });
+          }
+        });
       }
+
+      // Add individual AQs
+      if (aqRes?.success && aqRes.data) {
+        aqRes.data.forEach((item: MaqRecord) => {
+          const aqName = item.aq;
+          if (
+            aqName &&
+            !addedNames.has(aqName) &&
+            !existingTeacherAqNames.includes(aqName.toLowerCase().trim())
+          ) {
+            addedNames.add(aqName);
+            combinedSuggestions.push({
+              name: aqName,
+              type: "maq",
+              entries: [],
+            });
+          }
+        });
+      }
+
+      setAqSearchResults(combinedSuggestions);
     } catch (error) {
       setAqSearchResults([]);
     } finally {
@@ -261,12 +301,21 @@ export default function TeacherAQs() {
     return () => clearTimeout(delayDebounce);
   };
 
-  const handleSelectAQ = (aq: string) => {
-    setSelectedAQOption(aq);
-    setAqSearchQuery(aq);
-    setIsAQLocked(true);
-    setShowSuggestions(false);
-    setAqSubmitError("");
+  const handleSelectAQ = (item: SuggestionItem) => {
+    if (item.type === "cluster") {
+      // For clusters, use the cluster name as the selection
+      setSelectedAQOption(item.name);
+      setAqSearchQuery(item.name);
+      setIsAQLocked(true);
+      setShowSuggestions(false);
+      setAqSubmitError("");
+    } else {
+      setSelectedAQOption(item.name);
+      setAqSearchQuery(item.name);
+      setIsAQLocked(true);
+      setShowSuggestions(false);
+      setAqSubmitError("");
+    }
   };
 
   const handleUnlockAQ = () => {
@@ -274,6 +323,9 @@ export default function TeacherAQs() {
     setSelectedAQOption("");
     setShowSuggestions(true);
   };
+
+  const clusterOptions = aqSearchResults.filter((item) => item.type === "cluster");
+  const maqOptions = aqSearchResults.filter((item) => item.type === "maq");
 
   const getTeacherAQs = (pscsId?: string | null) => {
     if (!pscsId) return [];
@@ -375,7 +427,7 @@ export default function TeacherAQs() {
       return;
     }
 
-    if (!aqSearchResults.includes(selectedAQOption)) {
+    if (!aqSearchResults.some((item) => item.name === selectedAQOption)) {
       setAqSubmitError(
         "Selected Academic Qualification does not exist in system records or is already assigned.",
       );
@@ -943,17 +995,64 @@ export default function TeacherAQs() {
                       </span>
                     </div>
                   ) : aqSearchResults.length > 0 ? (
-                    <ul className="py-1 text-sm text-gray-700 dark:text-gray-200">
-                      {aqSearchResults.map((aq, idx) => (
-                        <li
-                          key={`${aq}-${idx}`}
-                          onClick={() => handleSelectAQ(aq)}
-                          className="cursor-pointer px-4 py-2 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-gray-700 dark:hover:text-blue-400"
-                        >
-                          <span className="font-medium">{aq}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      {/* Clusters Section */}
+                      {clusterOptions.length > 0 && (
+                        <div>
+                          <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700 dark:text-gray-400">
+                            Clusters
+                          </div>
+                          {clusterOptions.map((opt) => {
+                            const subEntries = opt.entries || [];
+                            const subEntriesLabels = subEntries
+                              .map((entry: MaqClusterEntryItem) =>
+                                typeof entry === "string" ? entry : entry.aq,
+                              )
+                              .filter(Boolean);
+
+                            return (
+                              <div
+                                key={opt.name}
+                                onClick={() => handleSelectAQ(opt)}
+                                className="cursor-pointer border-b border-gray-100 px-3 py-2 text-sm transition-colors hover:bg-blue-50 dark:border-gray-700 dark:hover:bg-gray-700"
+                              >
+                                <div className="flex items-center gap-2 font-medium text-blue-600 dark:text-blue-400">
+                                  <MdFolderCopy className="h-4 w-4 shrink-0 text-blue-500" />
+                                  <span>{opt.name}</span>
+                                </div>
+                                {subEntriesLabels.length > 0 && (
+                                  <div className="mt-1 ml-6 flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
+                                    <span>└</span>
+                                    <span className="truncate">
+                                      {subEntriesLabels.join(", ")}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Individual Qualifications Section */}
+                      {maqOptions.length > 0 && (
+                        <div>
+                          <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:border-gray-700 dark:bg-gray-700 dark:text-gray-400">
+                            Individual Qualifications
+                          </div>
+                          {maqOptions.map((opt) => (
+                            <div
+                              key={opt.name}
+                              onClick={() => handleSelectAQ(opt)}
+                              className="cursor-pointer flex items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-700 last:border-none transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700"
+                            >
+                              <IoMdDocument className="h-4 w-4 shrink-0 text-gray-400" />
+                              <span className="truncate">{opt.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="p-4 text-center text-xs text-gray-500">
                       No matching or unassigned qualifications found.

@@ -31,7 +31,7 @@ export async function authorizeAndSyncUser(
     const isSuperuser = normalizedRoleName === "superuser" || normalizedRoleName === "superadmin";
 
     if (!isSuperuser) {
-      const isAllowedDomain = trimmedEmail.endsWith("@alabang.sti.edu.ph");
+      const isAllowedDomain = trimmedEmail.includes("@alabang.sti.edu");
       const isStudent = fullName.toLowerCase().includes("student");
 
       // Reject non-superusers if wrong domain OR name contains "Student"

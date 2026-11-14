@@ -22,6 +22,12 @@ export interface TeacherRecord {
   status?: string;
   aqs?: unknown;
   fcces?: unknown;
+  preferences?: {
+    preferred_rooms?: string[];
+    preferred_times?: string[];
+    preferred_years?: string[];
+    preferred_subjects?: string[];
+  };
 }
 
 export interface SubjectRequirementRecord {
@@ -450,6 +456,74 @@ export default function TeacherAssignmentModal({
                   {selectedTeacher.department || "General"} •{" "}
                   {selectedTeacher.employment_type || "Full-time"}
                 </div>
+
+                {/* Teacher Preferences */}
+                {selectedTeacher.preferences && (
+                  <div className="mt-3 space-y-2 border-t pt-3 text-xs">
+                    <div className="text-[10px] font-bold tracking-wider uppercase opacity-70">
+                      Preferences
+                    </div>
+
+                    {selectedTeacher.preferences.preferred_rooms && selectedTeacher.preferences.preferred_rooms.length > 0 && (
+                      <div>
+                        <span className="font-semibold">Rooms:</span>
+                        <div className="mt-1 flex overflow-x-auto gap-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                          {selectedTeacher.preferences.preferred_rooms.map((room, idx) => (
+                            <span key={idx} className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
+                              {room}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedTeacher.preferences.preferred_times && selectedTeacher.preferences.preferred_times.length > 0 && (
+                      <div>
+                        <span className="font-semibold">Times:</span>
+                        <div className="mt-1 flex overflow-x-auto gap-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                          {selectedTeacher.preferences.preferred_times.map((time, idx) => (
+                            <span key={idx} className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/50 dark:text-green-300">
+                              {time}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedTeacher.preferences.preferred_years && selectedTeacher.preferences.preferred_years.length > 0 && (
+                      <div>
+                        <span className="font-semibold">Years:</span>
+                        <div className="mt-1 flex overflow-x-auto gap-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                          {selectedTeacher.preferences.preferred_years.map((year, idx) => (
+                            <span key={idx} className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:bg-purple-900/50 dark:text-purple-300">
+                              {year}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedTeacher.preferences.preferred_subjects && selectedTeacher.preferences.preferred_subjects.length > 0 && (
+                      <div>
+                        <span className="font-semibold">Subjects:</span>
+                        <div className="mt-1 flex overflow-x-auto gap-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                          {selectedTeacher.preferences.preferred_subjects.map((subject, idx) => (
+                            <span key={idx} className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
+                              {subject}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(!selectedTeacher.preferences.preferred_rooms || selectedTeacher.preferences.preferred_rooms.length === 0) &&
+                      (!selectedTeacher.preferences.preferred_times || selectedTeacher.preferences.preferred_times.length === 0) &&
+                      (!selectedTeacher.preferences.preferred_years || selectedTeacher.preferences.preferred_years.length === 0) &&
+                      (!selectedTeacher.preferences.preferred_subjects || selectedTeacher.preferences.preferred_subjects.length === 0) && (
+                        <div className="text-xs italic opacity-60">No preferences set</div>
+                      )}
+                  </div>
+                )}
               </div>
             )}
 

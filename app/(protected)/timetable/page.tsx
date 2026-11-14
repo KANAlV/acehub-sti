@@ -36,6 +36,7 @@ import {
   fetchActiveScheduleName,
 } from "@/app/actions/system";
 import { GiCoffeeCup } from "react-icons/gi";
+import { generateSubjectAbv } from "@/utils/NameAbbreviator";
 
 interface BreakPeriodRecord {
   break_id: string;
@@ -129,7 +130,7 @@ export default function Timetable() {
     "Saturday",
   ];
 
-  // 12-hour format time slots grid (7:00 AM to 8:30 PM in 30-minute increments)
+  // 12-hour format time slots grid (7:00 AM to 9:30 PM in 30-minute increments)
   const timeSlotsGrid = [
     "07:00 AM",
     "07:30 AM",
@@ -159,6 +160,8 @@ export default function Timetable() {
     "07:30 PM",
     "08:00 PM",
     "08:30 PM",
+    "09:00 PM",
+    "09:30 PM",
   ];
 
   const GRID_START_MINS = 7 * 60; // 7:00 AM in minutes
@@ -864,18 +867,23 @@ export default function Timetable() {
               >
                 <div className="flex items-center justify-between">
                   <div className="truncate text-xs font-bold">
-                    {entry.course_name}
+                    {generateSubjectAbv(entry.course_name)}
                   </div>
                 </div>
                 <div className="truncate text-[10px] font-medium opacity-90">
-                  {entry.course_code} {isGhost ? "(Other Section/Room)" : ""}
+                  {entry.course_name} {isGhost ? "(Other Section/Room)" : ""}
                 </div>
                 <div className="mt-auto space-y-0.5 text-[10px] font-semibold opacity-90">
-                  <div>Teacher: {entry.teacher_code || "Unassigned"}</div>
-                  <div>Sec: {entry.section}</div>
-                  <div>Room: {entry.room_name || "TBA"}</div>
+                  <div className={"text-xs"}>
+                    Teacher: {entry.teacher_code || "Unassigned"}
+                  </div>
+                  <div className={"text-xs"}>Sec: {entry.section}</div>
+                  <div className={"text-xs"}>
+                    Room: {entry.room_name || "TBA"}
+                  </div>
                   <div className="font-mono">
-                    {formatTime(entry.start_time)} - {formatTime(entry.end_time)}
+                    {formatTime(entry.start_time)} -{" "}
+                    {formatTime(entry.end_time)}
                   </div>
                 </div>
               </div>

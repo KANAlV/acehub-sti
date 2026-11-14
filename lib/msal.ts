@@ -11,7 +11,7 @@ export const msalConfig = {
     navigateToLoginRequestUrl: false, // Prevents MSAL from forcing double navigations
   },
   cache: {
-    cacheLocation: "sessionStorage",
+    cacheLocation: "memory",
     storeAuthStateInCookie: true,
   },
 };

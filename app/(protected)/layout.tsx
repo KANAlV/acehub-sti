@@ -214,11 +214,26 @@ export default function ProtectedLayout({
 
   useEffect(() => {
     const account = msalInstance.getActiveAccount();
-    if (account && !document.cookie.includes("user_email=")) {
-      const maxAge = 60 * 60 * 24;
-      document.cookie = `user_email=${encodeURIComponent(account.username)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    if (account) {
+      fetch("/api/set-user-cookie", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: account.username }),
+      }).catch((err) =>
+        console.warn("Failed to set user_email cookie:", err)
+      );
     }
   }, []);
+
+  function redirectPage(page: string) {
+    if (!pathname.toLowerCase().endsWith(page.toLowerCase())) {
+      router.push(page);
+    }
+  }
+
+  function isActive(page: string) {
+    return pathname.toLowerCase().endsWith(page.toLowerCase());
+  }
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden dark:bg-gray-900 dark:text-white">
@@ -348,8 +363,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/dashboard")}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20`}
+                      onClick={() => redirectPage("/dashboard")}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/dashboard") ? "bg-gray-500/20" : "cursor-pointer"}`}
                     >
                       <HiChartPie className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && <span className="ml-2">Dashboard</span>}
@@ -358,8 +373,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push(`/user`)}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.personal_schedule && permissions.schedules ? "" : "hidden"}`}
+                      onClick={() => redirectPage(`/user`)}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/user") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.personal_schedule && permissions.schedules ? "" : "hidden"}`}
                     >
                       <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && (
@@ -370,8 +385,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push(`/room_reservation`)}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
+                      onClick={() => redirectPage(`/room_reservation`)}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/room_reservation") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.booking ? "" : "hidden"}`}
                     >
                       <MdOutlineEditCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && (
@@ -382,8 +397,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/schedules")}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.schedules ? "" : "hidden"}`}
+                      onClick={() => redirectPage("/schedules")}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/schedules") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.schedules ? "" : "hidden"}`}
                     >
                       <HiCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && <span className="ml-2">Schedules</span>}
@@ -393,7 +408,7 @@ export default function ProtectedLayout({
                       outline
                       color="alternative"
                       onClick={() => setDropdownCourses(!dropdownCourses)}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""} ${permissions?.courses ? "" : "hidden"}`}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${pathname.toLowerCase().startsWith("/courses") ? "bg-gray-500/20" : "cursor-pointer"} ${collapsed && dropdownCourses ? "bg-gray-500/50" : ""} ${permissions?.courses ? "" : "hidden"}`}
                     >
                       <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && (
@@ -418,8 +433,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/courses/shs")}
-                        className={`w-full cursor-pointer hover:bg-gray-500/20 ${
+                        onClick={() => redirectPage("/courses/shs")}
+                        className={`w-full hover:bg-gray-500/20 ${isActive("/courses/shs") ? "bg-gray-500/20" : "cursor-pointer"} ${
                           collapsed ? "justify-center p-2" : "justify-start"
                         }`}
                       >
@@ -430,8 +445,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/courses/tertiary")}
-                        className={`w-full cursor-pointer hover:bg-gray-500/20 ${
+                        onClick={() => redirectPage("/courses/tertiary")}
+                        className={`w-full hover:bg-gray-500/20 ${isActive("/courses/tertiary") ? "bg-gray-500/20" : "cursor-pointer"} ${
                           collapsed ? "justify-center p-2" : "justify-start"
                         }`}
                       >
@@ -443,8 +458,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/rooms")}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.rooms ? "" : "hidden"}`}
+                      onClick={() => redirectPage("/rooms")}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/rooms") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.rooms ? "" : "hidden"}`}
                     >
                       <HiMiniBuildingOffice className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && <span className="ml-2">Rooms</span>}
@@ -453,8 +468,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/subjects")}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.subjects ? "" : "hidden"}`}
+                      onClick={() => redirectPage("/subjects")}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/subjects") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.subjects ? "" : "hidden"}`}
                     >
                       <HiBookOpen className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && <span className="ml-2">Subjects</span>}
@@ -463,8 +478,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/teachers")}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.teachers ? "" : "hidden"}`}
+                      onClick={() => redirectPage("/teachers")}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/teachers") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.teachers ? "" : "hidden"}`}
                     >
                       <HiUsers className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && <span className="ml-2">Teachers</span>}
@@ -473,8 +488,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/maq")}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.maq ? "" : "hidden"}`}
+                      onClick={() => redirectPage("/maq")}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/maq") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.maq ? "" : "hidden"}`}
                     >
                       <HiDocumentCheck className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && <span className="ml-2">MAQ</span>}
@@ -483,8 +498,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/fcce")}
-                      className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.fcce ? "" : "hidden"}`}
+                      onClick={() => redirectPage("/fcce")}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/fcce") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.fcce ? "" : "hidden"}`}
                     >
                       <HiClipboardDocument className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && <span className="ml-2">FCCE</span>}
@@ -497,8 +512,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/dashboard")}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                        onClick={() => redirectPage("/dashboard")}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/dashboard") ? "bg-gray-500/20" : "cursor-pointer"}`}
                       >
                         <HiChartPie className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -508,8 +523,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push(`/user`)}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.personal_schedule && permissions.schedules ? "" : "hidden"}`}
+                        onClick={() => redirectPage(`/user`)}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/user") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.personal_schedule && permissions.schedules ? "" : "hidden"}`}
                       >
                         <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -519,8 +534,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push(`/room_reservation`)}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.booking ? "" : "hidden"}`}
+                        onClick={() => redirectPage(`/room_reservation`)}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/room_reservation") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.booking ? "" : "hidden"}`}
                       >
                         <MdOutlineEditCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -530,8 +545,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/schedules")}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.schedules ? "" : "hidden"}`}
+                        onClick={() => redirectPage("/schedules")}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/schedules") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.schedules ? "" : "hidden"}`}
                       >
                         <HiCalendar className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -545,7 +560,7 @@ export default function ProtectedLayout({
                           outline
                           color="alternative"
                           onClick={() => setDropdownCourses(!dropdownCourses)}
-                          className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.courses ? "" : "hidden"} `}
+                          className={`w-full justify-center p-2 hover:bg-gray-500/20 ${pathname.toLowerCase().startsWith("/courses") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.courses ? "" : "hidden"} `}
                         >
                           <FaCubes className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                           {!collapsed && (
@@ -573,8 +588,8 @@ export default function ProtectedLayout({
                         <Button
                           outline
                           color="alternative"
-                          onClick={() => router.push("/courses/shs")}
-                          className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                          onClick={() => redirectPage("/courses/shs")}
+                          className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/courses/shs") ? "bg-gray-500/20" : "cursor-pointer"}`}
                         >
                           <HiMiniAcademicCap className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                           {!collapsed && <span className="ml-2">SHS</span>}
@@ -585,8 +600,8 @@ export default function ProtectedLayout({
                         <Button
                           outline
                           color="alternative"
-                          onClick={() => router.push("/courses/tertiary")}
-                          className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20`}
+                          onClick={() => redirectPage("/courses/tertiary")}
+                          className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/courses/tertiary") ? "bg-gray-500/20" : "cursor-pointer"}`}
                         >
                           <HiMiniBuildingLibrary className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                         </Button>
@@ -597,8 +612,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/rooms")}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.rooms ? "" : "hidden"}`}
+                        onClick={() => redirectPage("/rooms")}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/rooms") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.rooms ? "" : "hidden"}`}
                       >
                         <HiMiniBuildingOffice className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -608,8 +623,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/subjects")}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.subjects ? "" : "hidden"}`}
+                        onClick={() => redirectPage("/subjects")}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/subjects") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.subjects ? "" : "hidden"}`}
                       >
                         <HiBookOpen className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -619,8 +634,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/teachers")}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.teachers ? "" : "hidden"}`}
+                        onClick={() => redirectPage("/teachers")}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/teachers") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.teachers ? "" : "hidden"}`}
                       >
                         <HiUsers className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -630,8 +645,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/maq")}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.maq ? "" : "hidden"}`}
+                        onClick={() => redirectPage("/maq")}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/maq") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.maq ? "" : "hidden"}`}
                       >
                         <HiDocumentCheck className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -641,8 +656,8 @@ export default function ProtectedLayout({
                       <Button
                         outline
                         color="alternative"
-                        onClick={() => router.push("/fcce")}
-                        className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.fcce ? "" : "hidden"}`}
+                        onClick={() => redirectPage("/fcce")}
+                        className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/fcce") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.fcce ? "" : "hidden"}`}
                       >
                         <HiClipboardDocument className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       </Button>
@@ -659,8 +674,8 @@ export default function ProtectedLayout({
                   <Button
                     outline
                     color="alternative"
-                    onClick={() => router.push("/help")}
-                    className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.help ? "" : "hidden"}`}
+                    onClick={() => redirectPage("/help")}
+                    className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/help") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.help ? "" : "hidden"}`}
                   >
                     <HiQuestionMarkCircle className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                     {!collapsed && <span className="ml-2">Help</span>}
@@ -669,8 +684,8 @@ export default function ProtectedLayout({
                   <Button
                     outline
                     color="alternative"
-                    onClick={() => router.push("/configurations")}
-                    className={`w-full cursor-pointer justify-start hover:bg-gray-500/20 ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
+                    onClick={() => redirectPage("/configurations")}
+                    className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/configurations") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
                   >
                     <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                     {!collapsed && <span className="ml-2">Configurations</span>}
@@ -683,8 +698,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/help")}
-                      className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.help ? "" : "hidden"}`}
+                      onClick={() => redirectPage("/help")}
+                      className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/help") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.help ? "" : "hidden"}`}
                     >
                       <HiQuestionMarkCircle className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                     </Button>
@@ -694,8 +709,8 @@ export default function ProtectedLayout({
                     <Button
                       outline
                       color="alternative"
-                      onClick={() => router.push("/configurations")}
-                      className={`w-full cursor-pointer justify-center p-2 hover:bg-gray-500/20 ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
+                      onClick={() => redirectPage("/configurations")}
+                      className={`w-full justify-center p-2 hover:bg-gray-500/20 ${isActive("/configurations") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.config || permissions?.superuser ? "" : "hidden"}`}
                     >
                       <HiMiniCog6Tooth className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                     </Button>

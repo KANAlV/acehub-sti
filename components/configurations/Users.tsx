@@ -568,7 +568,7 @@ export default function UsersManagement() {
                   <TableCell>{item.email}</TableCell>
                   <TableCell className="capitalize">{item.role_name}</TableCell>
                   <TableCell>
-                    {!(item.role_name === "superuser") &&
+                    {!(item.role_name === "superuser") && (
                       <a
                         onClick={() => loadEditData(item.user_id)}
                         className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
@@ -576,7 +576,7 @@ export default function UsersManagement() {
                       >
                         Edit
                       </a>
-                    }
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -681,7 +681,12 @@ export default function UsersManagement() {
                 required
               >
                 {roles.length > 0 ? (
-                  roles.filter((users) => users.role_name !== "superuser")
+                  roles
+                    .filter(
+                      (role) =>
+                        role.role_name !== "superuser" &&
+                        role.role_name !== "superadmin",
+                    )
                     .map((option) => (
                       <option key={option.role_id} value={option.role_name}>
                         {option.role_name}
@@ -752,7 +757,12 @@ export default function UsersManagement() {
                 required
               >
                 {roles.length > 0 ? (
-                  roles.filter((users) => users.role_name !== "superuser")
+                  roles
+                    .filter(
+                      (role) =>
+                        role.role_name !== "superuser" &&
+                        role.role_name !== "superadmin",
+                    )
                     .map((option) => (
                       <option key={option.role_id} value={option.role_name}>
                         {option.role_name}
