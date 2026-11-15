@@ -82,6 +82,22 @@ export interface RoomType {
   value: string;
 }
 
+interface DataValidationRule {
+  type: string;
+  operator?: string;
+  allowBlank: boolean;
+  formulae: (string | number)[];
+  showErrorMessage?: boolean;
+  errorTitle?: string;
+  error?: string;
+}
+
+interface WorksheetWithValidation extends ExcelJS.Worksheet {
+  dataValidations: {
+    add: (range: string, validation: DataValidationRule) => void;
+  };
+}
+
 const REQUIRED_HEADERS = [
   "Curriculum",
   "Year Level",
@@ -409,14 +425,15 @@ export default function SubjectsManagement() {
     if (cleanYear === "Grade 12") cleanYear = "12";
     setSelectedYear(cleanYear);
 
+    const labUnits = subj.lab_units ?? 0;
     setFormData((prev) => ({
       ...prev,
       program_code: subj.program_code ?? "",
       course_code: subj.course_code || "",
       course_name: subj.course_name || "",
       lecture_units: subj.lecture_units ?? 3,
-      lab_units: subj.lab_units ?? 0,
-      lab_type: subj.lab_type ?? null,
+      lab_units: labUnits,
+      lab_type: labUnits > 0 ? (subj.lab_type ?? null) : null,
       year_term: subj.year_term ?? null,
     }));
 
@@ -561,6 +578,7 @@ export default function SubjectsManagement() {
       setFormData((prev) => ({
         ...prev,
         [id]: numVal,
+        ...(id === "lab_units" && numVal === 0 ? { lab_type: null } : {}),
       }));
       return;
     }
@@ -614,14 +632,15 @@ export default function SubjectsManagement() {
     );
     setIsNewCurriculum(currVal ? !existsInList : false);
 
+    const labUnits = Math.min(Math.max(subject.lab_units ?? 0, 0), 8);
     setFormData({
       curriculum: currVal,
       program_code: subject.program_code ?? "",
       course_code: subject.course_code || "",
       course_name: subject.course_name || "",
       lecture_units: Math.min(Math.max(subject.lecture_units ?? 0, 0), 8),
-      lab_units: Math.min(Math.max(subject.lab_units ?? 0, 0), 8),
-      lab_type: subject.lab_type ?? null,
+      lab_units: labUnits,
+      lab_type: labUnits > 0 ? (subject.lab_type ?? null) : null,
       year_term: subject.year_term ?? null,
     });
     setOpenEditModal(true);
@@ -638,7 +657,12 @@ export default function SubjectsManagement() {
       return;
     }
 
-    const res = await createSubject(actor, formData);
+    const payload = {
+      ...formData,
+      lab_type: (formData.lab_units ?? 0) === 0 ? null : formData.lab_type,
+    };
+
+    const res = await createSubject(actor, payload);
     if (res.success) {
       triggerToast("Subject created successfully!", "success");
       handleCloseModals();
@@ -661,10 +685,15 @@ export default function SubjectsManagement() {
       return;
     }
 
+    const payload = {
+      ...formData,
+      lab_type: (formData.lab_units ?? 0) === 0 ? null : formData.lab_type,
+    };
+
     const res = await updateSubject(
         actor,
         selectedSubject.subject_id,
-        formData,
+        payload,
     );
     if (res.success) {
       triggerToast("Subject updated successfully!", "success");
@@ -687,10 +716,10 @@ export default function SubjectsManagement() {
     }
   }, [selectedSubject, actor, triggerToast, handleCloseModals, loadData]);
 
-  // Excel handlers
+  // --- EXCEL OPERATIONS WITH DYNAMIC VALIDATION & LAB UNITS CONSTRAINT --- //
   const handleDownloadTemplate = useCallback(async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Template");
+    const worksheet = workbook.addWorksheet("Template") as unknown as WorksheetWithValidation;
 
     worksheet.columns = [
       { header: "Curriculum", key: "curriculum", width: 18 },
@@ -700,7 +729,7 @@ export default function SubjectsManagement() {
       { header: "Course Name", key: "course_name", width: 30 },
       { header: "Lecture", key: "lecture", width: 12 },
       { header: "Laboratory", key: "laboratory", width: 12 },
-      { header: "Laboratory Type", key: "laboratory_type", width: 20 },
+      { header: "Laboratory Type", key: "laboratory_type", width: 25 },
     ];
 
     worksheet.addRow({
@@ -714,10 +743,34 @@ export default function SubjectsManagement() {
       laboratory_type: "",
     });
 
+    worksheet.addRow({
+      curriculum: "BSIT-22-01",
+      year_level: "1st Year",
+      program: "BSIT",
+      course_code: "CC102L",
+      course_name: "Computer Programming Lab",
+      lecture: 2,
+      laboratory: 1,
+      laboratory_type: roomTypeList[0]?.value || "Computer Laboratory",
+    });
+
+    // Dynamic Lab Type Dropdown from database room types
+    const typeValues = roomTypeList.map((rt) => rt.value.replace(/"/g, '""')).join(",");
+    if (typeValues) {
+      worksheet.dataValidations.add("H2:H1000", {
+        type: "list",
+        allowBlank: true,
+        formulae: [`"${typeValues}"`],
+        showErrorMessage: true,
+        errorTitle: "Invalid Laboratory Type",
+        error: "Please select a valid laboratory type from the dropdown list.",
+      });
+    }
+
     const buffer = await workbook.xlsx.writeBuffer();
     downloadWorkbook(buffer, "Subjects_Import_Template.xlsx");
-    triggerToast("Blank Excel template downloaded successfully!", "success");
-  }, [triggerToast]);
+    triggerToast("Blank Excel template downloaded successfully with dynamic room type validation!", "success");
+  }, [roomTypeList, triggerToast]);
 
   const handleExportExcel = useCallback(async () => {
     try {
@@ -731,7 +784,7 @@ export default function SubjectsManagement() {
       }
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Subjects");
+      const worksheet = workbook.addWorksheet("Subjects") as unknown as WorksheetWithValidation;
 
       worksheet.columns = [
         { header: "Curriculum", key: "curriculum", width: 18 },
@@ -741,11 +794,11 @@ export default function SubjectsManagement() {
         { header: "Course Name", key: "course_name", width: 30 },
         { header: "Lecture", key: "lecture", width: 12 },
         { header: "Laboratory", key: "laboratory", width: 12 },
-        { header: "Laboratory Type", key: "laboratory_type", width: 20 },
+        { header: "Laboratory Type", key: "laboratory_type", width: 25 },
       ];
 
       exportList.forEach((item) => {
-        const labTypeName = (item.lab_type ? roomTypeMap.get(item.lab_type) : null) || item.lab_type_name || item.lab_type || "";
+        const labTypeName = (item.lab_type ? roomTypeList.find(r => r.room_type_id === item.lab_type)?.value : null) || item.lab_type_name || item.lab_type || "";
         worksheet.addRow({
           curriculum: item.curriculum || "",
           year_level: item.year_term ? item.year_term.split(" - ")[0] : "",
@@ -754,9 +807,18 @@ export default function SubjectsManagement() {
           course_name: item.course_name || "",
           lecture: item.lecture_units ?? 0,
           laboratory: item.lab_units ?? 0,
-          laboratory_type: labTypeName,
+          laboratory_type: (item.lab_units ?? 0) > 0 ? labTypeName : "",
         });
       });
+
+      const typeValues = roomTypeList.map((rt) => rt.value.replace(/"/g, '""')).join(",");
+      if (typeValues) {
+        worksheet.dataValidations.add("H2:H1000", {
+          type: "list",
+          allowBlank: true,
+          formulae: [`"${typeValues}"`],
+        });
+      }
 
       const buffer = await workbook.xlsx.writeBuffer();
       downloadWorkbook(buffer, `Subjects_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
@@ -765,7 +827,7 @@ export default function SubjectsManagement() {
       console.error(err);
       triggerToast("Failed to export subjects to Excel", "error");
     }
-  }, [debouncedSearch, selectedProgramFilter, sortBy, sortDir, subjects, roomTypeMap, triggerToast]);
+  }, [debouncedSearch, selectedProgramFilter, sortBy, sortDir, subjects, roomTypeList, triggerToast]);
 
   const validateAndSelectFile = useCallback((file: File | null) => {
     setFormatError("");
@@ -839,7 +901,7 @@ export default function SubjectsManagement() {
         return;
       }
 
-      setImportLogs((prev) => [...prev, `Headers verified. Processing rows...`]);
+      setImportLogs((prev) => [...prev, `Headers verified. Enforcing laboratory and curriculum constraints...`]);
 
       let successCount = 0;
       let failCount = 0;
@@ -901,9 +963,24 @@ export default function SubjectsManagement() {
           combinedYearTerm = `SHS ${rawYear}`;
         }
 
+        // STRICT BUSINESS LOGIC: If Laboratory units == 0, lab type cannot be configured / is nullified
         let matchedLabTypeId: string | null = null;
-        if (rawLab > 0 && rawLabType) {
+        const labUnitsNum = isNaN(rawLab) ? 0 : rawLab;
+
+        if (labUnitsNum > 0) {
+          if (!rawLabType) {
+            logs.push(`Row ${rowNumber} (${rawCode}): Failed. Laboratory units are > 0 but Laboratory Type is missing.`);
+            failCount++;
+            return;
+          }
           matchedLabTypeId = roomTypeNameToIdMap.get(rawLabType.toLowerCase()) || null;
+          if (!matchedLabTypeId) {
+            logs.push(`Row ${rowNumber} (${rawCode}): Failed. Laboratory type "${rawLabType}" not recognized.`);
+            failCount++;
+            return;
+          }
+        } else {
+          matchedLabTypeId = null;
         }
 
         rowsToProcess.push({
@@ -914,7 +991,7 @@ export default function SubjectsManagement() {
           code: rawCode,
           name: rawName,
           lec: isNaN(rawLec) ? 3 : rawLec,
-          lab: isNaN(rawLab) ? 0 : rawLab,
+          lab: labUnitsNum,
           labTypeId: matchedLabTypeId,
         });
       });
@@ -1157,10 +1234,14 @@ export default function SubjectsManagement() {
                           <TableCell>{item.lecture_units}</TableCell>
                           <TableCell>{item.lab_units}</TableCell>
                           <TableCell>
-                            {(item.lab_type ? roomTypeMap.get(item.lab_type) : null) ||
+                            {(item.lab_units ?? 0) === 0 ? (
+                                <span className="text-gray-400 italic">No Laboratory</span>
+                            ) : (
+                                (item.lab_type ? roomTypeMap.get(item.lab_type) : null) ||
                                 item.lab_type_name ||
                                 item.lab_type ||
-                                "No Laboratory"}
+                                "Configured Lab"
+                            )}
                           </TableCell>
                           <TableCell>
                             <a
@@ -1302,8 +1383,7 @@ export default function SubjectsManagement() {
                     </div>
 
                     <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                      <span className="font-semibold uppercase tracking-wide">Required Format Headers:</span>{" "}
-                      {REQUIRED_HEADERS.join(", ")}
+                      <span className="font-semibold uppercase tracking-wide">Validation Rule:</span> If <b className="font-mono">Laboratory</b> units = 0, <b className="font-mono">Laboratory Type</b> cannot be configured. Required Headers: {REQUIRED_HEADERS.join(", ")}
                     </div>
 
                     {formatError && (
@@ -1356,7 +1436,7 @@ export default function SubjectsManagement() {
                         Export Filtered Subject Records
                       </h4>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Generates a standardized Excel spreadsheet containing all active query results matching your view.
+                        Generates a standardized Excel spreadsheet containing all active query results with dropdown validations.
                       </p>
                     </div>
                     <Button onClick={handleExportExcel} className="w-full" color="green">
@@ -1372,7 +1452,7 @@ export default function SubjectsManagement() {
                         Download Blank Excel Template
                       </h4>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Includes columns formatted as: <b className="font-mono">{REQUIRED_HEADERS.join(", ")}</b>.
+                        Includes formatted columns with dynamic room type dropdown validations.
                       </p>
                     </div>
                     <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
@@ -1672,7 +1752,7 @@ export default function SubjectsManagement() {
               </div>
 
               <div>
-                <Label htmlFor="lab_type">Lab Type</Label>
+                <Label htmlFor="lab_type">Laboratory Type</Label>
                 <Select
                     id="lab_type"
                     value={formData.lab_type || ""}
@@ -1680,7 +1760,7 @@ export default function SubjectsManagement() {
                     disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
                 >
                   <option value="" hidden={true}>
-                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Lab Type..."}
+                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
                   </option>
                   {roomTypeList.map((type) => (
                       <option key={type.room_type_id} value={type.room_type_id}>
@@ -1932,7 +2012,7 @@ export default function SubjectsManagement() {
               </div>
 
               <div>
-                <Label htmlFor="lab_type">Lab Type</Label>
+                <Label htmlFor="lab_type">Laboratory Type</Label>
                 <Select
                     id="lab_type"
                     value={formData.lab_type || ""}
@@ -1940,7 +2020,7 @@ export default function SubjectsManagement() {
                     disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
                 >
                   <option value="" hidden={true}>
-                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Lab Type..."}
+                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
                   </option>
                   {roomTypeList.map((type) => (
                       <option key={type.room_type_id} value={type.room_type_id}>
