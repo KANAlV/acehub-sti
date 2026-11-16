@@ -69,7 +69,7 @@ import {
   SubjectAQClusterRecord,
 } from "@/app/actions/system";
 
-import { filterCurricula } from "@/utils/validation";
+import { filterCurricula, filterCourseCode, filterCourseName } from "@/utils/validation";
 
 export interface ProgramRecord {
   program_code: string;
@@ -545,14 +545,16 @@ export default function SubjectsManagement() {
     }
 
     if (id === "course_code") {
-      setCourseCodeError(value.trim() === "" ? "Course code is required." : "");
-      setFormData((prev) => ({ ...prev, course_code: value }));
+      const filtered = filterCourseCode(value);
+      setCourseCodeError(filtered.trim() === "" ? "Course code is required." : "");
+      setFormData((prev) => ({ ...prev, course_code: filtered }));
       return;
     }
 
     if (id === "course_name") {
-      setCourseNameError(value.trim() === "" ? "Course name is required." : "");
-      setFormData((prev) => ({ ...prev, course_name: value }));
+      const filtered = filterCourseName(value);
+      setCourseNameError(filtered.trim() === "" ? "Course name is required." : "");
+      setFormData((prev) => ({ ...prev, course_name: filtered }));
       return;
     }
 
@@ -977,9 +979,39 @@ export default function SubjectsManagement() {
           return;
         }
 
-        let matchedLabTypeId: string | null = null;
-        const labUnitsNum = isNaN(rawLab) ? 0 : rawLab;
+        // Validate Course Code: alphanumeric only, no spaces or symbols
+        const filteredCode = filterCourseCode(rawCode);
+        if (filteredCode !== rawCode) {
+          logs.push(`Row ${rowNumber} (${rawCode}): Failed. Course code contains invalid characters (symbols or spaces). Only letters and numbers are allowed.`);
+          failCount++;
+          return;
+        }
 
+        // Validate Course Name: no symbols allowed (only letters, numbers, spaces)
+        const filteredName = filterCourseName(rawName);
+        if (filteredName !== rawName.trim()) {
+          logs.push(`Row ${rowNumber} (${rawCode}): Failed. Course name contains invalid characters (symbols). Only letters, numbers, and spaces are allowed.`);
+          failCount++;
+          return;
+        }
+
+        // Validate Lecture Units: must be non-negative
+        const lecUnitsNum = isNaN(rawLec) ? 3 : rawLec;
+        if (lecUnitsNum < 0) {
+          logs.push(`Row ${rowNumber} (${rawCode}): Failed. Lecture units cannot be negative.`);
+          failCount++;
+          return;
+        }
+
+        // Validate Lab Units: must be non-negative
+        const labUnitsNum = isNaN(rawLab) ? 0 : rawLab;
+        if (labUnitsNum < 0) {
+          logs.push(`Row ${rowNumber} (${rawCode}): Failed. Laboratory units cannot be negative.`);
+          failCount++;
+          return;
+        }
+
+        let matchedLabTypeId: string | null = null;
         if (labUnitsNum > 0) {
           if (!rawLabType) {
             logs.push(`Row ${rowNumber} (${rawCode}): Failed. Laboratory units are > 0 but Laboratory Type is missing.`);
@@ -1003,7 +1035,7 @@ export default function SubjectsManagement() {
           prog: rawProg,
           code: rawCode,
           name: rawName,
-          lec: isNaN(rawLec) ? 3 : rawLec,
+          lec: lecUnitsNum,
           lab: labUnitsNum,
           labTypeId: matchedLabTypeId,
         });
