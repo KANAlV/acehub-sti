@@ -101,6 +101,7 @@ interface WorksheetWithValidation extends ExcelJS.Worksheet {
 const REQUIRED_HEADERS = [
     "Curriculum",
     "Year Level",
+    "Semester/Term",
     "Program",
     "Course Code",
     "Course Name",
@@ -631,7 +632,8 @@ export default function CurriculumSubjectsPage() {
 
         worksheet.columns = [
             { header: "Curriculum", key: "curriculum", width: 18 },
-            { header: "Year Level", key: "year_level", width: 22 },
+            { header: "Year Level", key: "year_level", width: 18 },
+            { header: "Semester/Term", key: "semester_term", width: 18 },
             { header: "Program", key: "program", width: 15 },
             { header: "Course Code", key: "course_code", width: 15 },
             { header: "Course Name", key: "course_name", width: 30 },
@@ -642,7 +644,8 @@ export default function CurriculumSubjectsPage() {
 
         worksheet.addRow({
             curriculum: curriculumVersion,
-            year_level: "1st Year - Semester 1",
+            year_level: "1st Year",
+            semester_term: "Semester 1",
             program: "BSIT",
             course_code: "CC101",
             course_name: "Introduction to Computing",
@@ -653,7 +656,8 @@ export default function CurriculumSubjectsPage() {
 
         worksheet.addRow({
             curriculum: curriculumVersion,
-            year_level: "SHS 11 - Term 1",
+            year_level: "SHS 11",
+            semester_term: "Term 1",
             program: "ICT",
             course_code: "PR1",
             course_name: "Practical Research 1",
@@ -665,7 +669,7 @@ export default function CurriculumSubjectsPage() {
         // Add dropdowns for Room Types & Year/Term examples
         const typeValues = roomTypeList.map((rt) => rt.value.replace(/"/g, '""')).join(",");
         if (typeValues) {
-            worksheet.dataValidations.add("H2:H1000", {
+            worksheet.dataValidations.add("I2:I1000", {
                 type: "list",
                 allowBlank: true,
                 formulae: [`"${typeValues}"`],
@@ -675,19 +679,29 @@ export default function CurriculumSubjectsPage() {
             });
         }
 
-        const semesterTermList = "1st Year - Semester 1,1st Year - Semester 2,2nd Year - Semester 1,2nd Year - Semester 2,3rd Year - Semester 1,3rd Year - Semester 2,4th Year - Semester 1,4th Year - Semester 2,SHS 11 - Term 1,SHS 11 - Term 2,SHS 11 - Term 3,SHS 11 - Term 4,SHS 12 - Term 1,SHS 12 - Term 2,SHS 12 - Term 3,SHS 12 - Term 4";
+        const yearLevelList = "1st Year,2nd Year,3rd Year,4th Year,SHS 11,SHS 12";
         worksheet.dataValidations.add("B2:B1000", {
+            type: "list",
+            allowBlank: true,
+            formulae: [`"${yearLevelList}"`],
+            showErrorMessage: true,
+            errorTitle: "Invalid Year Level",
+            error: "Please select a valid Year Level from the dropdown list.",
+        });
+
+        const semesterTermList = "Semester 1,Semester 2,Term 1,Term 2,Term 3,Term 4";
+        worksheet.dataValidations.add("C2:C1000", {
             type: "list",
             allowBlank: true,
             formulae: [`"${semesterTermList}"`],
             showErrorMessage: true,
-            errorTitle: "Invalid Year & Term/Semester",
-            error: "Please select a valid Semester (Tertiary) or Term (SHS).",
+            errorTitle: "Invalid Semester/Term",
+            error: "Tertiary: Semester 1/2. SHS: Term 1-4.",
         });
 
         const buffer = await workbook.xlsx.writeBuffer();
         downloadWorkbook(buffer, `${curriculumVersion}_Subjects_Template.xlsx`);
-        triggerToast("Blank Excel template downloaded successfully with Semester/Term & Lab Type dropdowns!", "success");
+        triggerToast("Blank Excel template downloaded successfully with separate Year Level & Semester/Term dropdowns!", "success");
     }, [curriculumVersion, roomTypeList, triggerToast]);
 
     const handleExportExcel = useCallback(async () => {
@@ -706,7 +720,8 @@ export default function CurriculumSubjectsPage() {
 
             worksheet.columns = [
                 { header: "Curriculum", key: "curriculum", width: 18 },
-                { header: "Year Level", key: "year_level", width: 22 },
+                { header: "Year Level", key: "year_level", width: 18 },
+                { header: "Semester/Term", key: "semester_term", width: 18 },
                 { header: "Program", key: "program", width: 15 },
                 { header: "Course Code", key: "course_code", width: 15 },
                 { header: "Course Name", key: "course_name", width: 30 },
@@ -717,9 +732,12 @@ export default function CurriculumSubjectsPage() {
 
             exportList.forEach((item) => {
                 const labTypeName = (item.lab_type ? roomTypeList.find((r) => r.room_type_id === item.lab_type)?.value : null) || item.lab_type_name || item.lab_type || "";
+                const yearTermStr = item.year_term || "";
+                const [yearPart, termPart] = yearTermStr.split(" - ");
                 worksheet.addRow({
                     curriculum: item.curriculum || curriculumVersion,
-                    year_level: item.year_term || "",
+                    year_level: yearPart || "",
+                    semester_term: termPart || "",
                     program: item.program_code || "",
                     course_code: item.course_code || "",
                     course_name: item.course_name || "",
@@ -731,7 +749,7 @@ export default function CurriculumSubjectsPage() {
 
             const typeValues = roomTypeList.map((rt) => rt.value.replace(/"/g, '""')).join(",");
             if (typeValues) {
-                worksheet.dataValidations.add("H2:H1000", {
+                worksheet.dataValidations.add("I2:I1000", {
                     type: "list",
                     allowBlank: true,
                     formulae: [`"${typeValues}"`],
@@ -834,12 +852,13 @@ export default function CurriculumSubjectsPage() {
 
             const currCol = headerIndexMap["curriculum"] || 1;
             const yrCol = headerIndexMap["year level"] || 2;
-            const progCol = headerIndexMap["program"] || 3;
-            const codeCol = headerIndexMap["course code"] || 4;
-            const nameCol = headerIndexMap["course name"] || 5;
-            const lecCol = headerIndexMap["lecture"] || 6;
-            const labCol = headerIndexMap["laboratory"] || 7;
-            const labTypeCol = headerIndexMap["laboratory type"] || 8;
+            const semTermCol = headerIndexMap["semester/term"] || 3;
+            const progCol = headerIndexMap["program"] || 4;
+            const codeCol = headerIndexMap["course code"] || 5;
+            const nameCol = headerIndexMap["course name"] || 6;
+            const lecCol = headerIndexMap["lecture"] || 7;
+            const labCol = headerIndexMap["laboratory"] || 8;
+            const labTypeCol = headerIndexMap["laboratory type"] || 9;
 
             const roomTypeNameToIdMap = new Map<string, string>();
             roomTypeList.forEach((rt) => {
@@ -862,6 +881,7 @@ export default function CurriculumSubjectsPage() {
                 if (rowNumber === 1) return;
                 const rawCurr = String(row.getCell(currCol).value || "").trim();
                 const rawYear = String(row.getCell(yrCol).value || "").trim();
+                const rawSemTerm = String(row.getCell(semTermCol).value || "").trim();
                 const rawProg = String(row.getCell(progCol).value || "").trim();
                 const rawCode = String(row.getCell(codeCol).value || "").trim();
                 const rawName = String(row.getCell(nameCol).value || "").trim();
@@ -880,6 +900,50 @@ export default function CurriculumSubjectsPage() {
                     failCount++;
                     return;
                 }
+
+                // Validate Year Level and Semester/Term are both provided
+                if (!rawYear) {
+                    logs.push(`Row ${rowNumber} (${rawCode}): Failed. Year Level is missing.`);
+                    failCount++;
+                    return;
+                }
+                if (!rawSemTerm) {
+                    logs.push(`Row ${rowNumber} (${rawCode}): Failed. Semester/Term is missing.`);
+                    failCount++;
+                    return;
+                }
+
+                // Validate Semester/Term based on Year Level (SHS vs Tertiary)
+                const isSHS = rawYear.toLowerCase().startsWith("shs");
+                if (isSHS) {
+                    // SHS: only Term 1-4 allowed
+                    if (!rawSemTerm.toLowerCase().startsWith("term")) {
+                        logs.push(`Row ${rowNumber} (${rawCode}): Failed. SHS year level requires Term 1-4, but got "${rawSemTerm}".`);
+                        failCount++;
+                        return;
+                    }
+                    const termNum = parseInt(rawSemTerm.replace(/[^0-9]/g, ""), 10);
+                    if (isNaN(termNum) || termNum < 1 || termNum > 4) {
+                        logs.push(`Row ${rowNumber} (${rawCode}): Failed. SHS year level requires Term 1-4, but got "${rawSemTerm}".`);
+                        failCount++;
+                        return;
+                    }
+                } else {
+                    // Tertiary: only Semester 1-2 allowed
+                    if (!rawSemTerm.toLowerCase().startsWith("semester")) {
+                        logs.push(`Row ${rowNumber} (${rawCode}): Failed. Tertiary year level requires Semester 1/2, but got "${rawSemTerm}".`);
+                        failCount++;
+                        return;
+                    }
+                    const semNum = parseInt(rawSemTerm.replace(/[^0-9]/g, ""), 10);
+                    if (isNaN(semNum) || semNum < 1 || semNum > 2) {
+                        logs.push(`Row ${rowNumber} (${rawCode}): Failed. Tertiary year level requires Semester 1/2, but got "${rawSemTerm}".`);
+                        failCount++;
+                        return;
+                    }
+                }
+
+                const combinedYearTerm = `${rawYear} - ${rawSemTerm}`;
 
                 // Validate Course Code: alphanumeric only, no spaces or symbols
                 const filteredCode = filterCourseCode(rawCode);
@@ -933,7 +997,7 @@ export default function CurriculumSubjectsPage() {
 
                 rowsToProcess.push({
                     rowNum: rowNumber,
-                    yearTerm: rawYear,
+                    yearTerm: combinedYearTerm,
                     prog: rawProg,
                     code: rawCode,
                     name: rawName,
