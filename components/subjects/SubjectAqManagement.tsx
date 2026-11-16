@@ -191,7 +191,7 @@ export default function SubjectAqManagement() {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchTerm);
       setCurrentPage(1);
-    }, 300);
+    }, 1500);
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
@@ -305,7 +305,7 @@ export default function SubjectAqManagement() {
     if (openSyncModal) {
       const handler = setTimeout(() => {
         void loadAqSuggestions(aqSearchInput.trim() || null);
-      }, 250);
+      }, 1500);
       return () => clearTimeout(handler);
     }
   }, [aqSearchInput, openSyncModal, loadAqSuggestions]);

@@ -838,7 +838,7 @@ export default function FcceManagement() {
         setLoading(true);
         const delayDebounceFn = setTimeout(() => {
             void getFcceRecords(searchTerm, "ALL", archiveFilter, sortFcceBy, sortFcceDir, maxRowFcce, currentFccePage, viewMode);
-        }, 300);
+        }, 1500);
         return () => clearTimeout(delayDebounceFn);
     }, [searchTerm, archiveFilter, viewMode, sortFcceBy, sortFcceDir, currentFccePage, getFcceRecords]);
 

@@ -53,11 +53,11 @@ export default function Configuration() {
   const [toastMessage, setToastMessage] = useState("");
 
   const { instance, accounts } = useMsal();
-  const { sessionEmail } = useSession();
+  const { sessionEmail, sessionName } = useSession();
   const msalAccount = instance.getActiveAccount() || accounts[0];
 
   // Fallback to cookie session when MSAL memory is empty (after page reload)
-  const account = msalAccount || (sessionEmail ? { username: sessionEmail, name: sessionEmail.split("@")[0] } : null);
+  const account = msalAccount || (sessionEmail ? { username: sessionEmail, name: sessionName || sessionEmail.split("@")[0] } : null);
   const username = account?.username;
 
   /** --- Fetch Roles --- **/

@@ -342,7 +342,7 @@ export default function RolesManagement() {
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       void getRoles(searchTerm, sortRolesBy, sortRolesDir, maxRowRole, currentRolePage);
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);

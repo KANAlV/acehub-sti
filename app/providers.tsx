@@ -6,11 +6,13 @@ import { msalInstance } from "@/lib/msal";
 
 interface SessionContextType {
   sessionEmail: string | null;
+  sessionName: string | null;
   sessionLoaded: boolean;
 }
 
 export const SessionContext = createContext<SessionContextType>({
   sessionEmail: null,
+  sessionName: null,
   sessionLoaded: false,
 });
 
@@ -21,6 +23,7 @@ export function useSession() {
 export function Providers({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [sessionName, setSessionName] = useState<string | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
 
   useEffect(() => {
@@ -40,6 +43,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         const data = await res.json();
         if (data.authenticated && data.email) {
           setSessionEmail(data.email);
+          setSessionName(data.username || data.email.split("@")[0]);
         }
       } catch (error) {
         console.error("Error checking cookie session:", error);
@@ -57,7 +61,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SessionContext.Provider value={{ sessionEmail, sessionLoaded }}>
+    <SessionContext.Provider value={{ sessionEmail, sessionName, sessionLoaded }}>
       <MsalProvider instance={msalInstance}>{children}</MsalProvider>
     </SessionContext.Provider>
   );

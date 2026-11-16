@@ -267,7 +267,7 @@ export default function TeacherPreassignmentManagement({
     const handler = setTimeout(() => {
       setDebouncedSearch(searchTerm);
       setCurrentPage(1);
-    }, 300);
+    }, 1500);
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
@@ -275,7 +275,7 @@ export default function TeacherPreassignmentManagement({
   useEffect(() => {
     const handler = setTimeout(() => {
       setAddSubjectSearch(subjectSearchQuery);
-    }, 300);
+    }, 1500);
     return () => clearTimeout(handler);
   }, [subjectSearchQuery]);
 

@@ -330,7 +330,7 @@ export default function CurriculumSubjectsPage() {
         const handler = setTimeout(() => {
             setDebouncedSearch(searchTerm);
             setCurrentPage(1);
-        }, 150);
+        }, 1500);
         return () => clearTimeout(handler);
     }, [searchTerm]);
 
@@ -355,7 +355,7 @@ export default function CurriculumSubjectsPage() {
             } finally {
                 setIsSearchingExisting(false);
             }
-        }, 300);
+        }, 1500);
 
         return () => clearTimeout(handler);
     }, [existingSubjectSearch, isAddingExisting]);

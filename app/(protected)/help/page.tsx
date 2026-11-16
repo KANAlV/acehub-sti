@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
     HiBookOpen,
     HiUserGroup,
@@ -51,7 +51,15 @@ export default function HelpPage() {
     const [activeModuleId, setActiveModuleId] = useState<string>("dashboard");
     const [activeSubTabId, setActiveSubTabId] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState<string>("");
+    const [debouncedSearch, setDebouncedSearch] = useState<string>("");
     const contentScrollRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+        }, 1500);
+        return () => clearTimeout(handler);
+    }, [searchQuery]);
 
     const modules: ModuleGuide[] = [
         {
@@ -917,7 +925,7 @@ export default function HelpPage() {
     ];
 
     const filteredModules = modules.filter((mod) => {
-        const q = searchQuery.toLowerCase();
+        const q = debouncedSearch.toLowerCase();
         if (!q) return true;
         return (
             mod.title.toLowerCase().includes(q) ||

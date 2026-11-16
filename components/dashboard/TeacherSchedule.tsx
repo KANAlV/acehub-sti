@@ -212,7 +212,7 @@ export default function TeacherSchedule() {
       return;
     }
 
-    // Debounce for 300ms
+    // Debounce for 1500ms
     roomSearchTimeoutRef.current = setTimeout(async () => {
       setRoomSearchLoading(true);
       const res = await fetchRooms(query, "room_name", "ASC", -1, 1);
@@ -228,7 +228,7 @@ export default function TeacherSchedule() {
         setShowRoomDropdown(false);
       }
       setRoomSearchLoading(false);
-    }, 300);
+    }, 1500);
   };
 
   // --- Cleanup timeouts on unmount ---
@@ -355,7 +355,7 @@ export default function TeacherSchedule() {
         setShowSubjectDropdown(false);
       }
       setSubjectSearchLoading(false);
-    }, 300);
+    }, 1500);
   };
 
   // --- Add preferred subject ---

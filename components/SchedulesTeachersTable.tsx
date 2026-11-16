@@ -77,9 +77,18 @@ export default function SchedulesTeachersTable({
   const [sortTeachersBy, setSortTeachersBy] = useState("surname");
   const [sortTeachersDir, setSortTeachersDir] = useState("ASC");
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TeacherStatusFilter>(
     "All Active & On Leave",
   );
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setCurrentTeacherPage(1);
+    }, 1500);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
   const [allDepartments, setAllDepartments] = useState<string[]>([]);
   const [departmentFilter, setDepartmentFilter] =
     useState<string>("All Departments");
@@ -134,7 +143,7 @@ export default function SchedulesTeachersTable({
   }
 
   async function getTeachers(
-    search: string | null = searchTerm,
+    search: string | null = debouncedSearch,
     status: TeacherStatusFilter = statusFilter,
     department: string = departmentFilter,
     sortby: string = sortTeachersBy,
@@ -176,7 +185,7 @@ export default function SchedulesTeachersTable({
   }
 
   async function getTeacherCount(
-    search: string | null = searchTerm,
+    search: string | null = debouncedSearch,
     status: TeacherStatusFilter = statusFilter,
     department: string = departmentFilter,
   ) {

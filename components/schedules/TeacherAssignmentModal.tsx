@@ -117,7 +117,7 @@ export default function TeacherAssignmentModal({
 
     const timer = setTimeout(() => {
       void fetchTeachers();
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [teacherSearchQuery, show]);

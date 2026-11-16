@@ -1412,7 +1412,7 @@ export default function TeachersManagement() {
         maxRowTeacher,
         currentTeacherPage,
       );
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, statusFilter, departmentFilter, sortTeachersBy, sortTeachersDir, currentTeacherPage, getTeachers]);

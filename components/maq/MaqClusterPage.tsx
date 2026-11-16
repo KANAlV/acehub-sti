@@ -177,7 +177,7 @@ export default function MaqClusterPage() {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
       setCurrentPage(1);
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(handler);
   }, [searchQuery]);

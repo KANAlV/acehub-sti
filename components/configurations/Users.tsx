@@ -407,7 +407,7 @@ export default function UsersManagement() {
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       void getUsers(searchTerm, sortUsersBy, sortUsersDir, maxRowUser, currentUserPage);
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);

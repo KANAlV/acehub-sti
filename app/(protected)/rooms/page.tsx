@@ -226,7 +226,7 @@ export default function RoomsManagement() {
         const handler = setTimeout(() => {
             setDebouncedSearch(searchTerm);
             setCurrentRoomPage(1);
-        }, 250);
+        }, 1500);
         return () => clearTimeout(handler);
     }, [searchTerm]);
 

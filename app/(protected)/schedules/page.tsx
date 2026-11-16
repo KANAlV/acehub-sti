@@ -718,7 +718,7 @@ export default function ScheduleManagement() {
         maxRowSchedule,
         currentSchedulePage,
       );
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);

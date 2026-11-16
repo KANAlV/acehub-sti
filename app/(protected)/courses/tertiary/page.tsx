@@ -708,7 +708,7 @@ export default function CollegeProgramsManagement() {
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       void getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);

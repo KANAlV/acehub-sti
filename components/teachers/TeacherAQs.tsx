@@ -208,7 +208,7 @@ export default function TeacherAQs() {
     const delayDebounceFn = setTimeout(() => {
       setCurrentPage(1);
       void loadData(1, employmentFilter);
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
@@ -296,7 +296,7 @@ export default function TeacherAQs() {
 
     const delayDebounce = setTimeout(() => {
       void handleAQSearch(val);
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(delayDebounce);
   };

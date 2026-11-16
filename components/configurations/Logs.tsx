@@ -30,6 +30,16 @@ export default function AuditLogs() {
   const [sortBy, setSortBy] = useState("created_at");
   const [sortDir, setSortDir] = useState("DESC");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+      getLogs(searchQuery, sortBy, sortDir, maxRows, 1);
+    }, 1500);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   // --- Pagination Constants --- //
   const maxRows = 10;
@@ -74,8 +84,6 @@ export default function AuditLogs() {
   function handleSearch(e: React.ChangeEvent<HTMLInputElement>) {
     const query = e.target.value;
     setSearchQuery(query);
-    setCurrentPage(1);
-    getLogs(query, sortBy, sortDir, maxRows, 1);
   }
 
   /** --- Data Fetching --- **/

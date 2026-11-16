@@ -132,7 +132,7 @@ export default function PreassignmentTemplatesManagement() {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchTerm);
       setCurrentPage(1);
-    }, 300);
+    }, 1500);
     return () => clearTimeout(handler);
   }, [searchTerm]);
 

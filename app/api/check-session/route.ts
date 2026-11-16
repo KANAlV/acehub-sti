@@ -29,9 +29,12 @@ export async function GET(request: NextRequest) {
 
     const isBlacklisted = blacklistResult?.is_blacklisted ?? false;
 
+    const username = userResult.username ?? email.split("@")[0];
+
     return NextResponse.json({
       authenticated: true,
       email: email,
+      username: username,
       blacklisted: isBlacklisted,
     });
   } catch (error) {

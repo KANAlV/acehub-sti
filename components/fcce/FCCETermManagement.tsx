@@ -155,7 +155,7 @@ export default function FCCETermManagement() {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchTerm);
       setCurrentPage(1);
-    }, 150);
+    }, 1500);
     return () => clearTimeout(handler);
   }, [searchTerm]);
 

@@ -160,7 +160,7 @@ export default function MatrixOfAcademicQualificationPage() {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
       setCurrentPage(1);
-    }, 300);
+    }, 1500);
 
     return () => clearTimeout(handler);
   }, [searchQuery]);
