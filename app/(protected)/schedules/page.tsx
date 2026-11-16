@@ -164,7 +164,7 @@ export default function ScheduleManagement() {
   const [selectedTemplate, setSelectedTemplate] = useState("");
 
   // Auto Assign / Generation Specific State
-  const [selectedTertiaryTerm, setSelectedTertiaryTerm] = useState("Term 1");
+  const [selectedTertiaryTerm, setSelectedTertiaryTerm] = useState("Semester 1");
   const [selectedShsTerm, setSelectedShsTerm] = useState("Term 1");
 
   // --- Pagination State --- //
@@ -244,7 +244,7 @@ export default function ScheduleManagement() {
     setAutoAssignRoom(false);
     setAddScheduleName("");
     setAddScheduleDescription("");
-    setSelectedTertiaryTerm("Term 1");
+    setSelectedTertiaryTerm("Semester 1");
     setSelectedShsTerm("Term 1");
     setSelectedTemplate("");
     setCurriculumAdd([]);
@@ -1096,8 +1096,8 @@ export default function ScheduleManagement() {
                     value={selectedTertiaryTerm}
                     onChange={(e) => setSelectedTertiaryTerm(e.target.value)}
                   >
-                    <option value="Term 1">Term 1</option>
-                    <option value="Term 2">Term 2</option>
+                    <option value="Semester 1">Semester 1</option>
+                    <option value="Semester 2">Semester 2</option>
                   </Select>
                 </div>
                 <div>

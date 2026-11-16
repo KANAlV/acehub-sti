@@ -83,6 +83,9 @@ interface RoomAccordionDropdownProps {
   allRoomsLabel: string;
   selectedSection: string;
   onRoomChange: (value: string) => void;
+  open: boolean;
+  onToggleOpen: () => void;
+  hideAll?: boolean;
 }
 
 function RoomAccordionDropdown({
@@ -91,8 +94,10 @@ function RoomAccordionDropdown({
   allRoomsLabel,
   selectedSection,
   onRoomChange,
+  open,
+  onToggleOpen,
+  hideAll = false,
 }: RoomAccordionDropdownProps) {
-  const [open, setOpen] = useState(false);
   const [expandedFloors, setExpandedFloors] = useState<Set<string>>(new Set());
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -108,12 +113,12 @@ function RoomAccordionDropdown({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setOpen(false);
+        if (open) onToggleOpen();
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [open, onToggleOpen]);
 
   const floorRooms = allRooms
     .filter((r) => r.floor_level !== null && r.floor_level > 0)
@@ -135,20 +140,17 @@ function RoomAccordionDropdown({
 
   const toggleFloor = (floor: string) => {
     setExpandedFloors((prev) => {
-      const next = new Set(prev);
-      if (next.has(floor)) {
-        next.delete(floor);
-      } else {
-        next.add(floor);
+      if (prev.has(floor)) {
+        return new Set();
       }
-      return next;
+      return new Set([floor]);
     });
   };
 
   const handleRoomChange = (val: string) => {
     if (val === "ALL" && selectedSection === "ALL") return;
     onRoomChange(val);
-    setOpen(false);
+    onToggleOpen();
   };
 
   const displayLabel = selectedRoom === allRoomsLabel ? "-- All Rooms --" : selectedRoom;
@@ -157,7 +159,7 @@ function RoomAccordionDropdown({
     <div className="relative w-full sm:w-44" ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => onToggleOpen()}
         className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-xs text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
       >
         <span className="truncate">{displayLabel}</span>
@@ -173,20 +175,22 @@ function RoomAccordionDropdown({
 
       {open && (
         <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-800">
-          <button
-            type="button"
-            onClick={() => handleRoomChange(allRoomsLabel)}
-            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
-              selectedRoom === allRoomsLabel
-                ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
-            }`}
-          >
-            -- All Rooms --
-            {selectedRoom === allRoomsLabel && (
-              <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
-            )}
-          </button>
+          {!hideAll && (
+            <button
+              type="button"
+              onClick={() => handleRoomChange(allRoomsLabel)}
+              className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                selectedRoom === allRoomsLabel
+                  ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                  : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+              }`}
+            >
+              -- All Rooms --
+              {selectedRoom === allRoomsLabel && (
+                <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+              )}
+            </button>
+          )}
 
           {Object.entries(floorRooms)
             .sort(([a], [b]) => Number(a) - Number(b))
@@ -275,6 +279,168 @@ function RoomAccordionDropdown({
               )}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface SectionAccordionDropdownProps {
+  sections: { section: string; courseCode: string }[];
+  selectedSection: string;
+  onSectionChange: (value: string) => void;
+  open: boolean;
+  onToggleOpen: () => void;
+  hideAll?: boolean;
+}
+
+function SectionAccordionDropdown({
+  sections,
+  selectedSection,
+  onSectionChange,
+  open,
+  onToggleOpen,
+  hideAll = false,
+}: SectionAccordionDropdownProps) {
+  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const sortAlphanumeric = (a: string, b: string) => {
+    const numA = parseInt(a, 10);
+    const numB = parseInt(b, 10);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    if (!isNaN(numA)) return -1;
+    if (!isNaN(numB)) return 1;
+    return a.localeCompare(b);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        if (open) onToggleOpen();
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open, onToggleOpen]);
+
+  const getCoursePrefix = (sectionName: string): string => {
+    const match = sectionName.match(/^([A-Za-z]+)/);
+    return match ? match[1].toUpperCase() : sectionName;
+  };
+
+  const courseSections = sections
+    .sort((a, b) => {
+      const prefixA = getCoursePrefix(a.section);
+      const prefixB = getCoursePrefix(b.section);
+      const prefixDiff = prefixA.localeCompare(prefixB);
+      if (prefixDiff !== 0) return prefixDiff;
+      return sortAlphanumeric(a.section, b.section);
+    })
+    .reduce<Record<string, string[]>>((acc, s) => {
+      const prefix = getCoursePrefix(s.section);
+      if (!acc[prefix]) acc[prefix] = [];
+      acc[prefix].push(s.section);
+      return acc;
+    }, {});
+
+  const toggleCourse = (course: string) => {
+    setExpandedCourses((prev) => {
+      if (prev.has(course)) {
+        return new Set();
+      }
+      return new Set([course]);
+    });
+  };
+
+  const handleSectionChange = (val: string) => {
+    onSectionChange(val);
+    onToggleOpen();
+  };
+
+  const displayLabel = selectedSection === "ALL" ? "-- All Sections --" : selectedSection;
+
+  return (
+    <div className="relative w-full sm:w-44" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => onToggleOpen()}
+        className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-xs text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+      >
+        <span className="truncate">{displayLabel}</span>
+        <svg
+          className={`ml-2 h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-800">
+          {!hideAll && (
+            <button
+              type="button"
+              onClick={() => handleSectionChange("ALL")}
+              className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                selectedSection === "ALL"
+                  ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                  : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+              }`}
+            >
+              -- All Sections --
+              {selectedSection === "ALL" && (
+                <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+              )}
+            </button>
+          )}
+
+          {Object.entries(courseSections)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([course, secList]) => (
+              <div key={course} className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => toggleCourse(course)}
+                  className="flex w-full items-center justify-between rounded px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                >
+                  <span>{course}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-500 dark:text-gray-500">{secList.length}</span>
+                    <svg
+                      className={`h-3 w-3 transition-transform ${expandedCourses.has(course) ? "rotate-90" : ""}`}
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </button>
+                {expandedCourses.has(course) && (
+                  <div className="ml-2 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
+                    {secList.map((sec) => (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => handleSectionChange(sec)}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
+                          selectedSection === sec
+                            ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                            : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        {sec}
+                        {selectedSection === sec && (
+                          <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
         </div>
       )}
     </div>
@@ -435,6 +601,12 @@ export default function ScheduleTimetableClient({
     useState<string>("ALL");
   const [selectedTimetableRoom, setSelectedTimetableRoom] =
     useState<string>("ALL");
+
+  // --- Dropdown open state for mutual exclusion ---
+  const [activeDropdown, setActiveDropdown] = useState<"section" | "room" | null>(null);
+  const toggleSectionDropdown = () => setActiveDropdown(prev => prev === "section" ? null : "section");
+  const toggleRoomDropdown = () => setActiveDropdown(prev => prev === "room" ? null : "room");
+
   const [flashingEntryId, setFlashingEntryId] = useState<string | null>(null);
 
   // --- Excel Export Modal State --- //
@@ -886,9 +1058,19 @@ export default function ScheduleTimetableClient({
     return a.localeCompare(b);
   };
 
-  const availableTimetableSections = Array.from(
-    new Set(originalEntries.map((e) => e.section).filter(Boolean)),
-  ).sort(sortAlphanumeric);
+  const availableTimetableSections: { section: string; courseCode: string }[] = Array.from(
+    new Map(
+      originalEntries
+        .filter((e) => e.section)
+        .map((e) => [e.section as string, e.course_code as string])
+    ).entries()
+  )
+    .map(([section, courseCode]) => ({ section, courseCode: courseCode ?? "" }))
+    .sort((a, b) => {
+      const courseDiff = a.courseCode.localeCompare(b.courseCode);
+      if (courseDiff !== 0) return courseDiff;
+      return sortAlphanumeric(a.section, b.section);
+    });
 
   const unassignedBlocksCount = changedSchedules.filter(
     (e) => !e.day || e.start_time === undefined || e.start_time <= 0,
@@ -1672,24 +1854,19 @@ export default function ScheduleTimetableClient({
               <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
                 Section:
               </span>
-              <Select
-                className="max-h-40 w-full overflow-y-auto sm:w-44"
-                value={selectedTimetableSection}
-                onChange={(e) => {
-                  const val = e.target.value;
+              <SectionAccordionDropdown
+                sections={availableTimetableSections}
+                selectedSection={selectedTimetableSection}
+                onSectionChange={(val) => {
                   if (val === "ALL" && selectedTimetableRoom === "ALL") {
                     return;
                   }
                   setSelectedTimetableSection(val);
                 }}
-              >
-                <option value="ALL">-- All Sections --</option>
-                {availableTimetableSections.map((secCode) => (
-                  <option key={secCode} value={secCode}>
-                    {secCode}
-                  </option>
-                ))}
-              </Select>
+                open={activeDropdown === "section"}
+                onToggleOpen={toggleSectionDropdown}
+                hideAll={selectedTimetableRoom === "ALL"}
+              />
             </div>
 
             <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
@@ -1702,6 +1879,9 @@ export default function ScheduleTimetableClient({
                 allRoomsLabel={currentRoom}
                 selectedSection={selectedTimetableSection}
                 onRoomChange={setSelectedTimetableRoom}
+                open={activeDropdown === "room"}
+                onToggleOpen={toggleRoomDropdown}
+                hideAll={selectedTimetableSection === "ALL"}
               />
             </div>
           </div>
@@ -2102,7 +2282,8 @@ export default function ScheduleTimetableClient({
           )}
 
           <Accordion collapseAll className="space-y-2 border-none">
-            {availableTimetableSections.map((secCode, sIdx) => {
+            {availableTimetableSections.map((secItem, sIdx) => {
+              const secCode = secItem.section;
               const sectionEntries = changedSchedules.filter(
                 (e) => e.section === secCode,
               );

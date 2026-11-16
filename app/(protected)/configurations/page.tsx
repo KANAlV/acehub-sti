@@ -17,6 +17,7 @@ import { HiExclamation } from "react-icons/hi";
 import FacultyLoad from "@/components/configurations/FacultyLoad";
 import ClassSettings from "@/components/configurations/ClassSettings";
 import { useRouter } from "next/navigation";
+import { useSession } from "@/app/providers";
 import RoomTypes from "@/components/configurations/RoomTypes";
 import AuditLogs from "@/components/configurations/Logs";
 import RolesManagement from "@/components/configurations/Roles";
@@ -52,14 +53,21 @@ export default function Configuration() {
   const [toastMessage, setToastMessage] = useState("");
 
   const { instance, accounts } = useMsal();
-  const activeAccount = instance.getActiveAccount() || accounts[0];
-  const username = activeAccount?.username;
+  const { sessionEmail } = useSession();
+  const msalAccount = instance.getActiveAccount() || accounts[0];
+
+  // Fallback to cookie session when MSAL memory is empty (after page reload)
+  const account = msalAccount || (sessionEmail ? { username: sessionEmail, name: sessionEmail.split("@")[0] } : null);
+  const username = account?.username;
 
   /** --- Fetch Roles --- **/
   const [permissions, setPermissions] = useState<UserPermissions | null>(null);
   useEffect(() => {
     async function fetchPermissions() {
-      if (!username) return;
+      if (!username) {
+        setPageLoading(false);
+        return;
+      }
 
       const result = await fetchUserRole(username);
 
@@ -83,6 +91,7 @@ export default function Configuration() {
         console.error("Failed to fetch permissions:", result.error);
         setToastMessage(result?.error ?? "An unexpected error occurred");
         setShowToast(true);
+        setPageLoading(false);
         setPermissions(null);
       }
     }
@@ -130,10 +139,23 @@ export default function Configuration() {
     document.title = "AceHub | Configurations";
   }, []);
 
-  if (pageLoading || permissions === null) {
+  if (pageLoading) {
     return (
       <div className="flex h-full w-full columns-1 flex-col items-center justify-center bg-white dark:bg-gray-900">
         <Spinner />
+      </div>
+    );
+  }
+
+  if (permissions === null) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center bg-white dark:bg-gray-900">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-red-500">Failed to load permissions</h2>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            Please try refreshing the page or contact support if the problem persists.
+          </p>
+        </div>
       </div>
     );
   }
