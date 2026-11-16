@@ -40,7 +40,7 @@ export default function ClassSettings() {
 
   // --- Computed Change Tracker --- //
   const isSectionUnchanged =
-    Number(maxStudentsPerSection) === initialMaxStudents;
+      Number(maxStudentsPerSection) === initialMaxStudents;
 
   /**************
    *  FUNCTIONS *
@@ -49,8 +49,10 @@ export default function ClassSettings() {
   /** --- Validation Handler --- **/
 
   const handleMaxStudentsChange = (rawValue: string) => {
+    // Strip out decimals, negative signs, and non-digit characters
+    const numericVal = rawValue.replace(/[^0-9]/g, "");
     // Strip leading zeros unless single '0'
-    const cleaned = rawValue.replace(/^0+(?=\d)/, "");
+    const cleaned = numericVal.replace(/^0+(?=\d)/, "");
     const num = cleaned === "" ? 0 : Number(cleaned);
 
     setMaxStudentsPerSection(num);
@@ -58,6 +60,13 @@ export default function ClassSettings() {
       setSectionError("Value must be between 1 and 50.");
     } else {
       setSectionError("");
+    }
+  };
+
+  // Prevent typing decimals, minus, or exponential characters
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if ([".", ",", "e", "E", "-", "+"].includes(e.key)) {
+      e.preventDefault();
     }
   };
 
@@ -75,11 +84,10 @@ export default function ClassSettings() {
       setMaxStudentsPerSection(maxStudents);
       setInitialMaxStudents(maxStudents);
 
-      console.log("[fetchClassSettingsConfig]: fetched values successfully");
       setLoading(false);
     } else {
       setToastMessage(
-        response?.error ??
+          response?.error ??
           "[fetchClassSettingsConfig]: An unexpected error occurred",
       );
       setToastType("error");
@@ -102,10 +110,8 @@ export default function ClassSettings() {
       setToastType("success");
       toastTimer();
     } else {
-      console.log(response?.error ??
-        "[UpdateEnrollmentConfig]: An unexpected error occurred",)
       setToastMessage(
-        response?.error ??
+          response?.error ??
           "[UpdateEnrollmentConfig]: An unexpected error occurred",
       );
       setToastType("error");
@@ -145,91 +151,89 @@ export default function ClassSettings() {
     setShowToastTimer(false);
   }
 
-  /** --- UseEffects --- **/
-
   useEffect(() => {
     getClassSettingsConfig();
   }, []);
 
   return (
-    <>
-      {/* --- Toast --- */}
-      {showToast && (
-        <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
-          <Toast>
-            <div
-              className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                toastType === "success"
-                  ? "bg-green-100 text-green-500 dark:bg-green-800 dark:text-green-200"
-                  : toastType === "warning"
-                    ? "bg-yellow-100 text-yellow-500 dark:bg-yellow-800 dark:text-yellow-200"
-                    : "bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200"
-              }`}
-            >
-              {toastType === "success" && <HiCheck className="h-5 w-5" />}
-              {toastType === "warning" && <HiExclamation className="h-5 w-5" />}
-              {toastType === "error" && <HiX className="h-5 w-5" />}
-            </div>
-            <div className="ml-3 text-sm font-normal">{toastMessage}</div>
-            <ToastToggle onDismiss={() => closeToast()} />
-          </Toast>
-          <Progress
-            progress={Math.min(Math.round(progress), 100)}
-            size="sm"
-            className={`${showToastTimer ? "" : "hidden"} ease-linear`}
-          />
-        </div>
-      )}
-
-      <div className="flex flex-row flex-wrap items-start gap-6">
-        {/* --- Enrollment Constraints Card --- */}
-        <Card
-          className={`${isLoading ? "pointer-events-none opacity-50" : ""} w-72`}
-        >
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-            Enrollment Constraints
-          </h3>
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={(e) => e.preventDefault()}
-          >
-            <div>
-              <div className="mb-2 block">
-                <Label htmlFor="max_students_per_section">
-                  Max Students per Section (Max: 50)
-                </Label>
-              </div>
-              <TextInput
-                id="max_students_per_section"
-                type="number"
-                min={1}
-                max={50}
-                value={maxStudentsPerSection === 0 ? "" : maxStudentsPerSection}
-                onChange={(e) => handleMaxStudentsChange(e.target.value)}
-                color={sectionError ? "failure" : "gray"}
-                required
+      <>
+        {showToast && (
+            <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
+              <Toast>
+                <div
+                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        toastType === "success"
+                            ? "bg-green-100 text-green-500 dark:bg-green-800 dark:text-green-200"
+                            : toastType === "warning"
+                                ? "bg-yellow-100 text-yellow-500 dark:bg-yellow-800 dark:text-yellow-200"
+                                : "bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200"
+                    }`}
+                >
+                  {toastType === "success" && <HiCheck className="h-5 w-5" />}
+                  {toastType === "warning" && <HiExclamation className="h-5 w-5" />}
+                  {toastType === "error" && <HiX className="h-5 w-5" />}
+                </div>
+                <div className="ml-3 text-sm font-normal">{toastMessage}</div>
+                <ToastToggle onDismiss={() => closeToast()} />
+              </Toast>
+              <Progress
+                  progress={Math.min(Math.round(progress), 100)}
+                  size="sm"
+                  className={`${showToastTimer ? "" : "hidden"} ease-linear`}
               />
             </div>
+        )}
 
-            {sectionError && (
-              <p className="text-sm font-medium text-red-600">{sectionError}</p>
-            )}
+        <div className="flex flex-row flex-wrap items-start gap-6">
+          {/* --- Enrollment Constraints Card --- */}
+          <Card
+              className={`${isLoading ? "pointer-events-none opacity-50" : ""} w-72`}
+          >
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              Enrollment Constraints
+            </h3>
+            <form
+                className="flex flex-col gap-4"
+                onSubmit={(e) => e.preventDefault()}
+            >
+              <div>
+                <div className="mb-2 block">
+                  <Label htmlFor="max_students_per_section">
+                    Max Students per Section (Max: 50)
+                  </Label>
+                </div>
+                <TextInput
+                    id="max_students_per_section"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={maxStudentsPerSection === 0 ? "" : maxStudentsPerSection}
+                    onChange={(e) => handleMaxStudentsChange(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    color={sectionError ? "failure" : "gray"}
+                    required
+                />
+              </div>
 
-            <div>
-              <Button
-                onClick={handleSaveEnrollmentConfig}
-                disabled={
-                  Boolean(sectionError) || isLoading || isSectionUnchanged
-                }
-                className="w-full"
-              >
-                <HiInbox className="mr-2 h-5 w-5" />
-                Save Enrollment Configuration
-              </Button>
-            </div>
-          </form>
-        </Card>
-      </div>
-    </>
+              {sectionError && (
+                  <p className="text-sm font-medium text-red-600">{sectionError}</p>
+              )}
+
+              <div>
+                <Button
+                    onClick={handleSaveEnrollmentConfig}
+                    disabled={
+                        Boolean(sectionError) || isLoading || isSectionUnchanged
+                    }
+                    className="w-full"
+                >
+                  <HiInbox className="mr-2 h-5 w-5" />
+                  Save Enrollment Configuration
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      </>
   );
 }

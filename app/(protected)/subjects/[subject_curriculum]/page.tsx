@@ -179,6 +179,7 @@ export default function CurriculumSubjectsPage() {
 
     const [formData, setFormData] = useState<SubjectInput>(initialFormState);
     const [selectedYear, setSelectedYear] = useState<string>("");
+    const [selectedTerm, setSelectedTerm] = useState<string>("");
 
     const [programError, setProgramError] = useState<string>("");
     const [courseCodeError, setCourseCodeError] = useState<string>("");
@@ -186,6 +187,7 @@ export default function CurriculumSubjectsPage() {
     const [lecUnitsError, setLecUnitsError] = useState<string>("");
     const [labUnitsError, setLabUnitsError] = useState<string>("");
     const [yearLevelError, setYearLevelError] = useState<string>("");
+    const [termError, setTermError] = useState<string>("");
 
     const [showToast, setShowToast] = useState<boolean>(false);
     const [toastMessage, setToastMessage] = useState<string>("");
@@ -309,17 +311,18 @@ export default function CurriculumSubjectsPage() {
     }, [currentEduLevel]);
 
     useEffect(() => {
-        if (!selectedYear) {
+        if (!selectedYear || !selectedTerm) {
             setFormData((prev) => ({ ...prev, year_term: null }));
             return;
         }
 
         const isSHS = ["11", "12", "Grade 11", "Grade 12"].includes(selectedYear);
         const num = selectedYear === "Grade 11" ? "11" : selectedYear === "Grade 12" ? "12" : selectedYear;
-        const combined = isSHS ? `SHS ${num}` : selectedYear;
+        const yearPrefix = isSHS ? `SHS ${num}` : selectedYear;
+        const combined = `${yearPrefix} - ${selectedTerm}`;
 
         setFormData((prev) => ({ ...prev, year_term: combined }));
-    }, [selectedYear]);
+    }, [selectedYear, selectedTerm]);
 
     useEffect(() => {
         const handler = setTimeout(() => {
@@ -361,10 +364,14 @@ export default function CurriculumSubjectsPage() {
         setExistingSubjectSearchResults([]);
 
         const existingYearTerm = subj.year_term || "";
-        let cleanYear = existingYearTerm.startsWith("SHS ") ? existingYearTerm.replace("SHS ", "") : existingYearTerm;
+        const [rawYearPart, rawTermPart] = existingYearTerm.split(" - ");
+        let cleanYear = (rawYearPart || "").startsWith("SHS ")
+            ? (rawYearPart || "").replace("SHS ", "")
+            : rawYearPart || "";
         if (cleanYear === "Grade 11") cleanYear = "11";
         if (cleanYear === "Grade 12") cleanYear = "12";
         setSelectedYear(cleanYear);
+        setSelectedTerm(rawTermPart?.trim() || "");
 
         const labUnits = subj.lab_units ?? 0;
         setFormData({
@@ -499,6 +506,7 @@ export default function CurriculumSubjectsPage() {
         setSelectedSubject(null);
         setFormData({ ...initialFormState, curriculum: curriculumVersion });
         setSelectedYear("");
+        setSelectedTerm("");
         setIsAddingExisting(false);
         setExistingSubjectSearch("");
         setExistingSubjectSearchResults([]);
@@ -510,6 +518,7 @@ export default function CurriculumSubjectsPage() {
         setLecUnitsError("");
         setLabUnitsError("");
         setYearLevelError("");
+        setTermError("");
         setImportFile(null);
         setImportLogs([]);
         setFormatError("");
@@ -520,10 +529,15 @@ export default function CurriculumSubjectsPage() {
         setSelectedSubject(subject);
 
         const existingYearTerm = subject.year_term || "";
-        let cleanYear = existingYearTerm.startsWith("SHS ") ? existingYearTerm.replace("SHS ", "") : existingYearTerm;
+        const [rawYearPart, rawTermPart] = existingYearTerm.split(" - ");
+        let cleanYear = (rawYearPart || "").startsWith("SHS ")
+            ? (rawYearPart || "").replace("SHS ", "")
+            : rawYearPart || "";
         if (cleanYear === "Grade 11") cleanYear = "11";
         if (cleanYear === "Grade 12") cleanYear = "12";
+
         setSelectedYear(cleanYear);
+        setSelectedTerm(rawTermPart?.trim() || "");
 
         const labUnits = Math.min(Math.max(subject.lab_units ?? 0, 0), 8);
         setFormData({
@@ -544,7 +558,8 @@ export default function CurriculumSubjectsPage() {
             !formData.program_code?.trim() ||
             !formData.course_code?.trim() ||
             !formData.course_name?.trim() ||
-            !selectedYear.trim()
+            !selectedYear.trim() ||
+            !selectedTerm.trim()
         ) {
             return;
         }
@@ -563,7 +578,7 @@ export default function CurriculumSubjectsPage() {
         } else {
             triggerToast(res.error || "Failed to create subject.", "error");
         }
-    }, [formData, curriculumVersion, actor, triggerToast, handleCloseModals, loadData, selectedYear]);
+    }, [formData, curriculumVersion, actor, triggerToast, handleCloseModals, loadData, selectedYear, selectedTerm]);
 
     const handleUpdateSubject = useCallback(async () => {
         if (!selectedSubject) return;
@@ -572,7 +587,8 @@ export default function CurriculumSubjectsPage() {
             !formData.program_code?.trim() ||
             !formData.course_code?.trim() ||
             !formData.course_name?.trim() ||
-            !selectedYear.trim()
+            !selectedYear.trim() ||
+            !selectedTerm.trim()
         ) {
             return;
         }
@@ -591,7 +607,7 @@ export default function CurriculumSubjectsPage() {
         } else {
             triggerToast(res.error || "Failed to update subject.", "error");
         }
-    }, [selectedSubject, formData, curriculumVersion, actor, triggerToast, handleCloseModals, loadData, selectedYear]);
+    }, [selectedSubject, formData, curriculumVersion, actor, triggerToast, handleCloseModals, loadData, selectedYear, selectedTerm]);
 
     const handleDeleteSubject = useCallback(async () => {
         if (!selectedSubject) return;
@@ -611,7 +627,7 @@ export default function CurriculumSubjectsPage() {
 
         worksheet.columns = [
             { header: "Curriculum", key: "curriculum", width: 18 },
-            { header: "Year Level", key: "year_level", width: 15 },
+            { header: "Year Level", key: "year_level", width: 22 },
             { header: "Program", key: "program", width: 15 },
             { header: "Course Code", key: "course_code", width: 15 },
             { header: "Course Name", key: "course_name", width: 30 },
@@ -622,7 +638,7 @@ export default function CurriculumSubjectsPage() {
 
         worksheet.addRow({
             curriculum: curriculumVersion,
-            year_level: "1st Year",
+            year_level: "1st Year - Semester 1",
             program: "BSIT",
             course_code: "CC101",
             course_name: "Introduction to Computing",
@@ -633,15 +649,16 @@ export default function CurriculumSubjectsPage() {
 
         worksheet.addRow({
             curriculum: curriculumVersion,
-            year_level: "1st Year",
-            program: "BSIT",
-            course_code: "CC102L",
-            course_name: "Computer Programming Lab",
+            year_level: "SHS 11 - Term 1",
+            program: "ICT",
+            course_code: "PR1",
+            course_name: "Practical Research 1",
             lecture: 2,
             laboratory: 1,
             laboratory_type: roomTypeList[0]?.value || "Computer Laboratory",
         });
 
+        // Add dropdowns for Room Types & Year/Term examples
         const typeValues = roomTypeList.map((rt) => rt.value.replace(/"/g, '""')).join(",");
         if (typeValues) {
             worksheet.dataValidations.add("H2:H1000", {
@@ -654,9 +671,19 @@ export default function CurriculumSubjectsPage() {
             });
         }
 
+        const semesterTermList = "1st Year - Semester 1,1st Year - Semester 2,2nd Year - Semester 1,2nd Year - Semester 2,3rd Year - Semester 1,3rd Year - Semester 2,4th Year - Semester 1,4th Year - Semester 2,SHS 11 - Term 1,SHS 11 - Term 2,SHS 11 - Term 3,SHS 11 - Term 4,SHS 12 - Term 1,SHS 12 - Term 2,SHS 12 - Term 3,SHS 12 - Term 4";
+        worksheet.dataValidations.add("B2:B1000", {
+            type: "list",
+            allowBlank: true,
+            formulae: [`"${semesterTermList}"`],
+            showErrorMessage: true,
+            errorTitle: "Invalid Year & Term/Semester",
+            error: "Please select a valid Semester (Tertiary) or Term (SHS).",
+        });
+
         const buffer = await workbook.xlsx.writeBuffer();
         downloadWorkbook(buffer, `${curriculumVersion}_Subjects_Template.xlsx`);
-        triggerToast("Blank Excel template downloaded successfully with dynamic room type validation!", "success");
+        triggerToast("Blank Excel template downloaded successfully with Semester/Term & Lab Type dropdowns!", "success");
     }, [curriculumVersion, roomTypeList, triggerToast]);
 
     const handleExportExcel = useCallback(async () => {
@@ -675,7 +702,7 @@ export default function CurriculumSubjectsPage() {
 
             worksheet.columns = [
                 { header: "Curriculum", key: "curriculum", width: 18 },
-                { header: "Year Level", key: "year_level", width: 15 },
+                { header: "Year Level", key: "year_level", width: 22 },
                 { header: "Program", key: "program", width: 15 },
                 { header: "Course Code", key: "course_code", width: 15 },
                 { header: "Course Name", key: "course_name", width: 30 },
@@ -688,7 +715,7 @@ export default function CurriculumSubjectsPage() {
                 const labTypeName = (item.lab_type ? roomTypeList.find((r) => r.room_type_id === item.lab_type)?.value : null) || item.lab_type_name || item.lab_type || "";
                 worksheet.addRow({
                     curriculum: item.curriculum || curriculumVersion,
-                    year_level: item.year_term ? item.year_term.split(" - ")[0] : "",
+                    year_level: item.year_term || "",
                     program: item.program_code || "",
                     course_code: item.course_code || "",
                     course_name: item.course_name || "",
@@ -850,11 +877,6 @@ export default function CurriculumSubjectsPage() {
                     return;
                 }
 
-                let combinedYearTerm = rawYear;
-                if (["11", "12"].includes(rawYear)) {
-                    combinedYearTerm = `SHS ${rawYear}`;
-                }
-
                 let matchedLabTypeId: string | null = null;
                 const labUnitsNum = isNaN(rawLab) ? 0 : rawLab;
 
@@ -876,7 +898,7 @@ export default function CurriculumSubjectsPage() {
 
                 rowsToProcess.push({
                     rowNum: rowNumber,
-                    yearTerm: combinedYearTerm,
+                    yearTerm: rawYear,
                     prog: rawProg,
                     code: rawCode,
                     name: rawName,
@@ -930,13 +952,15 @@ export default function CurriculumSubjectsPage() {
             !formData.course_code?.trim() ||
             !formData.course_name?.trim() ||
             !selectedYear.trim() ||
+            !selectedTerm.trim() ||
             Boolean(programError) ||
             Boolean(courseCodeError) ||
             Boolean(courseNameError) ||
             Boolean(lecUnitsError) ||
             Boolean(labUnitsError) ||
-            Boolean(yearLevelError),
-        [formData, selectedYear, programError, courseCodeError, courseNameError, lecUnitsError, labUnitsError, yearLevelError]);
+            Boolean(yearLevelError) ||
+            Boolean(termError),
+        [formData, selectedYear, selectedTerm, programError, courseCodeError, courseNameError, lecUnitsError, labUnitsError, yearLevelError, termError]);
 
     const roomTypeMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -1043,6 +1067,7 @@ export default function CurriculumSubjectsPage() {
                         onClick={() => {
                             setFormData({ ...initialFormState, curriculum: curriculumVersion });
                             setSelectedYear("");
+                            setSelectedTerm("");
                             setIsAddingExisting(false);
                             setExistingSubjectSearch("");
                             setExistingSubjectSearchResults([]);
@@ -1054,6 +1079,7 @@ export default function CurriculumSubjectsPage() {
                             setLecUnitsError("");
                             setLabUnitsError("");
                             setYearLevelError("");
+                            setTermError("");
                             setOpenAddModal(true);
                         }}
                     >
@@ -1084,7 +1110,7 @@ export default function CurriculumSubjectsPage() {
                             </TableHeadCell>
 
                             <TableHeadCell>Program / Strand</TableHeadCell>
-                            <TableHeadCell>Year Level</TableHeadCell>
+                            <TableHeadCell>Year & Semester/Term</TableHeadCell>
                             <TableHeadCell>Lec Units</TableHeadCell>
                             <TableHeadCell>Lab Units</TableHeadCell>
                             <TableHeadCell>Lab Type</TableHeadCell>
@@ -1103,7 +1129,9 @@ export default function CurriculumSubjectsPage() {
                                     </TableCell>
                                     <TableCell>{item.course_name}</TableCell>
                                     <TableCell>{item.program_code || "—"}</TableCell>
-                                    <TableCell>{item.year_term ? item.year_term.split(" - ")[0] : "—"}</TableCell>
+                                    <TableCell className="font-medium text-blue-600 dark:text-blue-400">
+                                        {item.year_term || "—"}
+                                    </TableCell>
                                     <TableCell>{item.lecture_units}</TableCell>
                                     <TableCell>{item.lab_units}</TableCell>
                                     <TableCell>
@@ -1243,7 +1271,7 @@ export default function CurriculumSubjectsPage() {
                                 </div>
 
                                 <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                                    <span className="font-semibold uppercase tracking-wide">Strict Validation Rule:</span> Rows must specify curriculum <b className="font-mono">{curriculumVersion}</b>. If <b className="font-mono">Laboratory</b> units = 0, <b className="font-mono">Laboratory Type</b> cannot be configured. Headers: {REQUIRED_HEADERS.join(", ")}
+                                    <span className="font-semibold uppercase tracking-wide">Strict Validation Rule:</span> Rows must specify curriculum <b className="font-mono">{curriculumVersion}</b>. Tertiary uses <b className="font-mono">Semester 1/2</b>, SHS uses <b className="font-mono">Term 1-4</b>. Headers: {REQUIRED_HEADERS.join(", ")}
                                 </div>
 
                                 {formatError && (
@@ -1312,7 +1340,7 @@ export default function CurriculumSubjectsPage() {
                                         Download Curriculum Template
                                     </h4>
                                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                        Pre-filled template configured with curriculum <b className="font-mono">{curriculumVersion}</b> and dynamic room type dropdown validations.
+                                        Pre-filled template configured with curriculum <b className="font-mono">{curriculumVersion}</b> and dynamic room type & semester/term dropdown validations.
                                     </p>
                                 </div>
                                 <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
@@ -1352,6 +1380,7 @@ export default function CurriculumSubjectsPage() {
                                         setExistingSubjectSearchResults([]);
                                         setFormData({ ...initialFormState, curriculum: curriculumVersion });
                                         setSelectedYear("");
+                                        setSelectedTerm("");
                                     }
                                 }}
                             />
@@ -1438,28 +1467,71 @@ export default function CurriculumSubjectsPage() {
                             {courseNameError && <HelperText color="failure">{courseNameError}</HelperText>}
                         </div>
 
-                        <div>
-                            <Label htmlFor="year_level_select">Year Level *</Label>
-                            <Select
-                                id="year_level_select"
-                                value={selectedYear}
-                                color={yearLevelError ? "failure" : "gray"}
-                                onChange={(e) => {
-                                    const yr = e.target.value;
-                                    setSelectedYear(yr);
-                                    setYearLevelError(yr.trim() === "" ? "Year Level is required." : "");
-                                    setFormData((prev) => ({ ...prev, program_code: "" }));
-                                }}
-                            >
-                                <option value="">Select Year...</option>
-                                <option value="11">Grade 11</option>
-                                <option value="12">Grade 12</option>
-                                <option value="1st Year">1st Year</option>
-                                <option value="2nd Year">2nd Year</option>
-                                <option value="3rd Year">3rd Year</option>
-                                <option value="4th Year">4th Year</option>
-                            </Select>
-                            {yearLevelError && <HelperText color="failure">{yearLevelError}</HelperText>}
+                        {/* Year Level & Semester / Term Selection */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="year_level_select">Year Level *</Label>
+                                <Select
+                                    id="year_level_select"
+                                    value={selectedYear}
+                                    color={yearLevelError ? "failure" : "gray"}
+                                    onChange={(e) => {
+                                        const yr = e.target.value;
+                                        const prevLevel = getEducationLevel(selectedYear);
+                                        const nextLevel = getEducationLevel(yr);
+                                        setSelectedYear(yr);
+                                        setYearLevelError(yr.trim() === "" ? "Year Level is required." : "");
+                                        setFormData((prev) => ({ ...prev, program_code: "" }));
+                                        if (prevLevel !== nextLevel) {
+                                            setSelectedTerm("");
+                                            setTermError("");
+                                        }
+                                    }}
+                                >
+                                    <option value="">Select Year...</option>
+                                    <option value="11">Grade 11</option>
+                                    <option value="12">Grade 12</option>
+                                    <option value="1st Year">1st Year</option>
+                                    <option value="2nd Year">2nd Year</option>
+                                    <option value="3rd Year">3rd Year</option>
+                                    <option value="4th Year">4th Year</option>
+                                </Select>
+                                {yearLevelError && <HelperText color="failure">{yearLevelError}</HelperText>}
+                            </div>
+
+                            <div>
+                                <Label htmlFor="term_select">{currentEduLevel === "tertiary" ? "Semester *" : "Term *"}</Label>
+                                <Select
+                                    id="term_select"
+                                    value={selectedTerm}
+                                    disabled={!selectedYear}
+                                    color={termError ? "failure" : "gray"}
+                                    onChange={(e) => {
+                                        const tm = e.target.value;
+                                        setSelectedTerm(tm);
+                                        setTermError(tm.trim() === "" ? `${currentEduLevel === "tertiary" ? "Semester" : "Term"} is required.` : "");
+                                    }}
+                                >
+                                    <option value="">
+                                        {!selectedYear ? "Select Year first..." : `Select ${currentEduLevel === "tertiary" ? "Semester" : "Term"}...`}
+                                    </option>
+                                    {currentEduLevel === "tertiary" && (
+                                        <>
+                                            <option value="Semester 1">Semester 1</option>
+                                            <option value="Semester 2">Semester 2</option>
+                                        </>
+                                    )}
+                                    {currentEduLevel === "shs" && (
+                                        <>
+                                            <option value="Term 1">Term 1</option>
+                                            <option value="Term 2">Term 2</option>
+                                            <option value="Term 3">Term 3</option>
+                                            <option value="Term 4">Term 4</option>
+                                        </>
+                                    )}
+                                </Select>
+                                {termError && <HelperText color="failure">{termError}</HelperText>}
+                            </div>
                         </div>
 
                         <div>
@@ -1558,6 +1630,10 @@ export default function CurriculumSubjectsPage() {
                             <Label className="text-gray-400">Course Name</Label>
                             <div className="font-bold">{formData.course_name}</div>
                         </div>
+                        <div>
+                            <Label className="text-gray-400">Year & Semester/Term</Label>
+                            <div className="font-bold">{formData.year_term}</div>
+                        </div>
                     </div>
                 </ModalBody>
                 <ModalFooter>
@@ -1585,25 +1661,71 @@ export default function CurriculumSubjectsPage() {
                             <div className="font-semibold dark:text-white">{formData.course_name || ""}</div>
                         </div>
 
-                        <div>
-                            <Label htmlFor="year_level_select_edit">Year Level *</Label>
-                            <Select
-                                id="year_level_select_edit"
-                                value={selectedYear}
-                                onChange={(e) => {
-                                    const yr = e.target.value;
-                                    setSelectedYear(yr);
-                                    setFormData((prev) => ({ ...prev, program_code: "" }));
-                                }}
-                            >
-                                <option value="">Select Year...</option>
-                                <option value="11">Grade 11</option>
-                                <option value="12">Grade 12</option>
-                                <option value="1st Year">1st Year</option>
-                                <option value="2nd Year">2nd Year</option>
-                                <option value="3rd Year">3rd Year</option>
-                                <option value="4th Year">4th Year</option>
-                            </Select>
+                        {/* Year Level & Semester/Term Selection */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="year_level_select_edit">Year Level *</Label>
+                                <Select
+                                    id="year_level_select_edit"
+                                    value={selectedYear}
+                                    color={yearLevelError ? "failure" : "gray"}
+                                    onChange={(e) => {
+                                        const yr = e.target.value;
+                                        const prevLevel = getEducationLevel(selectedYear);
+                                        const nextLevel = getEducationLevel(yr);
+                                        setSelectedYear(yr);
+                                        setYearLevelError(yr.trim() === "" ? "Year Level is required." : "");
+                                        setFormData((prev) => ({ ...prev, program_code: "" }));
+                                        if (prevLevel !== nextLevel) {
+                                            setSelectedTerm("");
+                                            setTermError("");
+                                        }
+                                    }}
+                                >
+                                    <option value="">Select Year...</option>
+                                    <option value="11">Grade 11</option>
+                                    <option value="12">Grade 12</option>
+                                    <option value="1st Year">1st Year</option>
+                                    <option value="2nd Year">2nd Year</option>
+                                    <option value="3rd Year">3rd Year</option>
+                                    <option value="4th Year">4th Year</option>
+                                </Select>
+                                {yearLevelError && <HelperText color="failure">{yearLevelError}</HelperText>}
+                            </div>
+
+                            <div>
+                                <Label htmlFor="term_select_edit">{currentEduLevel === "tertiary" ? "Semester *" : "Term *"}</Label>
+                                <Select
+                                    id="term_select_edit"
+                                    value={selectedTerm}
+                                    disabled={!selectedYear}
+                                    color={termError ? "failure" : "gray"}
+                                    onChange={(e) => {
+                                        const tm = e.target.value;
+                                        setSelectedTerm(tm);
+                                        setTermError(tm.trim() === "" ? `${currentEduLevel === "tertiary" ? "Semester" : "Term"} is required.` : "");
+                                    }}
+                                >
+                                    <option value="">
+                                        {!selectedYear ? "Select Year first..." : `Select ${currentEduLevel === "tertiary" ? "Semester" : "Term"}...`}
+                                    </option>
+                                    {currentEduLevel === "tertiary" && (
+                                        <>
+                                            <option value="Semester 1">Semester 1</option>
+                                            <option value="Semester 2">Semester 2</option>
+                                        </>
+                                    )}
+                                    {currentEduLevel === "shs" && (
+                                        <>
+                                            <option value="Term 1">Term 1</option>
+                                            <option value="Term 2">Term 2</option>
+                                            <option value="Term 3">Term 3</option>
+                                            <option value="Term 4">Term 4</option>
+                                        </>
+                                    )}
+                                </Select>
+                                {termError && <HelperText color="failure">{termError}</HelperText>}
+                            </div>
                         </div>
 
                         <div>
@@ -1613,6 +1735,7 @@ export default function CurriculumSubjectsPage() {
                                 value={formData.program_code || ""}
                                 onChange={handleInputChange}
                                 disabled={!selectedYear || isLoadingPrograms}
+                                color={programError ? "failure" : "gray"}
                             >
                                 <option value="">Select Program...</option>
                                 {programsList.map((prog) => (
@@ -1621,6 +1744,7 @@ export default function CurriculumSubjectsPage() {
                                     </option>
                                 ))}
                             </Select>
+                            {programError && <HelperText color="failure">{programError}</HelperText>}
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -1658,9 +1782,7 @@ export default function CurriculumSubjectsPage() {
                                 onChange={handleInputChange}
                                 disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
                             >
-                                <option value="" hidden={true}>
-                                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
-                                </option>
+                                <option value="" hidden={true}>Select Laboratory Type...</option>
                                 {roomTypeList.map((type) => (
                                     <option key={type.room_type_id} value={type.room_type_id}>
                                         {type.value}
