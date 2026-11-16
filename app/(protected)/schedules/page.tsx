@@ -107,7 +107,7 @@ export default function ScheduleManagement() {
   const [creationMode, setCreationMode] = useState<
     "auto" | "semi-auto" | "template"
   >("auto");
-  const [autoAssignRoom, setAutoAssignRoom] = useState<boolean>(false);
+  const [autoAssignRoom, setAutoAssignRoom] = useState<boolean>(true);
 
   // --- Curriculum & Program Selection States (Integrated into Auto-Generation Wizard) --- //
   const [programs, setPrograms] = useState<ProgramRecord[]>([]);

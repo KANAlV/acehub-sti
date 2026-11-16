@@ -229,8 +229,7 @@ export default function TeacherAssignmentModal({
     ? changedSchedules.filter(
         (e) =>
           e.teacher_id === selectedTeacher.teacher_id &&
-          e.day &&
-          e.start_time > 0,
+          e.day,
       )
     : [];
 

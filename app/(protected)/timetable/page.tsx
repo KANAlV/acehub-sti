@@ -1175,14 +1175,14 @@ export default function Timetable() {
             if (matchesSection && matchesRoom) return true;
 
             // Show ghost entries from same section or room
-            const hasSameSection = filteredTimetableEntries.some(
-              (e) => e.section.toLowerCase() === entry.section.toLowerCase()
-            );
-            const hasSameRoom = filteredTimetableEntries.some(
-              (e) => e.room_name?.toLowerCase() === entry.room_name?.toLowerCase()
-            );
+            const isSameSection =
+              selectedTimetableSection !== "ALL" &&
+              entry.section.toLowerCase() === selectedTimetableSection.toLowerCase();
+            const matchesActiveRoom =
+              selectedTimetableRoom !== "ALL" &&
+              entry.room_name?.toLowerCase() === selectedTimetableRoom.toLowerCase();
 
-            return hasSameSection || hasSameRoom;
+            return isSameSection || matchesActiveRoom;
           });
 
           if (entriesToRender.length === 0) return null;

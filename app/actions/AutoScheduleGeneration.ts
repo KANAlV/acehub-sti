@@ -95,29 +95,33 @@ export async function fetchSubjectsForGeneration(
     const allSubjects: SubjectRequirementRecord[] =
       subjectResult.data as SubjectRequirementRecord[];
 
+    // Parse tertiary term digit (1-2) from "Semester 1" / "Semester 2"
+    const tertiaryTermNum = parseInt(tertiaryTerm.replace(/[^0-9]/g, "")) || 1;
+    const tertiaryTermDigit = tertiaryTermNum > 2 ? 2 : tertiaryTermNum < 1 ? 1 : tertiaryTermNum;
+
     // Parse SHS term digit (1-4)
     const shsTermNum = parseInt(shsTerm.replace(/[^0-9]/g, "")) || 1;
     const shsTermDigit = shsTermNum > 4 ? 4 : shsTermNum < 1 ? 1 : shsTermNum;
 
-    // Filter subjects: keep all tertiary subjects, but filter SHS subjects by term
+    // Filter subjects by term/semester: both tertiary and SHS subjects must match
     const filteredSubjects = allSubjects.filter((subject) => {
       const yt = (subject.year_term || "").toLowerCase().trim();
-      const isSubjectSHS = yt.includes("shs") || yt.includes("grade");
-
-      if (!isSubjectSHS) {
-        // Tertiary subjects: keep all of them (term is handled by section matching)
-        return true;
-      }
-
-      // SHS subjects: filter by term only if year_term contains term/semester info
+      
+      // Subjects without term/semester info are removed
       const hasTermInfo = yt.includes("term") || yt.includes("semester");
       if (!hasTermInfo) {
-        // No term info in year_term, keep the subject (will be matched by section later)
-        return true;
+        return false;
       }
 
-      // Filter by the selected SHS term
-      return yt.includes(`term ${shsTermDigit}`) || yt.includes(`semester ${shsTermDigit}`);
+      const isSubjectSHS = yt.includes("shs") || yt.includes("grade");
+
+      if (isSubjectSHS) {
+        // SHS subjects: filter by selected SHS term
+        return yt.includes(`term ${shsTermDigit}`) || yt.includes(`semester ${shsTermDigit}`);
+      }
+
+      // Tertiary subjects: filter by selected semester
+      return yt.includes(`semester ${tertiaryTermDigit}`) || yt.includes(`term ${tertiaryTermDigit}`);
     });
 
     return { success: true, data: filteredSubjects };
@@ -197,9 +201,8 @@ export async function generateProgramSections(
 
           if (isShs) {
             const gradeIndicator = levelKey === "12" ? "2" : "1";
-            const gradeTermCode = `${gradeIndicator}${shsTermDigit}`;
-            const sectionNumber = String(s).padStart(1, "0");
-            sectionCode = `${progCode}${gradeTermCode}${sectionNumber}`;
+            const sectionNumber = 10 + s;
+            sectionCode = `${progCode}${gradeIndicator}${sectionNumber}`;
           } else {
             const yearNum = Number(levelKey);
             if (isNaN(yearNum)) continue;
@@ -261,7 +264,7 @@ export async function assignSubjectsToSections(
     const assignments: SectionSubjectAssignment[] = [];
 
     for (const sectionCode of sections) {
-      const shsMatch = sectionCode.match(/^([A-Z]+)([12])(\d)(\d+)$/);
+      const shsMatch = sectionCode.match(/^([A-Z]+)([12])(\d{2})$/);
 
       const matchedSubjects = allSubjects.filter((subject) => {
         const subProg = (subject.program_code || "").trim().toUpperCase();
@@ -317,7 +320,7 @@ export async function assignSubjectsToSections(
         }
 
         if (shsMatch) {
-          const [, progCode, gradeIndicator, sectionTermStr] = shsMatch;
+          const [, progCode, gradeIndicator] = shsMatch;
 
           const progMatches =
             subProg === progCode || subProg === "GEN" || subProg === "CORE";
@@ -329,15 +332,7 @@ export async function assignSubjectsToSections(
             const gradeRegex = new RegExp(`\\b${targetGradeNum}\\b`, "i");
             const gradeMatches = gradeRegex.test(yt);
 
-            // SHS year_term may be "SHS 11", "SHS 12", "Grade 11", "Grade 12",
-            // or include term info like "Grade 11 - Term 1".
-            // Match term only if the year_term actually contains term/semester info.
-            const hasTermInfo = yt.includes("term") || yt.includes("semester");
-            const termMatches = hasTermInfo
-              ? yt.includes(`term ${sectionTermStr}`) || yt.includes(`semester ${sectionTermStr}`)
-              : true;
-
-            return gradeMatches && termMatches;
+            return gradeMatches;
           }
           // Section looks like SHS but subject is tertiary — try tertiary matching
           return tryTertiaryMatch();
@@ -609,27 +604,59 @@ export async function generateRoomAndClassSchedules(
       }
 
       // Try each day, then each position, trying both lec-first and lab-first ordering
+      // Uses earliest-available-time strategy: scans from the beginning, jumping over
+      // occupied blocks and break periods so gaps can be filled by later subjects.
+      const totalSlotsNeeded = lecSlotsNeeded + labSlotsNeeded;
       for (const day of prioritizedDays) {
         if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
         if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
-        // Try each starting position for the paired block
-        for (let i = 0; i <= sectionTimeSlots.length - lecSlotsNeeded - labSlotsNeeded; i++) {
+        for (let i = 0; i <= sectionTimeSlots.length - totalSlotsNeeded; i++) {
           // Check if this position is valid for before-6-PM preference
-          if (preferBefore6PM && !sessionEndsBefore6PM(i + lecSlotsNeeded + labSlotsNeeded)) {
+          if (preferBefore6PM && !sessionEndsBefore6PM(i + totalSlotsNeeded)) {
             continue;
           }
 
+          // Check if any slot in this block is occupied — skip past occupied blocks
+          let occupied = false;
+          for (let j = 0; j < totalSlotsNeeded; j++) {
+            const slot = sectionTimeSlots[i + j];
+            if (
+              occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
+              occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            ) {
+              occupied = true;
+              i = i + j; // Skip past this occupied block
+              break;
+            }
+          }
+          if (occupied) continue;
+
           const lecSlots = sectionTimeSlots.slice(i, i + lecSlotsNeeded);
-          const labSlotsAfter = sectionTimeSlots.slice(i + lecSlotsNeeded, i + lecSlotsNeeded + labSlotsNeeded);
+          const labSlotsAfter = sectionTimeSlots.slice(i + lecSlotsNeeded, i + totalSlotsNeeded);
           const labSlotsBefore = sectionTimeSlots.slice(i, i + labSlotsNeeded);
-          const lecSlotsAfter = sectionTimeSlots.slice(i + labSlotsNeeded, i + labSlotsNeeded + lecSlotsNeeded);
+          const lecSlotsAfter = sectionTimeSlots.slice(i + labSlotsNeeded, i + totalSlotsNeeded);
 
           // Check break periods for both orderings
           const lecHitsBreak = lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods));
           const labHitsBreakAfter = labSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
           const labHitsBreakBefore = labSlotsBefore.some((slot) => isBreakTime(day, slot, breakPeriods));
           const lecHitsBreakAfter = lecSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
+
+          // If both orderings hit breaks, jump past the break
+          if (lecHitsBreak || labHitsBreakAfter || labHitsBreakBefore || lecHitsBreakAfter) {
+            // Find the first break slot and skip past it
+            const blockSlots = sectionTimeSlots.slice(i, i + totalSlotsNeeded);
+            let jumped = false;
+            for (let j = 0; j < totalSlotsNeeded; j++) {
+              if (isBreakTime(day, blockSlots[j], breakPeriods)) {
+                i = i + j;
+                jumped = true;
+                break;
+              }
+            }
+            if (jumped) continue;
+          }
 
           // Try ordering: Lecture first, then Lab
           if (!lecHitsBreak && !labHitsBreakAfter) {
@@ -821,21 +848,51 @@ export async function generateRoomAndClassSchedules(
       }
 
       // If preferBefore6PM failed, retry without the constraint
+      // Uses earliest-available-time strategy with break-aware jumping.
       if (preferBefore6PM) {
         for (const day of prioritizedDays) {
           if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
           if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
-          for (let i = 0; i <= sectionTimeSlots.length - lecSlotsNeeded - labSlotsNeeded; i++) {
+          for (let i = 0; i <= sectionTimeSlots.length - totalSlotsNeeded; i++) {
+            // Check if any slot in this block is occupied — skip past occupied blocks
+            let occupied = false;
+            for (let j = 0; j < totalSlotsNeeded; j++) {
+              const slot = sectionTimeSlots[i + j];
+              if (
+                occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
+                occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+              ) {
+                occupied = true;
+                i = i + j;
+                break;
+              }
+            }
+            if (occupied) continue;
+
             const lecSlots = sectionTimeSlots.slice(i, i + lecSlotsNeeded);
-            const labSlotsAfter = sectionTimeSlots.slice(i + lecSlotsNeeded, i + lecSlotsNeeded + labSlotsNeeded);
+            const labSlotsAfter = sectionTimeSlots.slice(i + lecSlotsNeeded, i + totalSlotsNeeded);
             const labSlotsBefore = sectionTimeSlots.slice(i, i + labSlotsNeeded);
-            const lecSlotsAfter = sectionTimeSlots.slice(i + labSlotsNeeded, i + labSlotsNeeded + lecSlotsNeeded);
+            const lecSlotsAfter = sectionTimeSlots.slice(i + labSlotsNeeded, i + totalSlotsNeeded);
 
             const lecHitsBreak = lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods));
             const labHitsBreakAfter = labSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
             const labHitsBreakBefore = labSlotsBefore.some((slot) => isBreakTime(day, slot, breakPeriods));
             const lecHitsBreakAfter = lecSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
+
+            // If both orderings hit breaks, jump past the break
+            if (lecHitsBreak || labHitsBreakAfter || labHitsBreakBefore || lecHitsBreakAfter) {
+              const blockSlots = sectionTimeSlots.slice(i, i + totalSlotsNeeded);
+              let jumped = false;
+              for (let j = 0; j < totalSlotsNeeded; j++) {
+                if (isBreakTime(day, blockSlots[j], breakPeriods)) {
+                  i = i + j;
+                  jumped = true;
+                  break;
+                }
+              }
+              if (jumped) continue;
+            }
 
             // Try ordering: Lecture first, then Lab
             if (!lecHitsBreak && !labHitsBreakAfter) {
@@ -994,7 +1051,7 @@ export async function generateRoomAndClassSchedules(
     const tertiaryAssignments: SectionSubjectAssignment[] = [];
 
     for (const assignment of sectionAssignments) {
-      const isShsSection = /^([A-Z]+)([12])(\d)(\d+)$/.test(assignment.sectionCode);
+      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(assignment.sectionCode);
       if (isShsSection) {
         shsAssignments.push(assignment);
       } else {
@@ -1168,6 +1225,62 @@ function timeToMinutes(timeStr: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
+/**
+ * Find the earliest contiguous block of free time slots on a given day.
+ * Scans from the beginning of the day, skipping over occupied slots and break periods.
+ * If a potential block would hit a break, it jumps to after the break and continues scanning.
+ * This ensures gaps created by breaks or occupied slots can be filled by later subjects.
+ *
+ * Returns the starting slot index, or -1 if no suitable block is found.
+ */
+function findEarliestAvailableSlots(
+  day: string,
+  timeSlots: string[],
+  slotsNeeded: number,
+  breakPeriods: BreakPeriodRecord[],
+  isSlotOccupied: (slotIndex: number) => boolean,
+  shouldSkipSlot?: (slotIndex: number) => boolean,
+): number {
+  for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
+    // Apply external skip filter (e.g. preferBefore6PM)
+    if (shouldSkipSlot && shouldSkipSlot(i)) continue;
+
+    // Check if any slot in this block is already occupied by section/course/subject
+    let occupied = false;
+    for (let j = 0; j < slotsNeeded; j++) {
+      if (isSlotOccupied(i + j)) {
+        occupied = true;
+        // Skip past this occupied block to find the next candidate
+        i = i + j;
+        break;
+      }
+    }
+    if (occupied) continue;
+
+    // Check if any slot in this block hits a break period
+    const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
+    const hitsBreak = sessionSlots.some((slot) =>
+      isBreakTime(day, slot, breakPeriods),
+    );
+    if (hitsBreak) {
+      // Jump past the break period to find the next available slot after it
+      // Find the first break slot and skip to after it
+      for (let j = 0; j < slotsNeeded; j++) {
+        if (isBreakTime(day, sessionSlots[j], breakPeriods)) {
+          // Skip to the slot after this break slot
+          i = i + j;
+          break;
+        }
+      }
+      continue;
+    }
+
+    // Found a valid contiguous block
+    return i;
+  }
+  return -1;
+}
+
 function getFilteredRooms(
   componentType: "LECTURE" | "LABORATORY",
   rooms: RoomForGeneration[],
@@ -1244,6 +1357,8 @@ function scheduleSession(
   }
 
   // Helper function for room-aware assignment with optional slot filter
+  // Uses earliest-available-time strategy: always picks the first free contiguous block on each day,
+  // jumping over breaks and occupied slots so gaps can be filled by later subjects.
   function tryRoomAwareAssignment(
     shouldSkipSlot: (i: number) => boolean,
   ): {
@@ -1261,81 +1376,71 @@ function scheduleSession(
         continue;
       if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
-      for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
-        if (shouldSkipSlot(i)) continue;
-
-        const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
-
-        const hitsBreak = sessionSlots.some((slot) =>
-          isBreakTime(day, slot, breakPeriods),
-        );
-        if (hitsBreak) continue;
-
-        const isSectionFree = sessionSlots.every(
-          (slot: string) =>
-            !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`),
-        );
-        if (!isSectionFree) continue;
-
-        const isCourseFree = sessionSlots.every(
-          (slot: string) =>
-            !occupiedCourseSlots.has(
-              `${subject.course_code}_${componentType}_${day}_${slot}`,
-            ),
-        );
-        if (!isCourseFree) continue;
-
-        const isSubjectTimeFree = sessionSlots.every(
-          (slot: string) =>
-            !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
-        );
-        if (!isSubjectTimeFree) continue;
-
-        for (const room of fallbackRooms) {
-          const isRoomFree = sessionSlots.every(
-            (slot: string) =>
-              !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+      // Find the earliest available contiguous block of slots on this day
+      const earliestSlot = findEarliestAvailableSlots(
+        day,
+        timeSlots,
+        slotsNeeded,
+        breakPeriods,
+        (slotIndex) => {
+          const slot = timeSlots[slotIndex];
+          return (
+            occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
+            occupiedCourseSlots.has(`${subject.course_code}_${componentType}_${day}_${slot}`) ||
+            occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
           );
+        },
+        shouldSkipSlot,
+      );
 
-          if (isRoomFree) {
-            sessionSlots.forEach((slot: string) => {
-              occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-              occupiedRoomSlots.add(`${room.room_id}_${day}_${slot}`);
-              occupiedCourseSlots.add(
-                `${subject.course_code}_${componentType}_${day}_${slot}`,
-              );
-              occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-            });
-            activeDays.add(day);
+      if (earliestSlot === -1) continue;
 
-            const startTime = sessionSlots[0].split(" - ")[0];
-            const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
-            const units =
-              componentType === "LECTURE"
-                ? subject.lecture_units
-                : subject.lab_units;
+      const sessionSlots = timeSlots.slice(earliestSlot, earliestSlot + slotsNeeded);
 
-            scheduleEntries.push({
-              sectionCode,
-              subjectId: subject.subject_id,
-              courseCode: subject.course_code,
-              courseName: subject.course_name,
-              componentType,
-              units,
-              roomId: room.room_id,
-              roomName: room.room_name || "Unassigned Room",
-              day,
-              startTime,
-              endTime,
-              type: componentType.toLowerCase(),
-            });
-            return {
-              day,
-              endSlotIndex: i + slotsNeeded,
-              roomId: room.room_id,
-              roomName: room.room_name || "Unassigned Room",
-            };
-          }
+      for (const room of fallbackRooms) {
+        const isRoomFree = sessionSlots.every(
+          (slot: string) =>
+            !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+        );
+
+        if (isRoomFree) {
+          sessionSlots.forEach((slot: string) => {
+            occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+            occupiedRoomSlots.add(`${room.room_id}_${day}_${slot}`);
+            occupiedCourseSlots.add(
+              `${subject.course_code}_${componentType}_${day}_${slot}`,
+            );
+            occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+          });
+          activeDays.add(day);
+
+          const startTime = sessionSlots[0].split(" - ")[0];
+          const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
+          const units =
+            componentType === "LECTURE"
+              ? subject.lecture_units
+              : subject.lab_units;
+
+          scheduleEntries.push({
+            sectionCode,
+            subjectId: subject.subject_id,
+            courseCode: subject.course_code,
+            courseName: subject.course_name,
+            componentType,
+            units,
+            roomId: room.room_id,
+            roomName: room.room_name || "Unassigned Room",
+            day,
+            startTime,
+            endTime,
+            type: componentType.toLowerCase(),
+          });
+          return {
+            day,
+            endSlotIndex: earliestSlot + slotsNeeded,
+            roomId: room.room_id,
+            roomName: room.room_name || "Unassigned Room",
+          };
         }
       }
     }
@@ -1356,7 +1461,7 @@ function scheduleSession(
   }
 
   // Pass 2: Fallback Pass without room constraint
-  // Helper for fallback assignment without room constraint, with optional slot filter
+  // Uses earliest-available-time strategy, same as tryRoomAwareAssignment but without room constraints.
   function tryFallbackAssignment(
     shouldSkipSlot: (i: number) => boolean,
   ): {
@@ -1374,71 +1479,61 @@ function scheduleSession(
         continue;
       if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
-      for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
-        if (shouldSkipSlot(i)) continue;
-
-        const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
-
-        const hitsBreak = sessionSlots.some((slot) =>
-          isBreakTime(day, slot, breakPeriods),
-        );
-        if (hitsBreak) continue;
-
-        const isSectionFree = sessionSlots.every(
-          (slot: string) =>
-            !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`),
-        );
-        if (!isSectionFree) continue;
-
-        const isCourseFree = sessionSlots.every(
-          (slot: string) =>
-            !occupiedCourseSlots.has(
-              `${subject.course_code}_${componentType}_${day}_${slot}`,
-            ),
-        );
-        if (!isCourseFree) continue;
-
-        const isSubjectTimeFree = sessionSlots.every(
-          (slot: string) =>
-            !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
-        );
-        if (!isSubjectTimeFree) continue;
-
-        sessionSlots.forEach((slot: string) => {
-          occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-          occupiedCourseSlots.add(
-            `${subject.course_code}_${componentType}_${day}_${slot}`,
+      // Find the earliest available contiguous block of slots on this day
+      const earliestSlot = findEarliestAvailableSlots(
+        day,
+        timeSlots,
+        slotsNeeded,
+        breakPeriods,
+        (slotIndex) => {
+          const slot = timeSlots[slotIndex];
+          return (
+            occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
+            occupiedCourseSlots.has(`${subject.course_code}_${componentType}_${day}_${slot}`) ||
+            occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
           );
-          occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-        });
-        activeDays.add(day);
+        },
+        shouldSkipSlot,
+      );
 
-        const startTime = sessionSlots[0].split(" - ")[0];
-        const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
-        const units =
-          componentType === "LECTURE" ? subject.lecture_units : subject.lab_units;
+      if (earliestSlot === -1) continue;
 
-        scheduleEntries.push({
-          sectionCode,
-          subjectId: subject.subject_id,
-          courseCode: subject.course_code,
-          courseName: subject.course_name,
-          componentType,
-          units,
-          roomId: null,
-          roomName: "Unassigned Room",
-          day,
-          startTime,
-          endTime,
-          type: componentType.toLowerCase(),
-        });
-        return {
-          day,
-          endSlotIndex: i + slotsNeeded,
-          roomId: null,
-          roomName: "Unassigned Room",
-        };
-      }
+      const sessionSlots = timeSlots.slice(earliestSlot, earliestSlot + slotsNeeded);
+
+      sessionSlots.forEach((slot: string) => {
+        occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+        occupiedCourseSlots.add(
+          `${subject.course_code}_${componentType}_${day}_${slot}`,
+        );
+        occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+      });
+      activeDays.add(day);
+
+      const startTime = sessionSlots[0].split(" - ")[0];
+      const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
+      const units =
+        componentType === "LECTURE" ? subject.lecture_units : subject.lab_units;
+
+      scheduleEntries.push({
+        sectionCode,
+        subjectId: subject.subject_id,
+        courseCode: subject.course_code,
+        courseName: subject.course_name,
+        componentType,
+        units,
+        roomId: null,
+        roomName: "Unassigned Room",
+        day,
+        startTime,
+        endTime,
+        type: componentType.toLowerCase(),
+      });
+      return {
+        day,
+        endSlotIndex: earliestSlot + slotsNeeded,
+        roomId: null,
+        roomName: "Unassigned Room",
+      };
     }
     return null;
   }
