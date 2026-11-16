@@ -78,7 +78,8 @@ export interface BreakPeriodRecord {
 
 export async function fetchSubjectsForGeneration(
   curricula: string[],
-  term: string,
+  tertiaryTerm: string,
+  shsTerm: string = "Term 1",
 ): Promise<{
   success: boolean;
   data: SubjectRequirementRecord[];
@@ -93,7 +94,33 @@ export async function fetchSubjectsForGeneration(
     }
     const allSubjects: SubjectRequirementRecord[] =
       subjectResult.data as SubjectRequirementRecord[];
-    return { success: true, data: allSubjects };
+
+    // Parse SHS term digit (1-4)
+    const shsTermNum = parseInt(shsTerm.replace(/[^0-9]/g, "")) || 1;
+    const shsTermDigit = shsTermNum > 4 ? 4 : shsTermNum < 1 ? 1 : shsTermNum;
+
+    // Filter subjects: keep all tertiary subjects, but filter SHS subjects by term
+    const filteredSubjects = allSubjects.filter((subject) => {
+      const yt = (subject.year_term || "").toLowerCase().trim();
+      const isSubjectSHS = yt.includes("shs") || yt.includes("grade");
+
+      if (!isSubjectSHS) {
+        // Tertiary subjects: keep all of them (term is handled by section matching)
+        return true;
+      }
+
+      // SHS subjects: filter by term only if year_term contains term/semester info
+      const hasTermInfo = yt.includes("term") || yt.includes("semester");
+      if (!hasTermInfo) {
+        // No term info in year_term, keep the subject (will be matched by section later)
+        return true;
+      }
+
+      // Filter by the selected SHS term
+      return yt.includes(`term ${shsTermDigit}`) || yt.includes(`semester ${shsTermDigit}`);
+    });
+
+    return { success: true, data: filteredSubjects };
   } catch (error) {
     console.error("Failed to fetch subjects for generation:", error);
     return {
@@ -109,6 +136,7 @@ export async function generateProgramSections(
   _name: string,
   _curricula: string[],
   tertiaryTerm: string,
+  shsTerm: string = "Term 1",
 ): Promise<{ success: boolean; sections: string[]; error?: string }> {
   try {
     const configResult = await fetchFacultyLoadConfig();
@@ -140,6 +168,10 @@ export async function generateProgramSections(
     const isTertiaryFirstTerm = tertiaryTermLower.includes("1") || tertiaryTermLower.includes("1st");
     const tertiaryTermOffset = isTertiaryFirstTerm ? 1 : 2;
 
+    // Parse SHS term (supports Term 1-4)
+    const shsTermNum = parseInt(shsTerm.replace(/[^0-9]/g, "")) || 1;
+    const shsTermDigit = shsTermNum > 4 ? 4 : shsTermNum < 1 ? 1 : shsTermNum;
+
     for (const prog of programs) {
       const progCode = prog.program_code.trim();
       const yearLevelType = prog.year_level;
@@ -165,7 +197,7 @@ export async function generateProgramSections(
 
           if (isShs) {
             const gradeIndicator = levelKey === "12" ? "2" : "1";
-            const gradeTermCode = `${gradeIndicator}1`;
+            const gradeTermCode = `${gradeIndicator}${shsTermDigit}`;
             const sectionNumber = String(s).padStart(1, "0");
             sectionCode = `${progCode}${gradeTermCode}${sectionNumber}`;
           } else {
@@ -202,6 +234,7 @@ export async function assignSubjectsToSections(
   tertiaryTerm: string,
   precomputedSections?: string[],
   precomputedSubjects?: SubjectRequirementRecord[],
+  shsTerm: string = "Term 1",
 ): Promise<{
   success: boolean;
   assignments: SectionSubjectAssignment[];
@@ -211,7 +244,7 @@ export async function assignSubjectsToSections(
     let sections = precomputedSections;
 
     if (!sections || sections.length === 0) {
-      const sectionResult = await generateProgramSections(_name, [], tertiaryTerm);
+      const sectionResult = await generateProgramSections(_name, [], tertiaryTerm, shsTerm);
       if (!sectionResult.success || !sectionResult.sections) {
         throw new Error(sectionResult.error || "Failed to generate sections.");
       }
@@ -350,6 +383,7 @@ export async function generateRoomAndClassSchedules(
   tertiaryTerm: string,
   precomputedSections?: string[],
   precomputedSubjects?: SubjectRequirementRecord[],
+  shsTerm: string = "Term 1",
 ): Promise<ScheduleAssignmentResult> {
   try {
     const roomsResult = await getRoomsForGeneration();
@@ -406,6 +440,7 @@ export async function generateRoomAndClassSchedules(
       tertiaryTerm,
       precomputedSections,
       subjectsToUse,
+      shsTerm,
     );
     if (!assignmentResult.success || !assignmentResult.assignments) {
       throw new Error(
@@ -423,7 +458,7 @@ export async function generateRoomAndClassSchedules(
       "Friday",
       "Saturday",
     ];
-    const timeSlots: string[] = generateTimeSlots("07:00", "21:00", 30);
+    const timeSlots: string[] = generateTimeSlots("07:00", "22:00", 30);
     const shsTimeSlots: string[] = generateTimeSlots("07:00", "18:00", 30);
 
     const occupiedRoomSlots = new Set<string>();
@@ -458,12 +493,16 @@ export async function generateRoomAndClassSchedules(
 
     const scheduleEntries: ScheduleEntry[] = [];
 
+    // Track scheduled components for same-day pairing: key = "sectionCode_subjectId_componentType"
+    const scheduledComponents = new Map<string, { day: string; startIndex: number; endIndex: number }>();
+
     // Helper to schedule a single subject, preserving all existing logic
     function scheduleSubject(
       subject: AssignedSubjectDetail,
       sectionCode: string,
       sectionTimeSlots: string[],
       preferredVacantDay: string,
+      preferBefore6PM: boolean = false,
     ) {
       const lectureUnits = subject.lecture_units || 0;
       const labUnits = subject.lab_units || 0;
@@ -474,149 +513,480 @@ export async function generateRoomAndClassSchedules(
       const hasLecture = lectureUnits > 0;
       const hasLab = labUnits > 0;
 
-      // 50/50 chance for continuous back-to-back scheduling if both components exist
       // Kitchen labs always schedule independently to avoid sharing the same room
       const isKitchenLab = subject.lab_type && kitchenRoomTypeIds.has(subject.lab_type);
-      const shouldBeContinuous = hasLecture && hasLab && !isKitchenLab && Math.random() < 0.5;
 
-      if (shouldBeContinuous) {
-        const lecFirst = Math.random() < 0.5;
+      if (hasLecture && hasLab && !isKitchenLab) {
+        // New pairing logic: try to schedule both components on the same day in adjacent slots
+        const paired = trySchedulePaired(
+          subject,
+          sectionCode,
+          sectionTimeSlots,
+          preferredVacantDay,
+          preferBefore6PM,
+          lecHours,
+          labHours,
+        );
+        if (paired) return;
+      }
 
-        if (lecFirst) {
-          // Schedule Lecture first in the lab room
-          const lecResult = scheduleSession(
-            subject,
-            sectionCode,
-            "LECTURE",
-            lecHours,
-            rooms,
-            days,
-            sectionTimeSlots,
-            occupiedRoomSlots,
-            occupiedSectionSlots,
-            occupiedCourseSlots,
-            occupiedSubjectTimeSlots,
-            sectionActiveDays,
-            scheduleEntries,
-            preferredVacantDay,
-            breakPeriods,
-            subject.lab_type,
-            subject.lab_type,
-          );
+      // Fallback: independent scheduling if pairing failed or not applicable
+      if (hasLecture) {
+        scheduleSession(
+          subject,
+          sectionCode,
+          "LECTURE",
+          lecHours,
+          rooms,
+          days,
+          sectionTimeSlots,
+          occupiedRoomSlots,
+          occupiedSectionSlots,
+          occupiedCourseSlots,
+          occupiedSubjectTimeSlots,
+          sectionActiveDays,
+          scheduleEntries,
+          preferredVacantDay,
+          breakPeriods,
+          subject.lab_type,
+          lectureRoomTypeId,
+          preferBefore6PM,
+        );
+      }
 
-          if (lecResult) {
-            // Force Lab to use the exact same roomId and follow immediately after
-            scheduleSessionStartingAtRoom(
-              subject,
-              sectionCode,
-              "LABORATORY",
-              labHours,
-              rooms,
-              sectionTimeSlots,
-              lecResult.day,
-              lecResult.endSlotIndex,
-              lecResult.roomId,
-              lecResult.roomName,
-              occupiedRoomSlots,
-              occupiedSectionSlots,
-              occupiedCourseSlots,
-              occupiedSubjectTimeSlots,
-              sectionActiveDays,
-              scheduleEntries,
-              breakPeriods,
-            );
+      if (hasLab) {
+        scheduleSession(
+          subject,
+          sectionCode,
+          "LABORATORY",
+          labHours,
+          rooms,
+          days,
+          sectionTimeSlots,
+          occupiedRoomSlots,
+          occupiedSectionSlots,
+          occupiedCourseSlots,
+          occupiedSubjectTimeSlots,
+          sectionActiveDays,
+          scheduleEntries,
+          preferredVacantDay,
+          breakPeriods,
+          subject.lab_type,
+          lectureRoomTypeId,
+          preferBefore6PM,
+        );
+      }
+    }
+
+    // Try to schedule lecture and lab on the same day in adjacent time slots
+    function trySchedulePaired(
+      subject: AssignedSubjectDetail,
+      sectionCode: string,
+      sectionTimeSlots: string[],
+      preferredVacantDay: string,
+      preferBefore6PM: boolean,
+      lecHours: number,
+      labHours: number,
+    ): boolean {
+      const lecSlotsNeeded = Math.ceil((lecHours * 60) / 30);
+      const labSlotsNeeded = Math.ceil((labHours * 60) / 30);
+      const activeDays = sectionActiveDays.get(sectionCode)!;
+      const prioritizedDays = [
+        ...days.filter((d) => d !== preferredVacantDay),
+        preferredVacantDay,
+      ];
+
+      const labRooms = getFilteredRooms("LABORATORY", rooms, subject.lab_type, null);
+      const lecRooms = getFilteredRooms("LECTURE", rooms, subject.lab_type, lectureRoomTypeId);
+
+      // Helper to check if a session ending at slot index ends before 18:00
+      function sessionEndsBefore6PM(endIndex: number): boolean {
+        if (endIndex > sectionTimeSlots.length) return false;
+        const lastSlot = sectionTimeSlots[endIndex - 1];
+        const endTime = lastSlot.split(" - ")[1];
+        const endMinutes = timeToMinutes(endTime);
+        return endMinutes <= 18 * 60;
+      }
+
+      // Try each day, then each position, trying both lec-first and lab-first ordering
+      for (const day of prioritizedDays) {
+        if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
+        if (!activeDays.has(day) && activeDays.size >= 5) continue;
+
+        // Try each starting position for the paired block
+        for (let i = 0; i <= sectionTimeSlots.length - lecSlotsNeeded - labSlotsNeeded; i++) {
+          // Check if this position is valid for before-6-PM preference
+          if (preferBefore6PM && !sessionEndsBefore6PM(i + lecSlotsNeeded + labSlotsNeeded)) {
+            continue;
           }
-        } else {
-          // Schedule Lab first
-          const labResult = scheduleSession(
-            subject,
-            sectionCode,
-            "LABORATORY",
-            labHours,
-            rooms,
-            days,
-            sectionTimeSlots,
-            occupiedRoomSlots,
-            occupiedSectionSlots,
-            occupiedCourseSlots,
-            occupiedSubjectTimeSlots,
-            sectionActiveDays,
-            scheduleEntries,
-            preferredVacantDay,
-            breakPeriods,
-            subject.lab_type,
-            lectureRoomTypeId,
-          );
 
-          if (labResult) {
-            // Force Lecture to use the exact same roomId and follow immediately after
-            scheduleSessionStartingAtRoom(
-              subject,
-              sectionCode,
-              "LECTURE",
-              lecHours,
-              rooms,
-              sectionTimeSlots,
-              labResult.day,
-              labResult.endSlotIndex,
-              labResult.roomId,
-              labResult.roomName,
-              occupiedRoomSlots,
-              occupiedSectionSlots,
-              occupiedCourseSlots,
-              occupiedSubjectTimeSlots,
-              sectionActiveDays,
-              scheduleEntries,
-              breakPeriods,
+          const lecSlots = sectionTimeSlots.slice(i, i + lecSlotsNeeded);
+          const labSlotsAfter = sectionTimeSlots.slice(i + lecSlotsNeeded, i + lecSlotsNeeded + labSlotsNeeded);
+          const labSlotsBefore = sectionTimeSlots.slice(i, i + labSlotsNeeded);
+          const lecSlotsAfter = sectionTimeSlots.slice(i + labSlotsNeeded, i + labSlotsNeeded + lecSlotsNeeded);
+
+          // Check break periods for both orderings
+          const lecHitsBreak = lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods));
+          const labHitsBreakAfter = labSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
+          const labHitsBreakBefore = labSlotsBefore.some((slot) => isBreakTime(day, slot, breakPeriods));
+          const lecHitsBreakAfter = lecSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
+
+          // Try ordering: Lecture first, then Lab
+          if (!lecHitsBreak && !labHitsBreakAfter) {
+            const lecFree = lecSlots.every((slot) =>
+              !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
+              !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`) &&
+              !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
             );
-          }
-        }
-      } else {
-        // Standard independent scheduling (separate times/days)
-        if (hasLecture) {
-          scheduleSession(
-            subject,
-            sectionCode,
-            "LECTURE",
-            lecHours,
-            rooms,
-            days,
-            sectionTimeSlots,
-            occupiedRoomSlots,
-            occupiedSectionSlots,
-            occupiedCourseSlots,
-            occupiedSubjectTimeSlots,
-            sectionActiveDays,
-            scheduleEntries,
-            preferredVacantDay,
-            breakPeriods,
-            subject.lab_type,
-            lectureRoomTypeId,
-          );
-        }
+            const labFree = labSlotsAfter.every((slot) =>
+              !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
+              !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`) &&
+              !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            );
 
-        if (hasLab) {
-          scheduleSession(
-            subject,
-            sectionCode,
-            "LABORATORY",
-            labHours,
-            rooms,
-            days,
-            sectionTimeSlots,
-            occupiedRoomSlots,
-            occupiedSectionSlots,
-            occupiedCourseSlots,
-            occupiedSubjectTimeSlots,
-            sectionActiveDays,
-            scheduleEntries,
-            preferredVacantDay,
-            breakPeriods,
-            subject.lab_type,
-            lectureRoomTypeId,
-          );
+            if (lecFree && labFree) {
+              // Try to find rooms
+              let lecRoom: RoomForGeneration | null = null;
+              let labRoom: RoomForGeneration | null = null;
+
+              for (const room of lecRooms) {
+                if (lecSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+                  lecRoom = room;
+                  break;
+                }
+              }
+              for (const room of labRooms) {
+                if (labSlotsAfter.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+                  labRoom = room;
+                  break;
+                }
+              }
+
+              if (lecRoom && labRoom) {
+                // Schedule Lecture
+                lecSlots.forEach((slot) => {
+                  occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+                  occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
+                  occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
+                  occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+                });
+                activeDays.add(day);
+
+                const lecStartTime = lecSlots[0].split(" - ")[0];
+                const lecEndTime = lecSlots[lecSlots.length - 1].split(" - ")[1];
+                scheduleEntries.push({
+                  sectionCode,
+                  subjectId: subject.subject_id,
+                  courseCode: subject.course_code,
+                  courseName: subject.course_name,
+                  componentType: "LECTURE",
+                  units: subject.lecture_units,
+                  roomId: lecRoom.room_id,
+                  roomName: lecRoom.room_name || "Unassigned Room",
+                  day,
+                  startTime: lecStartTime,
+                  endTime: lecEndTime,
+                  type: "lecture",
+                });
+                scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
+                  day, startIndex: i, endIndex: i + lecSlotsNeeded
+                });
+
+                // Schedule Lab immediately after
+                labSlotsAfter.forEach((slot) => {
+                  occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+                  occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
+                  occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
+                  occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+                });
+
+                const labStartTime = labSlotsAfter[0].split(" - ")[0];
+                const labEndTime = labSlotsAfter[labSlotsAfter.length - 1].split(" - ")[1];
+                scheduleEntries.push({
+                  sectionCode,
+                  subjectId: subject.subject_id,
+                  courseCode: subject.course_code,
+                  courseName: subject.course_name,
+                  componentType: "LABORATORY",
+                  units: subject.lab_units,
+                  roomId: labRoom.room_id,
+                  roomName: labRoom.room_name || "Unassigned Room",
+                  day,
+                  startTime: labStartTime,
+                  endTime: labEndTime,
+                  type: "laboratory",
+                });
+                scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
+                  day, startIndex: i + lecSlotsNeeded, endIndex: i + lecSlotsNeeded + labSlotsNeeded
+                });
+
+                return true;
+              }
+            }
+          }
+
+          // Try ordering: Lab first, then Lecture
+          if (!labHitsBreakBefore && !lecHitsBreakAfter) {
+            const labFree = labSlotsBefore.every((slot) =>
+              !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
+              !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`) &&
+              !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            );
+            const lecFree = lecSlotsAfter.every((slot) =>
+              !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
+              !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`) &&
+              !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            );
+
+            if (labFree && lecFree) {
+              let labRoom: RoomForGeneration | null = null;
+              let lecRoom: RoomForGeneration | null = null;
+
+              for (const room of labRooms) {
+                if (labSlotsBefore.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+                  labRoom = room;
+                  break;
+                }
+              }
+              for (const room of lecRooms) {
+                if (lecSlotsAfter.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+                  lecRoom = room;
+                  break;
+                }
+              }
+
+              if (labRoom && lecRoom) {
+                // Schedule Lab first
+                labSlotsBefore.forEach((slot) => {
+                  occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+                  occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
+                  occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
+                  occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+                });
+                activeDays.add(day);
+
+                const labStartTime = labSlotsBefore[0].split(" - ")[0];
+                const labEndTime = labSlotsBefore[labSlotsBefore.length - 1].split(" - ")[1];
+                scheduleEntries.push({
+                  sectionCode,
+                  subjectId: subject.subject_id,
+                  courseCode: subject.course_code,
+                  courseName: subject.course_name,
+                  componentType: "LABORATORY",
+                  units: subject.lab_units,
+                  roomId: labRoom.room_id,
+                  roomName: labRoom.room_name || "Unassigned Room",
+                  day,
+                  startTime: labStartTime,
+                  endTime: labEndTime,
+                  type: "laboratory",
+                });
+                scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
+                  day, startIndex: i, endIndex: i + labSlotsNeeded
+                });
+
+                // Schedule Lecture immediately after
+                lecSlotsAfter.forEach((slot) => {
+                  occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+                  occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
+                  occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
+                  occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+                });
+
+                const lecStartTime = lecSlotsAfter[0].split(" - ")[0];
+                const lecEndTime = lecSlotsAfter[lecSlotsAfter.length - 1].split(" - ")[1];
+                scheduleEntries.push({
+                  sectionCode,
+                  subjectId: subject.subject_id,
+                  courseCode: subject.course_code,
+                  courseName: subject.course_name,
+                  componentType: "LECTURE",
+                  units: subject.lecture_units,
+                  roomId: lecRoom.room_id,
+                  roomName: lecRoom.room_name || "Unassigned Room",
+                  day,
+                  startTime: lecStartTime,
+                  endTime: lecEndTime,
+                  type: "lecture",
+                });
+                scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
+                  day, startIndex: i + labSlotsNeeded, endIndex: i + labSlotsNeeded + lecSlotsNeeded
+                });
+
+                return true;
+              }
+            }
+          }
         }
       }
+
+      // If preferBefore6PM failed, retry without the constraint
+      if (preferBefore6PM) {
+        for (const day of prioritizedDays) {
+          if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
+          if (!activeDays.has(day) && activeDays.size >= 5) continue;
+
+          for (let i = 0; i <= sectionTimeSlots.length - lecSlotsNeeded - labSlotsNeeded; i++) {
+            const lecSlots = sectionTimeSlots.slice(i, i + lecSlotsNeeded);
+            const labSlotsAfter = sectionTimeSlots.slice(i + lecSlotsNeeded, i + lecSlotsNeeded + labSlotsNeeded);
+            const labSlotsBefore = sectionTimeSlots.slice(i, i + labSlotsNeeded);
+            const lecSlotsAfter = sectionTimeSlots.slice(i + labSlotsNeeded, i + labSlotsNeeded + lecSlotsNeeded);
+
+            const lecHitsBreak = lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods));
+            const labHitsBreakAfter = labSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
+            const labHitsBreakBefore = labSlotsBefore.some((slot) => isBreakTime(day, slot, breakPeriods));
+            const lecHitsBreakAfter = lecSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
+
+            // Try ordering: Lecture first, then Lab
+            if (!lecHitsBreak && !labHitsBreakAfter) {
+              const lecFree = lecSlots.every((slot) =>
+                !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
+                !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`) &&
+                !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+              );
+              const labFree = labSlotsAfter.every((slot) =>
+                !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
+                !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`) &&
+                !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+              );
+
+              if (lecFree && labFree) {
+                let lecRoom: RoomForGeneration | null = null;
+                let labRoom: RoomForGeneration | null = null;
+
+                for (const room of lecRooms) {
+                  if (lecSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+                    lecRoom = room;
+                    break;
+                  }
+                }
+                for (const room of labRooms) {
+                  if (labSlotsAfter.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+                    labRoom = room;
+                    break;
+                  }
+                }
+
+                if (lecRoom && labRoom) {
+                  lecSlots.forEach((slot) => {
+                    occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+                    occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
+                    occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
+                    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+                  });
+                  activeDays.add(day);
+
+                  scheduleEntries.push({
+                    sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
+                    courseName: subject.course_name, componentType: "LECTURE", units: subject.lecture_units,
+                    roomId: lecRoom.room_id, roomName: lecRoom.room_name || "Unassigned Room",
+                    day, startTime: lecSlots[0].split(" - ")[0], endTime: lecSlots[lecSlots.length - 1].split(" - ")[1],
+                    type: "lecture",
+                  });
+                  scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
+                    day, startIndex: i, endIndex: i + lecSlotsNeeded
+                  });
+
+                  labSlotsAfter.forEach((slot) => {
+                    occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+                    occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
+                    occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
+                    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+                  });
+
+                  scheduleEntries.push({
+                    sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
+                    courseName: subject.course_name, componentType: "LABORATORY", units: subject.lab_units,
+                    roomId: labRoom.room_id, roomName: labRoom.room_name || "Unassigned Room",
+                    day, startTime: labSlotsAfter[0].split(" - ")[0], endTime: labSlotsAfter[labSlotsAfter.length - 1].split(" - ")[1],
+                    type: "laboratory",
+                  });
+                  scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
+                    day, startIndex: i + lecSlotsNeeded, endIndex: i + lecSlotsNeeded + labSlotsNeeded
+                  });
+
+                  return true;
+                }
+              }
+            }
+
+            // Try ordering: Lab first, then Lecture
+            if (!labHitsBreakBefore && !lecHitsBreakAfter) {
+              const labFree = labSlotsBefore.every((slot) =>
+                !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
+                !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`) &&
+                !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+              );
+              const lecFree = lecSlotsAfter.every((slot) =>
+                !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
+                !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`) &&
+                !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+              );
+
+              if (labFree && lecFree) {
+                let labRoom: RoomForGeneration | null = null;
+                let lecRoom: RoomForGeneration | null = null;
+
+                for (const room of labRooms) {
+                  if (labSlotsBefore.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+                    labRoom = room;
+                    break;
+                  }
+                }
+                for (const room of lecRooms) {
+                  if (lecSlotsAfter.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+                    lecRoom = room;
+                    break;
+                  }
+                }
+
+                if (labRoom && lecRoom) {
+                  labSlotsBefore.forEach((slot) => {
+                    occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+                    occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
+                    occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
+                    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+                  });
+                  activeDays.add(day);
+
+                  scheduleEntries.push({
+                    sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
+                    courseName: subject.course_name, componentType: "LABORATORY", units: subject.lab_units,
+                    roomId: labRoom.room_id, roomName: labRoom.room_name || "Unassigned Room",
+                    day, startTime: labSlotsBefore[0].split(" - ")[0], endTime: labSlotsBefore[labSlotsBefore.length - 1].split(" - ")[1],
+                    type: "laboratory",
+                  });
+                  scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
+                    day, startIndex: i, endIndex: i + labSlotsNeeded
+                  });
+
+                  lecSlotsAfter.forEach((slot) => {
+                    occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+                    occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
+                    occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
+                    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+                  });
+
+                  scheduleEntries.push({
+                    sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
+                    courseName: subject.course_name, componentType: "LECTURE", units: subject.lecture_units,
+                    roomId: lecRoom.room_id, roomName: lecRoom.room_name || "Unassigned Room",
+                    day, startTime: lecSlotsAfter[0].split(" - ")[0], endTime: lecSlotsAfter[lecSlotsAfter.length - 1].split(" - ")[1],
+                    type: "lecture",
+                  });
+                  scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
+                    day, startIndex: i + labSlotsNeeded, endIndex: i + labSlotsNeeded + lecSlotsNeeded
+                  });
+
+                  return true;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return false;
     }
 
     // Categorize sections into SHS and Tertiary
@@ -645,7 +1015,7 @@ export async function generateRoomAndClassSchedules(
       for (const subject of subjects) {
         const labUnits = subject.lab_units || 0;
         if (labUnits > 0) {
-          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay);
+          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay, false);
         }
       }
     }
@@ -660,7 +1030,7 @@ export async function generateRoomAndClassSchedules(
       for (const subject of subjects) {
         const labUnits = subject.lab_units || 0;
         if (labUnits > 0) {
-          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay);
+          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay, true);
         }
       }
     }
@@ -676,7 +1046,7 @@ export async function generateRoomAndClassSchedules(
         const labUnits = subject.lab_units || 0;
         const lectureUnits = subject.lecture_units || 0;
         if (labUnits === 0 && lectureUnits > 0) {
-          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay);
+          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay, false);
         }
       }
     }
@@ -692,7 +1062,7 @@ export async function generateRoomAndClassSchedules(
         const labUnits = subject.lab_units || 0;
         const lectureUnits = subject.lecture_units || 0;
         if (labUnits === 0 && lectureUnits > 0) {
-          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay);
+          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay, true);
         }
       }
     }
@@ -843,6 +1213,7 @@ function scheduleSession(
   breakPeriods: BreakPeriodRecord[],
   requiredLabTypeId?: string | null,
   lectureRoomTypeId?: string | null,
+  preferBefore6PM: boolean = false,
 ): {
   day: string;
   endSlotIndex: number;
@@ -863,169 +1234,225 @@ function scheduleSession(
     preferredVacantDay,
   ];
 
-  // Pass 1: Room & Break Period Aware Assignment
-  for (const day of prioritizedDays) {
-    if (
-      day === preferredVacantDay &&
-      activeDays.size < 5 &&
-      activeDays.size > 0
-    )
-      continue;
-    if (!activeDays.has(day) && activeDays.size >= 5) continue;
+  // Helper to check if a session ending at slot index ends before 18:00
+  function sessionEndsBefore6PM(endIndex: number): boolean {
+    if (endIndex > timeSlots.length) return false;
+    const lastSlot = timeSlots[endIndex - 1];
+    const endTime = lastSlot.split(" - ")[1];
+    const endMinutes = timeToMinutes(endTime);
+    return endMinutes <= 18 * 60; // 18:00 = 6 PM
+  }
 
-    for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
-      const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
+  // Helper function for room-aware assignment with optional slot filter
+  function tryRoomAwareAssignment(
+    shouldSkipSlot: (i: number) => boolean,
+  ): {
+    day: string;
+    endSlotIndex: number;
+    roomId: string | null;
+    roomName: string;
+  } | null {
+    for (const day of prioritizedDays) {
+      if (
+        day === preferredVacantDay &&
+        activeDays.size < 5 &&
+        activeDays.size > 0
+      )
+        continue;
+      if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
-      const hitsBreak = sessionSlots.some((slot) =>
-        isBreakTime(day, slot, breakPeriods),
-      );
-      if (hitsBreak) continue;
+      for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
+        if (shouldSkipSlot(i)) continue;
 
-      const isSectionFree = sessionSlots.every(
-        (slot: string) =>
-          !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`),
-      );
-      if (!isSectionFree) continue;
+        const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
 
-      const isCourseFree = sessionSlots.every(
-        (slot: string) =>
-          !occupiedCourseSlots.has(
-            `${subject.course_code}_${componentType}_${day}_${slot}`,
-          ),
-      );
-      if (!isCourseFree) continue;
-
-      const isSubjectTimeFree = sessionSlots.every(
-        (slot: string) =>
-          !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
-      );
-      if (!isSubjectTimeFree) continue;
-
-      for (const room of fallbackRooms) {
-        const isRoomFree = sessionSlots.every(
-          (slot: string) =>
-            !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+        const hitsBreak = sessionSlots.some((slot) =>
+          isBreakTime(day, slot, breakPeriods),
         );
+        if (hitsBreak) continue;
 
-        if (isRoomFree) {
-          sessionSlots.forEach((slot: string) => {
-            occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-            occupiedRoomSlots.add(`${room.room_id}_${day}_${slot}`);
-            occupiedCourseSlots.add(
+        const isSectionFree = sessionSlots.every(
+          (slot: string) =>
+            !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`),
+        );
+        if (!isSectionFree) continue;
+
+        const isCourseFree = sessionSlots.every(
+          (slot: string) =>
+            !occupiedCourseSlots.has(
               `${subject.course_code}_${componentType}_${day}_${slot}`,
-            );
-            occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-          });
-          activeDays.add(day);
+            ),
+        );
+        if (!isCourseFree) continue;
 
-          const startTime = sessionSlots[0].split(" - ")[0];
-          const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
-          const units =
-            componentType === "LECTURE"
-              ? subject.lecture_units
-              : subject.lab_units;
+        const isSubjectTimeFree = sessionSlots.every(
+          (slot: string) =>
+            !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
+        );
+        if (!isSubjectTimeFree) continue;
 
-          scheduleEntries.push({
-            sectionCode,
-            subjectId: subject.subject_id,
-            courseCode: subject.course_code,
-            courseName: subject.course_name,
-            componentType,
-            units,
-            roomId: room.room_id,
-            roomName: room.room_name || "Unassigned Room",
-            day,
-            startTime,
-            endTime,
-            type: componentType.toLowerCase(),
-          });
-          return {
-            day,
-            endSlotIndex: i + slotsNeeded,
-            roomId: room.room_id,
-            roomName: room.room_name || "Unassigned Room",
-          };
+        for (const room of fallbackRooms) {
+          const isRoomFree = sessionSlots.every(
+            (slot: string) =>
+              !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+          );
+
+          if (isRoomFree) {
+            sessionSlots.forEach((slot: string) => {
+              occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+              occupiedRoomSlots.add(`${room.room_id}_${day}_${slot}`);
+              occupiedCourseSlots.add(
+                `${subject.course_code}_${componentType}_${day}_${slot}`,
+              );
+              occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+            });
+            activeDays.add(day);
+
+            const startTime = sessionSlots[0].split(" - ")[0];
+            const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
+            const units =
+              componentType === "LECTURE"
+                ? subject.lecture_units
+                : subject.lab_units;
+
+            scheduleEntries.push({
+              sectionCode,
+              subjectId: subject.subject_id,
+              courseCode: subject.course_code,
+              courseName: subject.course_name,
+              componentType,
+              units,
+              roomId: room.room_id,
+              roomName: room.room_name || "Unassigned Room",
+              day,
+              startTime,
+              endTime,
+              type: componentType.toLowerCase(),
+            });
+            return {
+              day,
+              endSlotIndex: i + slotsNeeded,
+              roomId: room.room_id,
+              roomName: room.room_name || "Unassigned Room",
+            };
+          }
         }
       }
     }
+    return null;
+  }
+
+  // Pass 1: Room & Break Period Aware Assignment
+  if (preferBefore6PM) {
+    // First try: only slots ending before 6 PM
+    const result = tryRoomAwareAssignment((i) => !sessionEndsBefore6PM(i + slotsNeeded));
+    if (result) return result;
+
+    // Second try: all slots (fallback when before-6-PM slots are exhausted)
+    return tryRoomAwareAssignment(() => false);
+  } else {
+    const result = tryRoomAwareAssignment(() => false);
+    if (result) return result;
   }
 
   // Pass 2: Fallback Pass without room constraint
-  for (const day of prioritizedDays) {
-    if (
-      day === preferredVacantDay &&
-      activeDays.size < 5 &&
-      activeDays.size > 0
-    )
-      continue;
-    if (!activeDays.has(day) && activeDays.size >= 5) continue;
+  // Helper for fallback assignment without room constraint, with optional slot filter
+  function tryFallbackAssignment(
+    shouldSkipSlot: (i: number) => boolean,
+  ): {
+    day: string;
+    endSlotIndex: number;
+    roomId: string | null;
+    roomName: string;
+  } | null {
+    for (const day of prioritizedDays) {
+      if (
+        day === preferredVacantDay &&
+        activeDays.size < 5 &&
+        activeDays.size > 0
+      )
+        continue;
+      if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
-    for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
-      const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
+      for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
+        if (shouldSkipSlot(i)) continue;
 
-      const hitsBreak = sessionSlots.some((slot) =>
-        isBreakTime(day, slot, breakPeriods),
-      );
-      if (hitsBreak) continue;
+        const sessionSlots = timeSlots.slice(i, i + slotsNeeded);
 
-      const isSectionFree = sessionSlots.every(
-        (slot: string) =>
-          !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`),
-      );
-      if (!isSectionFree) continue;
-
-      const isCourseFree = sessionSlots.every(
-        (slot: string) =>
-          !occupiedCourseSlots.has(
-            `${subject.course_code}_${componentType}_${day}_${slot}`,
-          ),
-      );
-      if (!isCourseFree) continue;
-
-      const isSubjectTimeFree = sessionSlots.every(
-        (slot: string) =>
-          !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
-      );
-      if (!isSubjectTimeFree) continue;
-
-      sessionSlots.forEach((slot: string) => {
-        occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-        occupiedCourseSlots.add(
-          `${subject.course_code}_${componentType}_${day}_${slot}`,
+        const hitsBreak = sessionSlots.some((slot) =>
+          isBreakTime(day, slot, breakPeriods),
         );
-        occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-      });
-      activeDays.add(day);
+        if (hitsBreak) continue;
 
-      const startTime = sessionSlots[0].split(" - ")[0];
-      const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
-      const units =
-        componentType === "LECTURE" ? subject.lecture_units : subject.lab_units;
+        const isSectionFree = sessionSlots.every(
+          (slot: string) =>
+            !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`),
+        );
+        if (!isSectionFree) continue;
 
-      scheduleEntries.push({
-        sectionCode,
-        subjectId: subject.subject_id,
-        courseCode: subject.course_code,
-        courseName: subject.course_name,
-        componentType,
-        units,
-        roomId: null,
-        roomName: "Unassigned Room",
-        day,
-        startTime,
-        endTime,
-        type: componentType.toLowerCase(),
-      });
-      return {
-        day,
-        endSlotIndex: i + slotsNeeded,
-        roomId: null,
-        roomName: "Unassigned Room",
-      };
+        const isCourseFree = sessionSlots.every(
+          (slot: string) =>
+            !occupiedCourseSlots.has(
+              `${subject.course_code}_${componentType}_${day}_${slot}`,
+            ),
+        );
+        if (!isCourseFree) continue;
+
+        const isSubjectTimeFree = sessionSlots.every(
+          (slot: string) =>
+            !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`),
+        );
+        if (!isSubjectTimeFree) continue;
+
+        sessionSlots.forEach((slot: string) => {
+          occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+          occupiedCourseSlots.add(
+            `${subject.course_code}_${componentType}_${day}_${slot}`,
+          );
+          occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+        });
+        activeDays.add(day);
+
+        const startTime = sessionSlots[0].split(" - ")[0];
+        const endTime = sessionSlots[sessionSlots.length - 1].split(" - ")[1];
+        const units =
+          componentType === "LECTURE" ? subject.lecture_units : subject.lab_units;
+
+        scheduleEntries.push({
+          sectionCode,
+          subjectId: subject.subject_id,
+          courseCode: subject.course_code,
+          courseName: subject.course_name,
+          componentType,
+          units,
+          roomId: null,
+          roomName: "Unassigned Room",
+          day,
+          startTime,
+          endTime,
+          type: componentType.toLowerCase(),
+        });
+        return {
+          day,
+          endSlotIndex: i + slotsNeeded,
+          roomId: null,
+          roomName: "Unassigned Room",
+        };
+      }
     }
+    return null;
   }
 
-  return null;
+  if (preferBefore6PM) {
+    // First try: only slots ending before 6 PM
+    const result = tryFallbackAssignment((i) => !sessionEndsBefore6PM(i + slotsNeeded));
+    if (result) return result;
+
+    // Second try: all slots (fallback when before-6-PM slots are exhausted)
+    return tryFallbackAssignment(() => false);
+  } else {
+    return tryFallbackAssignment(() => false);
+  }
 }
 
 function scheduleSessionStartingAtRoom(

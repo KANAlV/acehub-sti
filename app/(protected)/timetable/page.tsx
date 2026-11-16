@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Badge,
@@ -12,13 +12,14 @@ import {
   Select,
   Tooltip,
   useThemeMode,
+  Dropdown,
 } from "flowbite-react";
 import {
   HiArrowLeft,
   HiExclamationCircle,
   HiOutlineExclamationCircle,
 } from "react-icons/hi";
-import { HiExclamationTriangle } from "react-icons/hi2";
+import { HiCheck, HiExclamationTriangle } from "react-icons/hi2";
 import {
   fetchScheduleByName,
   fetchTimetableEntriesByScheduleId,
@@ -37,6 +38,210 @@ import {
 } from "@/app/actions/system";
 import { GiCoffeeCup } from "react-icons/gi";
 import { generateSubjectAbv } from "@/utils/NameAbbreviator";
+
+interface RoomAccordionDropdownProps {
+  allRooms: RoomForGeneration[];
+  selectedRoom: string;
+  allRoomsLabel: string;
+  selectedSection: string;
+  onRoomChange: (value: string) => void;
+}
+
+function RoomAccordionDropdown({
+  allRooms,
+  selectedRoom,
+  allRoomsLabel,
+  selectedSection,
+  onRoomChange,
+}: RoomAccordionDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [expandedFloors, setExpandedFloors] = useState<Set<string>>(new Set());
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const sortAlphanumeric = (a: string, b: string) => {
+    const numA = parseInt(a, 10);
+    const numB = parseInt(b, 10);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    if (!isNaN(numA)) return -1;
+    if (!isNaN(numB)) return 1;
+    return a.localeCompare(b);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const floorRooms = allRooms
+    .filter((r) => r.floor_level !== null && r.floor_level > 0)
+    .sort((a, b) => {
+      const floorDiff = (a.floor_level || 0) - (b.floor_level || 0);
+      if (floorDiff !== 0) return floorDiff;
+      return sortAlphanumeric(a.room_name ?? "", b.room_name ?? "");
+    })
+    .reduce<Record<number, RoomForGeneration[]>>((acc, room) => {
+      const floor = room.floor_level!;
+      if (!acc[floor]) acc[floor] = [];
+      acc[floor].push(room);
+      return acc;
+    }, {});
+
+  const unassignedRooms = allRooms
+    .filter((r) => r.floor_level === null || r.floor_level <= 0)
+    .sort((a, b) => sortAlphanumeric(a.room_name ?? "", b.room_name ?? ""));
+
+  const toggleFloor = (floor: string) => {
+    setExpandedFloors((prev) => {
+      const next = new Set(prev);
+      if (next.has(floor)) {
+        next.delete(floor);
+      } else {
+        next.add(floor);
+      }
+      return next;
+    });
+  };
+
+  const handleRoomChange = (val: string) => {
+    if (val === "ALL" && selectedSection === "ALL") return;
+    onRoomChange(val);
+    setOpen(false);
+  };
+
+  const displayLabel = selectedRoom === allRoomsLabel ? "-- All Rooms --" : selectedRoom;
+
+  return (
+    <div className="relative w-full sm:w-44" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-xs text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+      >
+        <span className="truncate">{displayLabel}</span>
+        <svg
+          className={`ml-2 h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-800">
+          <button
+            type="button"
+            onClick={() => handleRoomChange(allRoomsLabel)}
+            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+              selectedRoom === allRoomsLabel
+                ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+            }`}
+          >
+            -- All Rooms --
+            {selectedRoom === allRoomsLabel && (
+              <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+            )}
+          </button>
+
+          {Object.entries(floorRooms)
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([floor, rooms]) => (
+              <div key={floor} className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => toggleFloor(floor)}
+                  className="flex w-full items-center justify-between rounded px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                >
+                  <span>Floor {floor}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-500 dark:text-gray-500">{rooms.length}</span>
+                    <svg
+                      className={`h-3 w-3 transition-transform ${expandedFloors.has(floor) ? "rotate-90" : ""}`}
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </button>
+                {expandedFloors.has(floor) && (
+                  <div className="ml-2 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
+                    {rooms.map((room) => (
+                      <button
+                        key={room.room_id}
+                        type="button"
+                        onClick={() => handleRoomChange(room.room_name ?? "")}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
+                          selectedRoom === (room.room_name ?? "")
+                            ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                            : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        {room.room_name}
+                        {selectedRoom === (room.room_name ?? "") && (
+                          <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+          {unassignedRooms.length > 0 && (
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => toggleFloor("unassigned")}
+                className="flex w-full items-center justify-between rounded px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              >
+                <span>Unassigned Floor</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-500 dark:text-gray-500">{unassignedRooms.length}</span>
+                  <svg
+                    className={`h-3 w-3 transition-transform ${expandedFloors.has("unassigned") ? "rotate-90" : ""}`}
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </button>
+              {expandedFloors.has("unassigned") && (
+                <div className="ml-2 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
+                  {unassignedRooms.map((room) => (
+                    <button
+                      key={room.room_id}
+                      type="button"
+                      onClick={() => handleRoomChange(room.room_name ?? "")}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
+                        selectedRoom === (room.room_name ?? "")
+                          ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                          : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                      }`}
+                    >
+                      {room.room_name}
+                      {selectedRoom === (room.room_name ?? "") && (
+                        <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface BreakPeriodRecord {
   break_id: string;
@@ -748,24 +953,13 @@ export default function Timetable() {
               <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
                 Room:
               </span>
-              <Select
-                className="max-h-40 w-full overflow-y-auto sm:w-44 [&_select]:max-h-40 [&_select]:overflow-y-auto"
-                value={selectedTimetableRoom}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === "ALL" && selectedTimetableSection === "ALL") {
-                    return;
-                  }
-                  setSelectedTimetableRoom(val);
-                }}
-              >
-                <option value="ALL">-- All Rooms --</option>
-                {allRooms.sort((a, b) => sortAlphanumeric(a.room_name ?? "", b.room_name ?? "")).map((room) => (
-                  <option key={room.room_id} value={room.room_name ?? ""}>
-                    {room.room_name}
-                  </option>
-                ))}
-              </Select>
+              <RoomAccordionDropdown
+                allRooms={allRooms}
+                selectedRoom={selectedTimetableRoom}
+                allRoomsLabel="ALL"
+                selectedSection={selectedTimetableSection}
+                onRoomChange={setSelectedTimetableRoom}
+              />
             </div>
           </div>
         </div>

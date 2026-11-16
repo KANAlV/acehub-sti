@@ -25,6 +25,7 @@ import {
   Tooltip,
   useThemeMode,
   TextInput,
+  Dropdown,
 } from "flowbite-react";
 import {
   HiArrowLeft,
@@ -52,6 +53,7 @@ import {
   fetchRoomTypeList,
   fetchFacultyLoadConfig,
   saveScheduleEntries,
+  getTeachersWithAqAndFcce,
   Configuration,
   TimetableEntryRecord,
   SubjectUnitsRecord,
@@ -66,12 +68,218 @@ import {
   exportByProgram,
   exportByYear,
   exportBySection,
+  exportByTeacher,
   getUniqueFloors,
   getUniquePrograms,
   getUniqueYears,
   getUniqueSections,
+  getUniqueTeachers,
 } from "@/utils/timetableExport";
 import { generateSubjectAbv } from "@/utils/NameAbbreviator";
+
+interface RoomAccordionDropdownProps {
+  allRooms: RoomForGeneration[];
+  selectedRoom: string;
+  allRoomsLabel: string;
+  selectedSection: string;
+  onRoomChange: (value: string) => void;
+}
+
+function RoomAccordionDropdown({
+  allRooms,
+  selectedRoom,
+  allRoomsLabel,
+  selectedSection,
+  onRoomChange,
+}: RoomAccordionDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [expandedFloors, setExpandedFloors] = useState<Set<string>>(new Set());
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const sortAlphanumeric = (a: string, b: string) => {
+    const numA = parseInt(a, 10);
+    const numB = parseInt(b, 10);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    if (!isNaN(numA)) return -1;
+    if (!isNaN(numB)) return 1;
+    return a.localeCompare(b);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const floorRooms = allRooms
+    .filter((r) => r.floor_level !== null && r.floor_level > 0)
+    .sort((a, b) => {
+      const floorDiff = (a.floor_level || 0) - (b.floor_level || 0);
+      if (floorDiff !== 0) return floorDiff;
+      return sortAlphanumeric(a.room_name ?? "", b.room_name ?? "");
+    })
+    .reduce<Record<number, RoomForGeneration[]>>((acc, room) => {
+      const floor = room.floor_level!;
+      if (!acc[floor]) acc[floor] = [];
+      acc[floor].push(room);
+      return acc;
+    }, {});
+
+  const unassignedRooms = allRooms
+    .filter((r) => r.floor_level === null || r.floor_level <= 0)
+    .sort((a, b) => sortAlphanumeric(a.room_name ?? "", b.room_name ?? ""));
+
+  const toggleFloor = (floor: string) => {
+    setExpandedFloors((prev) => {
+      const next = new Set(prev);
+      if (next.has(floor)) {
+        next.delete(floor);
+      } else {
+        next.add(floor);
+      }
+      return next;
+    });
+  };
+
+  const handleRoomChange = (val: string) => {
+    if (val === "ALL" && selectedSection === "ALL") return;
+    onRoomChange(val);
+    setOpen(false);
+  };
+
+  const displayLabel = selectedRoom === allRoomsLabel ? "-- All Rooms --" : selectedRoom;
+
+  return (
+    <div className="relative w-full sm:w-44" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-xs text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+      >
+        <span className="truncate">{displayLabel}</span>
+        <svg
+          className={`ml-2 h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-800">
+          <button
+            type="button"
+            onClick={() => handleRoomChange(allRoomsLabel)}
+            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+              selectedRoom === allRoomsLabel
+                ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+            }`}
+          >
+            -- All Rooms --
+            {selectedRoom === allRoomsLabel && (
+              <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+            )}
+          </button>
+
+          {Object.entries(floorRooms)
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([floor, rooms]) => (
+              <div key={floor} className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => toggleFloor(floor)}
+                  className="flex w-full items-center justify-between rounded px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                >
+                  <span>Floor {floor}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-500 dark:text-gray-500">{rooms.length}</span>
+                    <svg
+                      className={`h-3 w-3 transition-transform ${expandedFloors.has(floor) ? "rotate-90" : ""}`}
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </button>
+                {expandedFloors.has(floor) && (
+                  <div className="ml-2 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
+                    {rooms.map((room) => (
+                      <button
+                        key={room.room_id}
+                        type="button"
+                        onClick={() => handleRoomChange(room.room_name ?? "")}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
+                          selectedRoom === (room.room_name ?? "")
+                            ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                            : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        {room.room_name}
+                        {selectedRoom === (room.room_name ?? "") && (
+                          <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+          {unassignedRooms.length > 0 && (
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => toggleFloor("unassigned")}
+                className="flex w-full items-center justify-between rounded px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+              >
+                <span>Unassigned Floor</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-500 dark:text-gray-500">{unassignedRooms.length}</span>
+                  <svg
+                    className={`h-3 w-3 transition-transform ${expandedFloors.has("unassigned") ? "rotate-90" : ""}`}
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </button>
+              {expandedFloors.has("unassigned") && (
+                <div className="ml-2 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
+                  {unassignedRooms.map((room) => (
+                    <button
+                      key={room.room_id}
+                      type="button"
+                      onClick={() => handleRoomChange(room.room_name ?? "")}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
+                        selectedRoom === (room.room_name ?? "")
+                          ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                          : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                      }`}
+                    >
+                      {room.room_name}
+                      {selectedRoom === (room.room_name ?? "") && (
+                        <HiCheck className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ScheduleTimetableClientProps {
   scheduleName: string;
@@ -145,6 +353,9 @@ export default function ScheduleTimetableClient({
 
   // --- Config & Limits State --- //
   const [config, setConfig] = useState<Configuration | null>(null);
+  const [teacherEmploymentMap, setTeacherEmploymentMap] = useState<
+    Map<string, string>
+  >(new Map());
 
   // --- Rooms, Room Types & Subject Metadata Maps --- //
   const [allRooms, setAllRooms] = useState<RoomForGeneration[]>([]);
@@ -229,7 +440,7 @@ export default function ScheduleTimetableClient({
   // --- Excel Export Modal State --- //
   const [openExportModal, setOpenExportModal] = useState(false);
   const [exportTab, setExportTab] = useState<
-    "floor" | "program" | "year" | "section"
+    "floor" | "program" | "year" | "section" | "teacher"
   >("section");
   const [isExporting, setIsExporting] = useState(false);
 
@@ -246,6 +457,9 @@ export default function ScheduleTimetableClient({
   const [selectedExportSections, setSelectedExportSections] = useState<
     string[]
   >([]);
+
+  // Teacher checkboxes
+  const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
 
   const DAYS_CONFIG = [
     { id: 0, name: "Whole Week" },
@@ -375,10 +589,11 @@ export default function ScheduleTimetableClient({
 
     async function loadMasterData() {
       try {
-        const [roomRes, roomTypesRes, configRes] = await Promise.all([
+        const [roomRes, roomTypesRes, configRes, teachersRes] = await Promise.all([
           getRoomsForGeneration(),
           fetchRoomTypeList(null, "ASC", -1),
           fetchFacultyLoadConfig(),
+          getTeachersWithAqAndFcce({ search: null }),
         ]);
 
         if (roomRes.success && roomRes.data) {
@@ -389,6 +604,15 @@ export default function ScheduleTimetableClient({
         }
         if (configRes.success && configRes.data && configRes.data.length > 0) {
           setConfig(configRes.data[0]);
+        }
+        if (teachersRes.success && teachersRes.data) {
+          const empMap = new Map<string, string>();
+          (teachersRes.data as Array<{ teacher_id: string; employment_type?: string }>).forEach((t) => {
+            if (t.teacher_id && t.employment_type) {
+              empMap.set(t.teacher_id, t.employment_type);
+            }
+          });
+          setTeacherEmploymentMap(empMap);
         }
       } catch (err) {
         console.error("Error loading master data:", err);
@@ -818,8 +1042,25 @@ export default function ScheduleTimetableClient({
         } as unknown as LocalTimetableEntry,
       ];
 
-      const facultyLoadLimit = config?.faculty_load?.full_time ?? 21;
-      const overloadMax = config?.overload_max ?? 3;
+      const employmentType = teacherEmploymentMap.get(assignedTeacherId);
+      const normalized = (employmentType || "full_time").toLowerCase();
+      const facultyLoad = config?.faculty_load ?? {
+        full_time: 21,
+        part_time: 12,
+        part_time_full_load: 18,
+      };
+      let facultyLoadLimit: number;
+      if (
+        normalized.includes("part-time full load") ||
+        normalized.includes("part_time_full_load")
+      ) {
+        facultyLoadLimit = Number(facultyLoad.part_time_full_load ?? 18);
+      } else if (normalized.includes("part")) {
+        facultyLoadLimit = Number(facultyLoad.part_time ?? 12);
+      } else {
+        facultyLoadLimit = Number(facultyLoad.full_time ?? 21);
+      }
+      const overloadMax = Number(config?.overload_max ?? 3);
       const absoluteMaxLoad = facultyLoadLimit + overloadMax;
 
       const totalTeacherLoad = simulatedTeacherEntries.reduce((sum, item) => {
@@ -832,7 +1073,7 @@ export default function ScheduleTimetableClient({
         setConflictModalData({
           show: true,
           title: `Hard Limit Violation`,
-          message: `Moving this block exceeds the teacher's absolute maximum load limit (${totalTeacherLoad}/${absoluteMaxLoad} units). The block has been unassigned.`,
+          message: `Moving this block exceeds the teacher's absolute maximum load limit (${totalTeacherLoad}/${absoluteMaxLoad} units) for ${employmentType || "full-time"} employment type. The block has been unassigned.`,
         });
         if (targetEntryId) handleUnassignEntry(targetEntryId);
         return;
@@ -1455,29 +1696,13 @@ export default function ScheduleTimetableClient({
               <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
                 Room:
               </span>
-              <Select
-                className="max-h-40 w-full overflow-y-auto sm:w-44 [&_select]:max-h-40 [&_select]:overflow-y-auto"
-                value={selectedTimetableRoom}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === "ALL" && selectedTimetableSection === "ALL") {
-                    return;
-                  }
-                  setSelectedTimetableRoom(val);
-                }}
-              >
-                <option value={currentRoom}>-- All Rooms --</option>
-                {allRooms
-                  .sort(
-                    (a, b) =>
-                      sortAlphanumeric(a.room_name ?? "", b.room_name ?? ""),
-                  )
-                  .map((room) => (
-                    <option key={room.room_id} value={room.room_name ?? ""}>
-                      {room.room_name}
-                  </option>
-                ))}
-              </Select>
+              <RoomAccordionDropdown
+                allRooms={allRooms}
+                selectedRoom={selectedTimetableRoom}
+                allRoomsLabel={currentRoom}
+                selectedSection={selectedTimetableSection}
+                onRoomChange={setSelectedTimetableRoom}
+              />
             </div>
           </div>
         </div>
@@ -2452,6 +2677,7 @@ export default function ScheduleTimetableClient({
                   { key: "program", label: "By Program" },
                   { key: "year", label: "By Year" },
                   { key: "section", label: "By Section" },
+                  { key: "teacher", label: "By Teacher" },
                 ] as const
               ).map((tab) => (
                 <button
@@ -2648,6 +2874,52 @@ export default function ScheduleTimetableClient({
                 </div>
               </div>
             )}
+
+            {/* TAB: By Teacher */}
+            {exportTab === "teacher" && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Select Teachers
+                  </h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Each selected teacher will be exported as a separate sheet
+                    with their timetable.
+                  </p>
+                </div>
+                <div className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <div className="grid grid-cols-4 gap-2 select-none">
+                    {getUniqueTeachers(changedSchedules).map((teacher) => (
+                      <label
+                        key={teacher}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTeachers.includes(teacher)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedTeachers((prev) => [
+                                ...prev,
+                                teacher,
+                              ]);
+                            } else {
+                              setSelectedTeachers((prev) =>
+                                prev.filter((t) => t !== teacher),
+                              );
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {teacher}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </ModalBody>
         <ModalFooter>
@@ -2678,6 +2950,12 @@ export default function ScheduleTimetableClient({
                   await exportBySection(
                     entries,
                     selectedExportSections,
+                    scheduleName,
+                  );
+                } else if (exportTab === "teacher") {
+                  await exportByTeacher(
+                    entries,
+                    selectedTeachers,
                     scheduleName,
                   );
                 }

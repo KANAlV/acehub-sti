@@ -361,11 +361,8 @@ export default function FCCETermManagement() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button color="gray" onClick={() => setOpenAddAyModal(true)}>
+          <Button onClick={() => setOpenAddAyModal(true)}>
             <FaPlus className="mr-2" /> Add Academic Year
-          </Button>
-          <Button onClick={() => setOpenAddFcceModal(true)}>
-            <FaPlus className="mr-2" /> Add FCCE Record
           </Button>
         </div>
       </div>
@@ -378,17 +375,6 @@ export default function FCCETermManagement() {
                 <div className="flex cursor-pointer text-blue-500 hover:underline">
                   Academic Year / Semester{" "}
                   {sortBy === "ay_sem" &&
-                    (sortDir === "ASC" ? (
-                      <FaSortUp className="ml-1" />
-                    ) : (
-                      <FaSortDown className="ml-1" />
-                    ))}
-                </div>
-              </TableHeadCell>
-              <TableHeadCell onClick={() => handleSorting("created_at")}>
-                <div className="flex cursor-pointer text-blue-500 hover:underline">
-                  Created At{" "}
-                  {sortBy === "created_at" &&
                     (sortDir === "ASC" ? (
                       <FaSortUp className="ml-1" />
                     ) : (
@@ -412,9 +398,6 @@ export default function FCCETermManagement() {
                   <TableCell className="font-mono font-bold text-gray-900 dark:text-white">
                     {item.ay_sem}
                   </TableCell>
-                  <TableCell>
-                    {item.created_at ? new Date(item.created_at).toLocaleDateString() : "—"}
-                  </TableCell>
                   <TableCell className="text-right">
                     <HiChevronRight className="h-5 w-5 text-gray-400" />
                   </TableCell>
@@ -423,7 +406,7 @@ export default function FCCETermManagement() {
             ) : isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={3}
+                  colSpan={2}
                   className="py-6 text-center text-gray-500 italic"
                 >
                   <div className="flex items-center justify-center">
@@ -435,7 +418,7 @@ export default function FCCETermManagement() {
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={3}
+                  colSpan={2}
                   className="py-6 text-center text-gray-500 italic"
                 >
                   No academic terms found.

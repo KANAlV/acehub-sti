@@ -90,7 +90,7 @@ const DEFAULT_FULLTIME_AVAILABILITY: AvailabilitySlot[] = [
   {
     day: "[Mon - Fri]",
     startTime: "7:00 AM",
-    endTime: "8:00 PM",
+    endTime: "5:30 PM",
   },
 ];
 
@@ -262,7 +262,7 @@ export default function TeachersManagement() {
 
   /** --- Availability Display Formatter --- **/
   const renderAvailability = useCallback((item: TeacherRecord) => {
-    const isStrictPartTime = item.employment_type === "Part-Time";
+    const isStrictPartTime = ["Part-Time", "Part-Time Full Load"].includes(item.employment_type!);
     let avail: AvailabilitySlot[] = [];
 
     if (typeof item.availability === "string") {
@@ -285,7 +285,7 @@ export default function TeachersManagement() {
     }
 
     if (!isStrictPartTime) {
-      return <span>[Mon - Fri] 7:00 AM - 8:00 PM</span>;
+      return <span>[Mon - Fri] 7:00 AM - 5:30 PM</span>;
     }
 
     if (!Array.isArray(avail) || avail.length === 0) {
@@ -637,7 +637,7 @@ export default function TeachersManagement() {
   const handleAddEmploymentChange = useCallback((type: string) => {
     setInputEmploymentType(type);
     setAvailError("");
-    if (type === "Part-Time") {
+    if (["Part-Time", "Part-Time Full Load"].includes(type)) {
       setAvailabilityList([]);
     } else {
       setAvailabilityList(DEFAULT_FULLTIME_AVAILABILITY);
@@ -647,7 +647,7 @@ export default function TeachersManagement() {
   const handleEditEmploymentChange = useCallback((type: string) => {
     editEmploymentType(type);
     setEditAvailError("");
-    if (type === "Part-Time") {
+    if (["Part-Time", "Part-Time Full Load"].includes(type)) {
       setEditAvailabilityList([]);
     } else {
       setEditAvailabilityList(DEFAULT_FULLTIME_AVAILABILITY);
@@ -950,7 +950,7 @@ export default function TeachersManagement() {
       const avail =
         slots.length > 0
           ? slots
-          : emp === "Part-Time"
+          : ["Part-Time", "Part-Time Full Load"].includes(emp)
             ? []
             : DEFAULT_FULLTIME_AVAILABILITY;
 
@@ -2155,7 +2155,7 @@ export default function TeachersManagement() {
               </Select>
             </div>
 
-            {inputEmploymentType === "Part-Time" && (
+            {["Part-Time", "Part-Time Full Load"].includes(inputEmploymentType) && (
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2 dark:border-gray-700 dark:bg-gray-800">
                 <Label className="mb-2 block font-semibold">
                   Part-Time Availability
@@ -2474,7 +2474,7 @@ export default function TeachersManagement() {
               </Select>
             </div>
 
-            {newEmploymentType === "Part-Time" && (
+            {["Part-Time", "Part-Time Full Load"].includes(newEmploymentType) && (
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2 dark:border-gray-700 dark:bg-gray-800">
                 <Label className="mb-2 block font-semibold">
                   Part-Time Availability

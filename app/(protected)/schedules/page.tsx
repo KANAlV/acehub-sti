@@ -132,6 +132,7 @@ export default function ScheduleManagement() {
     scheduleName: string;
     curriculumIds: string[];
     tertiaryTerm: string;
+    shsTerm: string;
   } | null>(null);
 
   // --- Testing State: Preview generated data modals --- //
@@ -164,6 +165,7 @@ export default function ScheduleManagement() {
 
   // Auto Assign / Generation Specific State
   const [selectedTertiaryTerm, setSelectedTertiaryTerm] = useState("Term 1");
+  const [selectedShsTerm, setSelectedShsTerm] = useState("Term 1");
 
   // --- Pagination State --- //
   const maxRowSchedule = 10;
@@ -243,6 +245,7 @@ export default function ScheduleManagement() {
     setAddScheduleName("");
     setAddScheduleDescription("");
     setSelectedTertiaryTerm("Term 1");
+    setSelectedShsTerm("Term 1");
     setSelectedTemplate("");
     setCurriculumAdd([]);
     setCurriculaSearch("");
@@ -334,6 +337,7 @@ export default function ScheduleManagement() {
     const subjectRes = await fetchSubjectsForGeneration(
       curriculumIds,
       selectedTertiaryTerm,
+      selectedShsTerm,
     );
     if (testMode) {console.log("=== SUBJECTS FOR GENERATION RESPONSE ===", subjectRes);}
     if (!subjectRes.success || !subjectRes.data) {
@@ -362,6 +366,7 @@ export default function ScheduleManagement() {
         scheduleName: scheduleNameTrimmed,
         curriculumIds,
         tertiaryTerm: selectedTertiaryTerm,
+        shsTerm: selectedShsTerm,
       });
       setOpenLoadingModal(false);
       setIsSubmittingAutoGeneration(false);
@@ -388,10 +393,12 @@ export default function ScheduleManagement() {
     setGenerationProgress(20);
     setGenerationStatusText("Fetching subject requirements...");
 
+    const shsTerm = selectedShsTerm;
     // 1. Fetch subjects here so they are available to both branches
     const subjectRes = await fetchSubjectsForGeneration(
       curriculumIds,
       tertiaryTerm,
+      shsTerm,
     );
     if (!subjectRes.success || !subjectRes.data) {
       setIsSubmittingAutoGeneration(false);
@@ -413,6 +420,7 @@ export default function ScheduleManagement() {
       scheduleName,
       curriculumIds,
       tertiaryTerm,
+      shsTerm,
     );
     console.log("=== GENERATED SECTIONS RESULT ===", sectionRes);
 
@@ -448,6 +456,7 @@ export default function ScheduleManagement() {
         tertiaryTerm,
         sectionRes.sections,
         allSubjects,
+        shsTerm,
       );
       console.log("=== ROOM & CLASS SCHEDULE ENTRIES ===", roomScheduleRes);
 
@@ -490,6 +499,7 @@ export default function ScheduleManagement() {
         tertiaryTerm,
         sectionRes.sections,
         allSubjects,
+        shsTerm,
       );
       console.log("=== SUBJECT ASSIGNMENT RESULT ===", assignRes);
 
@@ -503,10 +513,10 @@ export default function ScheduleManagement() {
             const labUnits = subj.lab_units || 0;
             const entries: SaveScheduleEntryPayload[] = [];
 
-            const lecHours = lectureUnits * 1.5;
+            const lecHours = lectureUnits;
 
             if (lectureUnits > 0) {
-              const splitLecture = lecHours >= 5 ? Math.random() < 0.5 : false;
+              const splitLecture = lecHours >= 6 ? Math.random() < 0.5 : false;
               if (splitLecture) {
                 entries.push(
                   {
@@ -1077,17 +1087,33 @@ export default function ScheduleManagement() {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="tertiary-term-select">Term / Semester *</Label>
-                <HelperText>Used for section code generation (111, 211, etc.)</HelperText>
-                <Select
-                  id="tertiary-term-select"
-                  value={selectedTertiaryTerm}
-                  onChange={(e) => setSelectedTertiaryTerm(e.target.value)}
-                >
-                  <option value="Term 1">Term 1</option>
-                  <option value="Term 2">Term 2</option>
-                </Select>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="tertiary-term-select">Tertiary Term / Semester *</Label>
+                  <HelperText>Used to filter tertiary subjects from the selected curricula and generate section codes (111, 211, etc.)</HelperText>
+                  <Select
+                    id="tertiary-term-select"
+                    value={selectedTertiaryTerm}
+                    onChange={(e) => setSelectedTertiaryTerm(e.target.value)}
+                  >
+                    <option value="Term 1">Term 1</option>
+                    <option value="Term 2">Term 2</option>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="shs-term-select">SHS Term *</Label>
+                  <HelperText>Used to filter SHS subjects from the selected curricula</HelperText>
+                  <Select
+                    id="shs-term-select"
+                    value={selectedShsTerm}
+                    onChange={(e) => setSelectedShsTerm(e.target.value)}
+                  >
+                    <option value="Term 1">Term 1</option>
+                    <option value="Term 2">Term 2</option>
+                    <option value="Term 3">Term 3</option>
+                    <option value="Term 4">Term 4</option>
+                  </Select>
+                </div>
               </div>
 
               {creationMode === "semi-auto" && (

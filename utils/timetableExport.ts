@@ -25,6 +25,10 @@ export interface SectionExportOptions {
   selectedSections: string[];
 }
 
+export interface TeacherExportOptions {
+  selectedTeachers: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Day / time helpers
 // ---------------------------------------------------------------------------
@@ -154,6 +158,8 @@ interface GridSheetConfig {
   entries: LocalTimetableEntry[];
   /** When true, replaces the multi-row header with a single row showing the room name centered. */
   roomOnlyHeader?: boolean;
+  /** When true, uses a two-row header: schedule name on row 1, teacher name on row 2. */
+  teacherOnlyHeader?: boolean;
 }
 
 /**
@@ -169,7 +175,7 @@ function buildTimetableGridSheet(
   startRow: number = 1,
   startCol: number = 1,
 ): { rowsUsed: number; colsUsed: number } {
-  const { title, sy, program, section, room, adviser, track, entries, roomOnlyHeader } = config;
+  const { title, sy, program, section, room, adviser, track, entries, roomOnlyHeader, teacherOnlyHeader } = config;
 
   // Layout: 1 time column + 6 days with 19px gap columns between each day
   // Total: 1 time + 6 day cols + 5 gap cols between days = 12 columns
@@ -182,7 +188,23 @@ function buildTimetableGridSheet(
   let row = startRow;
 
   if (roomOnlyHeader) {
-    // Single row header with room name centered vertically and horizontally
+    // When a title is provided, use a two-row header: schedule name on row 1, room name on row 2
+    if (title) {
+      // Row 1: Schedule name (title)
+      for (let c = startCol; c < startCol + totalCols; c++) {
+        worksheet.getCell(row, c).value = null;
+      }
+      worksheet.getCell(row, startCol).value = title;
+      worksheet.getRow(row).font = { bold: true, size: 14 };
+      worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
+      const mergedScheduleCell = worksheet.getCell(row, startCol);
+      mergedScheduleCell.alignment = {
+        horizontal: "center" as const,
+        vertical: "middle" as const,
+      };
+      row++;
+    }
+    // Row: Room name centered vertically and horizontally
     for (let c = startCol; c < startCol + totalCols; c++) {
       worksheet.getCell(row, c).value = null;
     }
@@ -191,6 +213,35 @@ function buildTimetableGridSheet(
     worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
     const mergedHeaderCell = worksheet.getCell(row, startCol);
     mergedHeaderCell.alignment = {
+      horizontal: "center" as const,
+      vertical: "middle" as const,
+    };
+    row++;
+  } else if (teacherOnlyHeader) {
+    // Two-row header: schedule name on row 1, teacher name on row 2
+    // Row 1: Schedule name (title)
+    for (let c = startCol; c < startCol + totalCols; c++) {
+      worksheet.getCell(row, c).value = null;
+    }
+    worksheet.getCell(row, startCol).value = title || "";
+    worksheet.getRow(row).font = { bold: true, size: 14 };
+    worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
+    const mergedScheduleCell = worksheet.getCell(row, startCol);
+    mergedScheduleCell.alignment = {
+      horizontal: "center" as const,
+      vertical: "middle" as const,
+    };
+    row++;
+
+    // Row 2: Teacher name (section)
+    for (let c = startCol; c < startCol + totalCols; c++) {
+      worksheet.getCell(row, c).value = null;
+    }
+    worksheet.getCell(row, startCol).value = section || "";
+    worksheet.getRow(row).font = { bold: true, size: 12 };
+    worksheet.mergeCells(row, startCol, row, startCol + totalCols - 1);
+    const mergedTeacherCell = worksheet.getCell(row, startCol);
+    mergedTeacherCell.alignment = {
       horizontal: "center" as const,
       vertical: "middle" as const,
     };
@@ -386,9 +437,11 @@ function buildTimetableGridSheet(
   }
 
   // Set row height to 15pt for all time slot rows and apply wrapText
-  // With roomOnlyHeader: 1 header row + 1 day header row = 2 rows before time slots
-  // Without roomOnlyHeader: 5 header rows + 1 day header row = 6 rows before time slots
-  const headerRowsCount = roomOnlyHeader ? 2 : 6;
+  // With roomOnlyHeader and title: 2 header rows (title + room) + 1 day header row = 3 rows before time slots
+  // With roomOnlyHeader without title: 1 header row + 1 day header row = 2 rows before time slots
+  // With teacherOnlyHeader: 2 header rows + 1 day header row = 3 rows before time slots
+  // Without special header: 5 header rows + 1 day header row = 6 rows before time slots
+  const headerRowsCount = roomOnlyHeader ? (title ? 3 : 2) : (teacherOnlyHeader ? 3 : 6);
   const firstTimeSlotRow = startRow + headerRowsCount;
   const rows = worksheet.getRows(firstTimeSlotRow, TIME_SLOTS.length);
   if (rows) {
@@ -479,6 +532,7 @@ export async function exportByFloor(
       const result = buildTimetableGridSheet(
         ws,
         {
+          title: scheduleName,
           room: roomName,
           entries: roomEntries,
           roomOnlyHeader: true,
@@ -702,6 +756,49 @@ export async function exportBySection(
 }
 
 // ---------------------------------------------------------------------------
+// Export: By Teacher
+// ---------------------------------------------------------------------------
+
+export async function exportByTeacher(
+  entries: LocalTimetableEntry[],
+  selectedTeachers: string[],
+  scheduleName: string,
+): Promise<void> {
+  if (selectedTeachers.length === 0) return;
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "AceHub";
+  workbook.created = new Date();
+
+  for (const teacherCode of selectedTeachers) {
+    const teacherEntries = entries.filter(
+      (e) => e.teacher_code === teacherCode
+    );
+    if (teacherEntries.length === 0) continue;
+
+    // Find the teacher name from the first entry
+    const teacherName = teacherEntries[0].teacher_name || teacherCode;
+
+    const ws = workbook.addWorksheet(teacherCode, {
+      properties: { tabColor: { argb: "FFFF9800" } },
+    });
+
+    buildTimetableGridSheet(ws, {
+      title: scheduleName,
+      section: teacherName,
+      entries: teacherEntries,
+      teacherOnlyHeader: true,
+    }, 1, 1);
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  downloadWorkbook(
+    buffer,
+    `Timetable_ByTeacher_${scheduleName}_${new Date().toISOString().split("T")[0]}.xlsx`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Collect unique values for filter options
 // ---------------------------------------------------------------------------
 
@@ -756,4 +853,12 @@ export function getUniqueSections(entries: LocalTimetableEntry[]): string[] {
     if (!isNaN(numB)) return 1;
     return a.localeCompare(b);
   });
+}
+
+export function getUniqueTeachers(entries: LocalTimetableEntry[]): string[] {
+  const teachers = new Set<string>();
+  entries.forEach((e) => {
+    if (e.teacher_code) teachers.add(e.teacher_code);
+  });
+  return Array.from(teachers).sort();
 }
