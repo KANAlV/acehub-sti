@@ -112,8 +112,8 @@ const REQUIRED_HEADERS = [
 export default function SubjectsManagement() {
   const { instance, accounts } = useMsal();
   const activeAccount = useMemo(
-      () => instance.getActiveAccount() || accounts[0],
-      [instance, accounts]
+    () => instance.getActiveAccount() || accounts[0],
+    [instance, accounts]
   );
   const actor = activeAccount?.username || "system";
 
@@ -140,9 +140,9 @@ export default function SubjectsManagement() {
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
 
   const [selectedProgramFilter, setSelectedProgramFilter] =
-      useState<string>("ALL");
+    useState<string>("ALL");
   const [allProgramsFilterList, setAllProgramsFilterList] = useState<
-      ProgramRecord[]
+    ProgramRecord[]
   >([]);
 
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -175,7 +175,7 @@ export default function SubjectsManagement() {
   const [isAQLoading, setIsAQLoading] = useState<boolean>(false);
 
   const [selectedSubject, setSelectedSubject] = useState<SubjectRecord | null>(
-      null,
+    null,
   );
 
   const initialFormState: SubjectInput = useMemo(() => ({
@@ -191,6 +191,7 @@ export default function SubjectsManagement() {
 
   const [formData, setFormData] = useState<SubjectInput>(initialFormState);
   const [selectedYear, setSelectedYear] = useState<string>("");
+  const [selectedTerm, setSelectedTerm] = useState<string>("");
 
   const [isNewCurriculum, setIsNewCurriculum] = useState<boolean>(false);
   const [curriculumError, setCurriculumError] = useState<string>("");
@@ -200,11 +201,12 @@ export default function SubjectsManagement() {
   const [lecUnitsError, setLecUnitsError] = useState<string>("");
   const [labUnitsError, setLabUnitsError] = useState<string>("");
   const [yearLevelError, setYearLevelError] = useState<string>("");
+  const [termError, setTermError] = useState<string>("");
 
   const [showToast, setShowToast] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string>("");
   const [toastType, setToastType] = useState<"success" | "warning" | "error">(
-      "success",
+    "success",
   );
   const [progress, setProgress] = useState<number>(0);
   const [showToastTimer, setShowToastTimer] = useState<boolean>(false);
@@ -225,8 +227,8 @@ export default function SubjectsManagement() {
   }, [clearToastTimer]);
 
   const triggerToast = useCallback((
-      msg: string,
-      type: "success" | "warning" | "error" = "success",
+    msg: string,
+    type: "success" | "warning" | "error" = "success",
   ) => {
     clearToastTimer();
 
@@ -278,12 +280,12 @@ export default function SubjectsManagement() {
 
       try {
         const [curriculaRes, roomTypesRes, shsProgRes, tertiaryProgRes] =
-            await Promise.all([
-              fetchCurricula(null, "curriculum_version", "DESC", 100, 1),
-              fetchRoomTypeList(null, "ASC", 100, 1),
-              fetchPrograms(null, "shs", "program_code", "ASC", 0, 1),
-              fetchPrograms(null, "tertiary", "program_code", "ASC", 0, 1),
-            ]);
+          await Promise.all([
+            fetchCurricula(null, "curriculum_version", "DESC", 100, 1),
+            fetchRoomTypeList(null, "ASC", 100, 1),
+            fetchPrograms(null, "shs", "program_code", "ASC", 0, 1),
+            fetchPrograms(null, "tertiary", "program_code", "ASC", 0, 1),
+          ]);
 
         if (curriculaRes?.success && Array.isArray(curriculaRes.data)) {
           setCurriculaList(curriculaRes.data);
@@ -303,11 +305,11 @@ export default function SubjectsManagement() {
 
         const combinedPrograms: ProgramRecord[] = [
           ...(shsProgRes?.success && Array.isArray(shsProgRes.data)
-              ? shsProgRes.data
-              : []),
+            ? shsProgRes.data
+            : []),
           ...(tertiaryProgRes?.success && Array.isArray(tertiaryProgRes.data)
-              ? tertiaryProgRes.data
-              : []),
+            ? tertiaryProgRes.data
+            : []),
         ];
         setAllProgramsFilterList(combinedPrograms);
       } catch (err) {
@@ -324,7 +326,7 @@ export default function SubjectsManagement() {
   }, []);
 
   const getEducationLevel = useCallback((year: string): "shs" | "tertiary" | "none" => {
-    if (year === "11" || year === "12" || year === "Grade 11" || year === "Grade 12") return "shs";
+    if (["11", "12", "Grade 11", "Grade 12"].includes(year)) return "shs";
     if (["1st Year", "2nd Year", "3rd Year", "4th Year"].includes(year))
       return "tertiary";
     return "none";
@@ -342,12 +344,12 @@ export default function SubjectsManagement() {
       setIsLoadingPrograms(true);
       const levelFilter = currentEduLevel === "shs" ? "shs" : "tertiary";
       const res = await fetchPrograms(
-          null,
-          levelFilter,
-          "program_code",
-          "ASC",
-          0,
-          1,
+        null,
+        levelFilter,
+        "program_code",
+        "ASC",
+        0,
+        1,
       );
 
       if (res.success && res.data) {
@@ -362,23 +364,18 @@ export default function SubjectsManagement() {
   }, [currentEduLevel]);
 
   useEffect(() => {
-    if (!selectedYear) {
+    if (!selectedYear || !selectedTerm) {
       setFormData((prev) => ({ ...prev, year_term: null }));
       return;
     }
 
-    const isSHS = selectedYear === "11" || selectedYear === "12" || selectedYear === "Grade 11" || selectedYear === "Grade 12";
-    let combined = "";
-
-    if (isSHS) {
-      const num = selectedYear === "Grade 11" ? "11" : selectedYear === "Grade 12" ? "12" : selectedYear;
-      combined = `SHS ${num}`;
-    } else {
-      combined = selectedYear;
-    }
+    const isSHS = ["11", "12", "Grade 11", "Grade 12"].includes(selectedYear);
+    const num = selectedYear === "Grade 11" ? "11" : selectedYear === "Grade 12" ? "12" : selectedYear;
+    const yearPrefix = isSHS ? `SHS ${num}` : selectedYear;
+    const combined = `${yearPrefix} - ${selectedTerm}`;
 
     setFormData((prev) => ({ ...prev, year_term: combined }));
-  }, [selectedYear]);
+  }, [selectedYear, selectedTerm]);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -420,10 +417,14 @@ export default function SubjectsManagement() {
     setExistingSubjectSearchResults([]);
 
     const existingYearTerm = subj.year_term || "";
-    let cleanYear = existingYearTerm.startsWith("SHS ") ? existingYearTerm.replace("SHS ", "") : existingYearTerm;
+    const [rawYearPart, rawTermPart] = existingYearTerm.split(" - ");
+    let cleanYear = (rawYearPart || "").startsWith("SHS ")
+      ? (rawYearPart || "").replace("SHS ", "")
+      : rawYearPart || "";
     if (cleanYear === "Grade 11") cleanYear = "11";
     if (cleanYear === "Grade 12") cleanYear = "12";
     setSelectedYear(cleanYear);
+    setSelectedTerm(rawTermPart?.trim() || "");
 
     const labUnits = subj.lab_units ?? 0;
     setFormData((prev) => ({
@@ -459,18 +460,18 @@ export default function SubjectsManagement() {
 
     startTransition(async () => {
       const programCodeParam =
-          selectedProgramFilter === "ALL" ? null : selectedProgramFilter;
+        selectedProgramFilter === "ALL" ? null : selectedProgramFilter;
       const curriculumFetchFilter = "ALL";
 
       const [resData, resCount] = await Promise.all([
         fetchSubjects(
-            debouncedSearch,
-            programCodeParam,
-            curriculumFetchFilter,
-            sortBy,
-            sortDir,
-            maxRow,
-            currentPage,
+          debouncedSearch,
+          programCodeParam,
+          curriculumFetchFilter,
+          sortBy,
+          sortDir,
+          maxRow,
+          currentPage,
         ),
         fetchSubjectsCount(debouncedSearch, programCodeParam),
       ]);
@@ -506,7 +507,7 @@ export default function SubjectsManagement() {
   }, []);
 
   const handleCustomCurriculumChange = useCallback((
-      e: React.ChangeEvent<HTMLInputElement>,
+    e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const rawVal = e.target.value;
     const filtered = filterCurricula(rawVal);
@@ -525,13 +526,13 @@ export default function SubjectsManagement() {
   }, []);
 
   const handleInputChange = useCallback((
-      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { id, value, type } = e.target;
 
     if (id === "curriculum") {
       setCurriculumError(
-          value.trim() === "" ? "Curriculum version is required." : "",
+        value.trim() === "" ? "Curriculum version is required." : "",
       );
       setFormData((prev) => ({ ...prev, curriculum: value }));
       return;
@@ -598,6 +599,7 @@ export default function SubjectsManagement() {
     setSelectedSubject(null);
     setFormData(initialFormState);
     setSelectedYear("");
+    setSelectedTerm("");
     setIsNewCurriculum(false);
     setIsAddingExisting(false);
     setExistingSubjectSearch("");
@@ -611,6 +613,7 @@ export default function SubjectsManagement() {
     setLecUnitsError("");
     setLabUnitsError("");
     setYearLevelError("");
+    setTermError("");
     setImportFile(null);
     setImportLogs([]);
     setFormatError("");
@@ -621,14 +624,19 @@ export default function SubjectsManagement() {
     setSelectedSubject(subject);
 
     const existingYearTerm = subject.year_term || "";
-    let cleanYear = existingYearTerm.startsWith("SHS ") ? existingYearTerm.replace("SHS ", "") : existingYearTerm;
+    const [rawYearPart, rawTermPart] = existingYearTerm.split(" - ");
+    let cleanYear = (rawYearPart || "").startsWith("SHS ")
+      ? (rawYearPart || "").replace("SHS ", "")
+      : rawYearPart || "";
     if (cleanYear === "Grade 11") cleanYear = "11";
     if (cleanYear === "Grade 12") cleanYear = "12";
+
     setSelectedYear(cleanYear);
+    setSelectedTerm(rawTermPart?.trim() || "");
 
     const currVal = subject.curriculum ?? "";
     const existsInList = curriculaList.some(
-        (c) => c.curriculum_id === currVal || c.curriculum_version === currVal,
+      (c) => c.curriculum_id === currVal || c.curriculum_version === currVal,
     );
     setIsNewCurriculum(currVal ? !existsInList : false);
 
@@ -648,11 +656,12 @@ export default function SubjectsManagement() {
 
   const handleCreateSubject = useCallback(async () => {
     if (
-        !formData.curriculum?.trim() ||
-        !formData.program_code?.trim() ||
-        !formData.course_code?.trim() ||
-        !formData.course_name?.trim() ||
-        !selectedYear.trim()
+      !formData.curriculum?.trim() ||
+      !formData.program_code?.trim() ||
+      !formData.course_code?.trim() ||
+      !formData.course_name?.trim() ||
+      !selectedYear.trim() ||
+      !selectedTerm.trim()
     ) {
       return;
     }
@@ -670,17 +679,18 @@ export default function SubjectsManagement() {
     } else {
       triggerToast(res.error || "Failed to create subject.", "error");
     }
-  }, [formData, selectedYear, actor, triggerToast, handleCloseModals, loadData]);
+  }, [formData, selectedYear, selectedTerm, actor, triggerToast, handleCloseModals, loadData]);
 
   const handleUpdateSubject = useCallback(async () => {
     if (!selectedSubject) return;
 
     if (
-        !formData.curriculum?.trim() ||
-        !formData.program_code?.trim() ||
-        !formData.course_code?.trim() ||
-        !formData.course_name?.trim() ||
-        !selectedYear.trim()
+      !formData.curriculum?.trim() ||
+      !formData.program_code?.trim() ||
+      !formData.course_code?.trim() ||
+      !formData.course_name?.trim() ||
+      !selectedYear.trim() ||
+      !selectedTerm.trim()
     ) {
       return;
     }
@@ -691,9 +701,9 @@ export default function SubjectsManagement() {
     };
 
     const res = await updateSubject(
-        actor,
-        selectedSubject.subject_id,
-        payload,
+      actor,
+      selectedSubject.subject_id,
+      payload,
     );
     if (res.success) {
       triggerToast("Subject updated successfully!", "success");
@@ -702,7 +712,7 @@ export default function SubjectsManagement() {
     } else {
       triggerToast(res.error || "Failed to update subject.", "error");
     }
-  }, [selectedSubject, formData, selectedYear, actor, triggerToast, handleCloseModals, loadData]);
+  }, [selectedSubject, formData, selectedYear, selectedTerm, actor, triggerToast, handleCloseModals, loadData]);
 
   const handleDeleteSubject = useCallback(async () => {
     if (!selectedSubject) return;
@@ -723,7 +733,7 @@ export default function SubjectsManagement() {
 
     worksheet.columns = [
       { header: "Curriculum", key: "curriculum", width: 18 },
-      { header: "Year Level", key: "year_level", width: 15 },
+      { header: "Year Level", key: "year_level", width: 22 },
       { header: "Program", key: "program", width: 15 },
       { header: "Course Code", key: "course_code", width: 15 },
       { header: "Course Name", key: "course_name", width: 30 },
@@ -734,7 +744,7 @@ export default function SubjectsManagement() {
 
     worksheet.addRow({
       curriculum: "BSIT-22-01",
-      year_level: "1st Year",
+      year_level: "1st Year - Semester 1",
       program: "BSIT",
       course_code: "CC101",
       course_name: "Introduction to Computing",
@@ -745,16 +755,15 @@ export default function SubjectsManagement() {
 
     worksheet.addRow({
       curriculum: "BSIT-22-01",
-      year_level: "1st Year",
-      program: "BSIT",
-      course_code: "CC102L",
-      course_name: "Computer Programming Lab",
+      year_level: "SHS 11 - Term 1",
+      program: "ICT",
+      course_code: "PR1",
+      course_name: "Practical Research 1",
       lecture: 2,
       laboratory: 1,
       laboratory_type: roomTypeList[0]?.value || "Computer Laboratory",
     });
 
-    // Dynamic Lab Type Dropdown from database room types
     const typeValues = roomTypeList.map((rt) => rt.value.replace(/"/g, '""')).join(",");
     if (typeValues) {
       worksheet.dataValidations.add("H2:H1000", {
@@ -767,9 +776,19 @@ export default function SubjectsManagement() {
       });
     }
 
+    const semesterTermList = "1st Year - Semester 1,1st Year - Semester 2,2nd Year - Semester 1,2nd Year - Semester 2,3rd Year - Semester 1,3rd Year - Semester 2,4th Year - Semester 1,4th Year - Semester 2,SHS 11 - Term 1,SHS 11 - Term 2,SHS 11 - Term 3,SHS 11 - Term 4,SHS 12 - Term 1,SHS 12 - Term 2,SHS 12 - Term 3,SHS 12 - Term 4";
+    worksheet.dataValidations.add("B2:B1000", {
+      type: "list",
+      allowBlank: true,
+      formulae: [`"${semesterTermList}"`],
+      showErrorMessage: true,
+      errorTitle: "Invalid Year & Semester/Term",
+      error: "Please select a valid Semester (Tertiary) or Term (SHS).",
+    });
+
     const buffer = await workbook.xlsx.writeBuffer();
     downloadWorkbook(buffer, "Subjects_Import_Template.xlsx");
-    triggerToast("Blank Excel template downloaded successfully with dynamic room type validation!", "success");
+    triggerToast("Blank Excel template downloaded successfully with Semester/Term & Lab Type dropdowns!", "success");
   }, [roomTypeList, triggerToast]);
 
   const handleExportExcel = useCallback(async () => {
@@ -788,7 +807,7 @@ export default function SubjectsManagement() {
 
       worksheet.columns = [
         { header: "Curriculum", key: "curriculum", width: 18 },
-        { header: "Year Level", key: "year_level", width: 15 },
+        { header: "Year Level", key: "year_level", width: 22 },
         { header: "Program", key: "program", width: 15 },
         { header: "Course Code", key: "course_code", width: 15 },
         { header: "Course Name", key: "course_name", width: 30 },
@@ -801,7 +820,7 @@ export default function SubjectsManagement() {
         const labTypeName = (item.lab_type ? roomTypeList.find(r => r.room_type_id === item.lab_type)?.value : null) || item.lab_type_name || item.lab_type || "";
         worksheet.addRow({
           curriculum: item.curriculum || "",
-          year_level: item.year_term ? item.year_term.split(" - ")[0] : "",
+          year_level: item.year_term || "",
           program: item.program_code || "",
           course_code: item.course_code || "",
           course_name: item.course_name || "",
@@ -890,12 +909,12 @@ export default function SubjectsManagement() {
       });
 
       const isHeaderValid = REQUIRED_HEADERS.every((reqHeader) =>
-          uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
+        uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
       );
 
       if (!isHeaderValid) {
         setFormatError(
-            `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
+          `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
         );
         setIsImporting(false);
         return;
@@ -958,12 +977,6 @@ export default function SubjectsManagement() {
           return;
         }
 
-        let combinedYearTerm = rawYear;
-        if (["11", "12"].includes(rawYear)) {
-          combinedYearTerm = `SHS ${rawYear}`;
-        }
-
-        // STRICT BUSINESS LOGIC: If Laboratory units == 0, lab type cannot be configured / is nullified
         let matchedLabTypeId: string | null = null;
         const labUnitsNum = isNaN(rawLab) ? 0 : rawLab;
 
@@ -986,7 +999,7 @@ export default function SubjectsManagement() {
         rowsToProcess.push({
           rowNum: rowNumber,
           curr: rawCurr,
-          yearTerm: combinedYearTerm,
+          yearTerm: rawYear,
           prog: rawProg,
           code: rawCode,
           name: rawName,
@@ -1036,568 +1049,583 @@ export default function SubjectsManagement() {
   }, [importFile, actor, roomTypeList, loadData, triggerToast]);
 
   const isFormInvalid = useMemo(() =>
-          !formData.curriculum?.trim() ||
-          !formData.program_code?.trim() ||
-          !formData.course_code?.trim() ||
-          !formData.course_name?.trim() ||
-          !selectedYear.trim() ||
-          Boolean(curriculumError) ||
-          Boolean(programError) ||
-          Boolean(courseCodeError) ||
-          Boolean(courseNameError) ||
-          Boolean(lecUnitsError) ||
-          Boolean(labUnitsError) ||
-          Boolean(yearLevelError),
-      [formData, selectedYear, curriculumError, programError, courseCodeError, courseNameError, lecUnitsError, labUnitsError, yearLevelError]);
+      !formData.curriculum?.trim() ||
+      !formData.program_code?.trim() ||
+      !formData.course_code?.trim() ||
+      !formData.course_name?.trim() ||
+      !selectedYear.trim() ||
+      !selectedTerm.trim() ||
+      Boolean(curriculumError) ||
+      Boolean(programError) ||
+      Boolean(courseCodeError) ||
+      Boolean(courseNameError) ||
+      Boolean(lecUnitsError) ||
+      Boolean(labUnitsError) ||
+      Boolean(yearLevelError) ||
+      Boolean(termError),
+    [formData, selectedYear, selectedTerm, curriculumError, programError, courseCodeError, courseNameError, lecUnitsError, labUnitsError, yearLevelError, termError]);
 
   return (
+    <div>
+      {showToast && (
+        <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
+          <Toast>
+            <div
+              className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                toastType === "success"
+                  ? "bg-green-100 text-green-500 dark:bg-green-800 dark:text-green-200"
+                  : toastType === "warning"
+                    ? "bg-yellow-100 text-yellow-500 dark:bg-yellow-800 dark:text-yellow-200"
+                    : "bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200"
+              }`}
+            >
+              {toastType === "success" && <HiCheck className="h-5 w-5" />}
+              {toastType === "warning" && <HiExclamation className="h-5 w-5" />}
+              {toastType === "error" && <HiX className="h-5 w-5" />}
+            </div>
+            <div className="ml-3 text-sm font-normal">{toastMessage}</div>
+            <ToastToggle onDismiss={closeToast} />
+          </Toast>
+          <Progress
+            progress={Math.min(Math.round(progress), 100)}
+            size="sm"
+            className={`${showToastTimer ? "" : "hidden"} ease-linear`}
+          />
+        </div>
+      )}
+
       <div>
-        {showToast && (
-            <div className="fixed right-5 bottom-5 z-50 rounded-lg border border-gray-500/30">
-              <Toast>
-                <div
-                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                        toastType === "success"
-                            ? "bg-green-100 text-green-500 dark:bg-green-800 dark:text-green-200"
-                            : toastType === "warning"
-                                ? "bg-yellow-100 text-yellow-500 dark:bg-yellow-800 dark:text-yellow-200"
-                                : "bg-red-100 text-red-500 dark:bg-red-800 dark:text-red-200"
-                    }`}
-                >
-                  {toastType === "success" && <HiCheck className="h-5 w-5" />}
-                  {toastType === "warning" && <HiExclamation className="h-5 w-5" />}
-                  {toastType === "error" && <HiX className="h-5 w-5" />}
-                </div>
-                <div className="ml-3 text-sm font-normal">{toastMessage}</div>
-                <ToastToggle onDismiss={closeToast} />
-              </Toast>
-              <Progress
-                  progress={Math.min(Math.round(progress), 100)}
-                  size="sm"
-                  className={`${showToastTimer ? "" : "hidden"} ease-linear`}
-              />
-            </div>
-        )}
+        <div className={"mb-4"}>
+          <h2 className="mb-1 text-lg font-bold">Subjects Management</h2>
+          <p className="text-gray-500">
+            Manage course codes, names, credit units, lab types, and lab
+            specifications.
+          </p>
+        </div>
 
-        <div>
-          <div className={"mb-4"}>
-            <h2 className="mb-1 text-lg font-bold">Subjects Management</h2>
-            <p className="text-gray-500">
-              Manage course codes, names, credit units, lab types, and lab
-              specifications.
-            </p>
-          </div>
-
-          <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-            <div className="relative mr-4 mb-2 w-full md:w-64">
-              <TextInput
-                  id="search-subjects"
-                  type="text"
-                  placeholder="Search subjects..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  icon={HiSearch}
-              />
-              {searchTerm && (
-                  <button
-                      type="button"
-                      onClick={() => setSearchTerm("")}
-                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
-                  >
-                    <HiX className="h-4 w-4" />
-                  </button>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="w-full sm:w-48">
-                <Select
-                    id="program-filter-select"
-                    value={selectedProgramFilter}
-                    onChange={(e) => {
-                      setSelectedProgramFilter(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                >
-                  <option value="ALL">All Programs</option>
-                  {allProgramsFilterList.map((prog) => (
-                      <option
-                          key={`filter-${prog.program_code}`}
-                          value={prog.program_code}
-                      >
-                        {prog.program_code} - {prog.program_name}
-                      </option>
-                  ))}
-                </Select>
-              </div>
-
-              <Button
-                  color="gray"
-                  className="whitespace-nowrap"
-                  onClick={() => setOpenExcelModal(true)}
-              >
-                <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
-                Excel Operations
-              </Button>
-
-              <Button
-                  className="w-full whitespace-nowrap sm:w-auto"
-                  onClick={() => {
-                    setFormData(initialFormState);
-                    setSelectedYear("");
-                    setIsNewCurriculum(false);
-                    setIsAddingExisting(false);
-                    setExistingSubjectSearch("");
-                    setExistingSubjectSearchResults([]);
-                    setSelectedExistingSubject(null);
-                    setSubjectAQClusters([]);
-                    setCurriculumError("");
-                    setProgramError("");
-                    setYearLevelError("");
-                    setOpenAddModal(true);
-                  }}
-              >
-                <FaPlus className="mr-2" />
-                Add Subject
-              </Button>
-            </div>
-          </div>
-
-          <Card className="overflow-x-auto">
-            <Table hoverable>
-              <TableHead>
-                <TableRow>
-                  <TableHeadCell onClick={() => handleSorting("curriculum")}>
-                    <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                      Curriculum
-                      {sortBy === "curriculum" &&
-                          (sortDir === "ASC" ? (
-                              <FaSortUp className="ml-1" />
-                          ) : (
-                              <FaSortDown className="ml-1" />
-                          ))}
-                    </div>
-                  </TableHeadCell>
-
-                  <TableHeadCell onClick={() => handleSorting("course_code")}>
-                    <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                      Course Code
-                      {sortBy === "course_code" &&
-                          (sortDir === "ASC" ? (
-                              <FaSortUp className="ml-1" />
-                          ) : (
-                              <FaSortDown className="ml-1" />
-                          ))}
-                    </div>
-                  </TableHeadCell>
-
-                  <TableHeadCell onClick={() => handleSorting("course_name")}>
-                    <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
-                      Course Name
-                      {sortBy === "course_name" &&
-                          (sortDir === "ASC" ? (
-                              <FaSortUp className="ml-1" />
-                          ) : (
-                              <FaSortDown className="ml-1" />
-                          ))}
-                    </div>
-                  </TableHeadCell>
-
-                  <TableHeadCell>Program / Strand</TableHeadCell>
-                  <TableHeadCell>Year Level</TableHeadCell>
-                  <TableHeadCell>Lec Units</TableHeadCell>
-                  <TableHeadCell>Lab Units</TableHeadCell>
-                  <TableHeadCell>Lab Type</TableHeadCell>
-
-                  <TableHeadCell>
-                    <span className="sr-only">Actions</span>
-                  </TableHeadCell>
-                </TableRow>
-              </TableHead>
-
-              <TableBody className="divide-y">
-                {subjects.length > 0 ? (
-                    subjects.map((item) => (
-                        <TableRow
-                            key={item.subject_id}
-                            className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                        >
-                          <TableCell className="font-medium whitespace-nowrap text-gray-900 dark:text-white">
-                            {item.curriculum || "—"}
-                          </TableCell>
-                          <TableCell className="font-medium whitespace-nowrap text-gray-900 dark:text-white">
-                            {item.course_code}
-                          </TableCell>
-                          <TableCell>{item.course_name}</TableCell>
-                          <TableCell>{item.program_code || "—"}</TableCell>
-                          <TableCell>{item.year_term ? item.year_term.split(" - ")[0] : "—"}</TableCell>
-                          <TableCell>{item.lecture_units}</TableCell>
-                          <TableCell>{item.lab_units}</TableCell>
-                          <TableCell>
-                            {(item.lab_units ?? 0) === 0 ? (
-                                <span className="text-gray-400 italic">No Laboratory</span>
-                            ) : (
-                                (item.lab_type ? roomTypeMap.get(item.lab_type) : null) ||
-                                item.lab_type_name ||
-                                item.lab_type ||
-                                "Configured Lab"
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <a
-                                onClick={() => handleOpenEdit(item)}
-                                className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
-                            >
-                              Edit
-                            </a>
-                          </TableCell>
-                        </TableRow>
-                    ))
-                ) : isLoading ? (
-                    <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                      <TableCell
-                          colSpan={9}
-                          className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
-                      >
-                        <div className="flex items-center justify-center">
-                          <Spinner />
-                          <span className="ml-4">Fetching subjects...</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                ) : (
-                    <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                      <TableCell
-                          colSpan={9}
-                          className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
-                      >
-                        {searchTerm || selectedProgramFilter !== "ALL"
-                            ? `No matching subjects found.`
-                            : "No subject entries found."}
-                      </TableCell>
-                    </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-
-          <div
-              className={`mt-4 ${
-                  isLoading
-                      ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed"
-                      : ""
-              } flex w-full justify-center`}
-          >
-            <Pagination
-                layout="pagination"
-                currentPage={currentPage || 1}
-                totalPages={Math.ceil(subjectsCount / maxRow) || 1}
-                onPageChange={(p) => setCurrentPage(p)}
-                showIcons
+        <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+          <div className="relative mr-4 mb-2 w-full md:w-64">
+            <TextInput
+              id="search-subjects"
+              type="text"
+              placeholder="Search subjects..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              icon={HiSearch}
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+              >
+                <HiX className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="w-full sm:w-48">
+              <Select
+                id="program-filter-select"
+                value={selectedProgramFilter}
+                onChange={(e) => {
+                  setSelectedProgramFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="ALL">All Programs</option>
+                {allProgramsFilterList.map((prog) => (
+                  <option
+                    key={`filter-${prog.program_code}`}
+                    value={prog.program_code}
+                  >
+                    {prog.program_code} - {prog.program_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <Button
+              color="gray"
+              className="whitespace-nowrap"
+              onClick={() => setOpenExcelModal(true)}
+            >
+              <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
+              Excel Operations
+            </Button>
+
+            <Button
+              className="w-full whitespace-nowrap sm:w-auto"
+              onClick={() => {
+                setFormData(initialFormState);
+                setSelectedYear("");
+                setSelectedTerm("");
+                setIsNewCurriculum(false);
+                setIsAddingExisting(false);
+                setExistingSubjectSearch("");
+                setExistingSubjectSearchResults([]);
+                setSelectedExistingSubject(null);
+                setSubjectAQClusters([]);
+                setCurriculumError("");
+                setProgramError("");
+                setYearLevelError("");
+                setTermError("");
+                setOpenAddModal(true);
+              }}
+            >
+              <FaPlus className="mr-2" />
+              Add Subject
+            </Button>
           </div>
         </div>
 
-        {/* --- MODAL: EXCEL OPERATIONS --- */}
-        <Modal show={openExcelModal} onClose={handleCloseModals} size="lg">
-          <ModalHeader>
-            <div className="flex items-center gap-2">
-              <FaFileExcel className="text-green-600 h-5 w-5" />
-              <span>Excel Operations & Subject Data Management</span>
-            </div>
-          </ModalHeader>
-          <ModalBody>
-            <div className="flex flex-col gap-5">
-              <div className="grid grid-cols-3 gap-3">
-                <button
-                    type="button"
-                    onClick={() => setActiveExcelTab("import")}
-                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                        activeExcelTab === "import"
-                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                    }`}
-                >
-                  <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
-                  <span className="text-xs font-semibold">Import Excel</span>
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => setActiveExcelTab("export")}
-                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                        activeExcelTab === "export"
-                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                    }`}
-                >
-                  <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
-                  <span className="text-xs font-semibold">Export Subjects</span>
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => setActiveExcelTab("template")}
-                    className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
-                        activeExcelTab === "template"
-                            ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                    }`}
-                >
-                  <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
-                  <span className="text-xs font-semibold">Blank Template</span>
-                </button>
-              </div>
-
-              {activeExcelTab === "import" && (
-                  <div className="space-y-4">
-                    <div
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        onClick={() => fileInputRef.current?.click()}
-                        className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
-                            isDragging
-                                ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
-                                : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
-                        }`}
-                    >
-                      <FileInput
-                          id="excel-file-input"
-                          ref={fileInputRef}
-                          accept=".xlsx, .xls, .csv"
-                          onChange={(e) =>
-                              validateAndSelectFile(e.target.files ? e.target.files[0] : null)
-                          }
-                          className="hidden"
-                      />
-                      <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {importFile
-                            ? `${(importFile.size / 1024).toFixed(1)} KB`
-                            : "Strictly accepts .xlsx, .xls, or .csv files"}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                      <span className="font-semibold uppercase tracking-wide">Validation Rule:</span> If <b className="font-mono">Laboratory</b> units = 0, <b className="font-mono">Laboratory Type</b> cannot be configured. Required Headers: {REQUIRED_HEADERS.join(", ")}
-                    </div>
-
-                    {formatError && (
-                        <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-                          <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
-                          <div>{formatError}</div>
-                        </div>
-                    )}
-
-                    {importLogs.length > 0 && (
-                        <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
-                          {importLogs.map((log, index) => (
-                              <div
-                                  key={index}
-                                  className={
-                                    log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
-                                        ? "text-red-400"
-                                        : log.includes("Completed") || log.includes("Found")
-                                            ? "font-bold text-green-400"
-                                            : "text-gray-300"
-                                  }
-                              >
-                                {log}
-                              </div>
-                          ))}
-                        </div>
-                    )}
-
-                    <Button
-                        onClick={handleImportSubmit}
-                        disabled={!importFile || isImporting}
-                        className="w-full"
-                    >
-                      {isImporting ? (
-                          <>
-                            <Spinner size="sm" className="mr-2" />
-                            Processing & Importing...
-                          </>
+        <Card className="overflow-x-auto">
+          <Table hoverable>
+            <TableHead>
+              <TableRow>
+                <TableHeadCell onClick={() => handleSorting("curriculum")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                    Curriculum
+                    {sortBy === "curriculum" &&
+                      (sortDir === "ASC" ? (
+                        <FaSortUp className="ml-1" />
                       ) : (
-                          "Execute Excel Import"
+                        <FaSortDown className="ml-1" />
+                      ))}
+                  </div>
+                </TableHeadCell>
+
+                <TableHeadCell onClick={() => handleSorting("course_code")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                    Course Code
+                    {sortBy === "course_code" &&
+                      (sortDir === "ASC" ? (
+                        <FaSortUp className="ml-1" />
+                      ) : (
+                        <FaSortDown className="ml-1" />
+                      ))}
+                  </div>
+                </TableHeadCell>
+
+                <TableHeadCell onClick={() => handleSorting("course_name")}>
+                  <div className="flex cursor-pointer text-blue-500 hover:text-blue-700 hover:underline dark:hover:text-blue-300">
+                    Course Name
+                    {sortBy === "course_name" &&
+                      (sortDir === "ASC" ? (
+                        <FaSortUp className="ml-1" />
+                      ) : (
+                        <FaSortDown className="ml-1" />
+                      ))}
+                  </div>
+                </TableHeadCell>
+
+                <TableHeadCell>Program / Strand</TableHeadCell>
+                <TableHeadCell>Year & Semester/Term</TableHeadCell>
+                <TableHeadCell>Lec Units</TableHeadCell>
+                <TableHeadCell>Lab Units</TableHeadCell>
+                <TableHeadCell>Lab Type</TableHeadCell>
+
+                <TableHeadCell>
+                  <span className="sr-only">Actions</span>
+                </TableHeadCell>
+              </TableRow>
+            </TableHead>
+
+            <TableBody className="divide-y">
+              {subjects.length > 0 ? (
+                subjects.map((item) => (
+                  <TableRow
+                    key={item.subject_id}
+                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                  >
+                    <TableCell className="font-medium whitespace-nowrap text-gray-900 dark:text-white">
+                      {item.curriculum || "—"}
+                    </TableCell>
+                    <TableCell className="font-medium whitespace-nowrap text-gray-900 dark:text-white">
+                      {item.course_code}
+                    </TableCell>
+                    <TableCell>{item.course_name}</TableCell>
+                    <TableCell>{item.program_code || "—"}</TableCell>
+                    <TableCell className="font-medium text-blue-600 dark:text-blue-400">
+                      {item.year_term || "—"}
+                    </TableCell>
+                    <TableCell>{item.lecture_units}</TableCell>
+                    <TableCell>{item.lab_units}</TableCell>
+                    <TableCell>
+                      {(item.lab_units ?? 0) === 0 ? (
+                        <span className="text-gray-400 italic">No Laboratory</span>
+                      ) : (
+                        (item.lab_type ? roomTypeMap.get(item.lab_type) : null) ||
+                        item.lab_type_name ||
+                        item.lab_type ||
+                        "Configured Lab"
                       )}
-                    </Button>
-                  </div>
-              )}
-
-              {activeExcelTab === "export" && (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
-                    <div>
-                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                        Export Filtered Subject Records
-                      </h4>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Generates a standardized Excel spreadsheet containing all active query results with dropdown validations.
-                      </p>
+                    </TableCell>
+                    <TableCell>
+                      <a
+                        onClick={() => handleOpenEdit(item)}
+                        className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
+                      >
+                        Edit
+                      </a>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : isLoading ? (
+                <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                  <TableCell
+                    colSpan={9}
+                    className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                  >
+                    <div className="flex items-center justify-center">
+                      <Spinner />
+                      <span className="ml-4">Fetching subjects...</span>
                     </div>
-                    <Button onClick={handleExportExcel} className="w-full" color="green">
-                      <FaFileExport className="mr-2 h-4 w-4" /> Export {subjectsCount} Subjects to Excel
-                    </Button>
-                  </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                  <TableCell
+                    colSpan={9}
+                    className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                  >
+                    {searchTerm || selectedProgramFilter !== "ALL"
+                      ? `No matching subjects found.`
+                      : "No subject entries found."}
+                  </TableCell>
+                </TableRow>
               )}
+            </TableBody>
+          </Table>
+        </Card>
 
-              {activeExcelTab === "template" && (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
-                    <div>
-                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                        Download Blank Excel Template
-                      </h4>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Includes formatted columns with dynamic room type dropdown validations.
-                      </p>
-                    </div>
-                    <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
-                      <FaDownload className="mr-2 h-4 w-4" /> Download Blank Excel Template
-                    </Button>
-                  </div>
-              )}
+        <div
+          className={`mt-4 ${
+            isLoading
+              ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed"
+              : ""
+          } flex w-full justify-center`}
+        >
+          <Pagination
+            layout="pagination"
+            currentPage={currentPage || 1}
+            totalPages={Math.ceil(subjectsCount / maxRow) || 1}
+            onPageChange={(p) => setCurrentPage(p)}
+            showIcons
+          />
+        </div>
+      </div>
+
+      {/* --- MODAL: EXCEL OPERATIONS --- */}
+      <Modal show={openExcelModal} onClose={handleCloseModals} size="lg">
+        <ModalHeader>
+          <div className="flex items-center gap-2">
+            <FaFileExcel className="text-green-600 h-5 w-5" />
+            <span>Excel Operations & Subject Data Management</span>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveExcelTab("import")}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "import"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
+                <span className="text-xs font-semibold">Import Excel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveExcelTab("export")}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "export"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
+                <span className="text-xs font-semibold">Export Subjects</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveExcelTab("template")}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "template"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
+                <span className="text-xs font-semibold">Blank Template</span>
+              </button>
             </div>
-          </ModalBody>
-          <ModalFooter className="flex justify-end">
-            <Button color="alternative" onClick={handleCloseModals}>
-              Close Window
-            </Button>
-          </ModalFooter>
-        </Modal>
 
-        {/* --- MODAL: ADD SUBJECT --- */}
-        <Modal show={openAddModal} onClose={handleCloseModals} size="md">
-          <ModalHeader>Add New Subject</ModalHeader>
-          <ModalBody>
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                <Label htmlFor="toggle-existing-subject" className="font-semibold cursor-pointer">
-                  Add Existing Subject
-                </Label>
-                <ToggleSwitch
-                    id="toggle-existing-subject"
-                    checked={isAddingExisting}
-                    onChange={(val) => {
-                      setIsAddingExisting(val);
-                      if (!val) {
-                        setSelectedExistingSubject(null);
-                        setSubjectAQClusters([]);
-                        setExistingSubjectSearch("");
-                        setExistingSubjectSearchResults([]);
-                        setFormData(initialFormState);
-                        setSelectedYear("");
-                      }
-                    }}
-                />
+            {activeExcelTab === "import" && (
+              <div className="space-y-4">
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+                    isDragging
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
+                      : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  <FileInput
+                    id="excel-file-input"
+                    ref={fileInputRef}
+                    accept=".xlsx, .xls, .csv"
+                    onChange={(e) =>
+                      validateAndSelectFile(e.target.files ? e.target.files[0] : null)
+                    }
+                    className="hidden"
+                  />
+                  <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {importFile
+                      ? `${(importFile.size / 1024).toFixed(1)} KB`
+                      : "Strictly accepts .xlsx, .xls, or .csv files"}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+                  <span className="font-semibold uppercase tracking-wide">Validation Rule:</span> Tertiary uses <b className="font-mono">Semester 1/2</b>, SHS uses <b className="font-mono">Term 1-4</b>. Required Headers: {REQUIRED_HEADERS.join(", ")}
+                </div>
+
+                {formatError && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+                    <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
+                    <div>{formatError}</div>
+                  </div>
+                )}
+
+                {importLogs.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
+                    {importLogs.map((log, index) => (
+                      <div
+                        key={index}
+                        className={
+                          log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
+                            ? "text-red-400"
+                            : log.includes("Completed") || log.includes("Found")
+                              ? "font-bold text-green-400"
+                              : "text-gray-300"
+                        }
+                      >
+                        {log}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleImportSubmit}
+                  disabled={!importFile || isImporting}
+                  className="w-full"
+                >
+                  {isImporting ? (
+                    <>
+                      <Spinner size="sm" className="mr-2" />
+                      Processing & Importing...
+                    </>
+                  ) : (
+                    "Execute Excel Import"
+                  )}
+                </Button>
               </div>
+            )}
 
-              {isAddingExisting && (
-                  <div>
-                    <Label htmlFor="search-existing-subject">Search Subject</Label>
-                    <TextInput
-                        id="search-existing-subject"
-                        placeholder="Type course code or name..."
-                        value={existingSubjectSearch}
-                        onChange={(e) => setExistingSubjectSearch(e.target.value)}
-                        icon={HiSearch}
-                    />
-                    {isSearchingExisting && (
-                        <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
-                          <Spinner size="sm" />
-                          <span>Searching subjects...</span>
-                        </div>
-                    )}
-                    <div className="mt-1 max-h-48 overflow-y-auto">
-                      {existingSubjectSearchResults.map((subj) => {
-                        const isSelected = selectedExistingSubject?.subject_id === subj.subject_id;
-                        return (
-                            <div
-                                key={`existing-${subj.subject_id}`}
-                                onClick={() => handleSelectExistingSubject(subj)}
-                                className={`my-1.5 cursor-pointer rounded-lg border p-3 text-sm transition-all ${
-                                    isSelected
-                                        ? "border-blue-500 bg-blue-600 text-white shadow-sm"
-                                        : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
-                                }`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
+            {activeExcelTab === "export" && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Export Filtered Subject Records
+                  </h4>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Generates a standardized Excel spreadsheet containing all active query results with dropdown validations.
+                  </p>
+                </div>
+                <Button onClick={handleExportExcel} className="w-full" color="green">
+                  <FaFileExport className="mr-2 h-4 w-4" /> Export {subjectsCount} Subjects to Excel
+                </Button>
+              </div>
+            )}
+
+            {activeExcelTab === "template" && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Download Blank Excel Template
+                  </h4>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Includes formatted columns with dynamic room type & semester/term dropdown validations.
+                  </p>
+                </div>
+                <Button onClick={handleDownloadTemplate} className="w-full" color="blue">
+                  <FaDownload className="mr-2 h-4 w-4" /> Download Blank Excel Template
+                </Button>
+              </div>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter className="flex justify-end">
+          <Button color="alternative" onClick={handleCloseModals}>
+            Close Window
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* --- MODAL: ADD SUBJECT --- */}
+      <Modal show={openAddModal} onClose={handleCloseModals} size="md">
+        <ModalHeader>Add New Subject</ModalHeader>
+        <ModalBody>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
+              <Label htmlFor="toggle-existing-subject" className="font-semibold cursor-pointer">
+                Add Existing Subject
+              </Label>
+              <ToggleSwitch
+                id="toggle-existing-subject"
+                checked={isAddingExisting}
+                onChange={(val) => {
+                  setIsAddingExisting(val);
+                  if (!val) {
+                    setSelectedExistingSubject(null);
+                    setSubjectAQClusters([]);
+                    setExistingSubjectSearch("");
+                    setExistingSubjectSearchResults([]);
+                    setFormData(initialFormState);
+                    setSelectedYear("");
+                    setSelectedTerm("");
+                  }
+                }}
+              />
+            </div>
+
+            {isAddingExisting && (
+              <div>
+                <Label htmlFor="search-existing-subject">Search Subject</Label>
+                <TextInput
+                  id="search-existing-subject"
+                  placeholder="Type course code or name..."
+                  value={existingSubjectSearch}
+                  onChange={(e) => setExistingSubjectSearch(e.target.value)}
+                  icon={HiSearch}
+                />
+                {isSearchingExisting && (
+                  <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
+                    <Spinner size="sm" />
+                    <span>Searching subjects...</span>
+                  </div>
+                )}
+                <div className="mt-1 max-h-48 overflow-y-auto">
+                  {existingSubjectSearchResults.map((subj) => {
+                    const isSelected = selectedExistingSubject?.subject_id === subj.subject_id;
+                    return (
+                      <div
+                        key={`existing-${subj.subject_id}`}
+                        onClick={() => handleSelectExistingSubject(subj)}
+                        className={`my-1.5 cursor-pointer rounded-lg border p-3 text-sm transition-all ${
+                          isSelected
+                            ? "border-blue-500 bg-blue-600 text-white shadow-sm"
+                            : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
                           <span className="leading-snug font-semibold dark:text-white">
                             {subj.course_name}
                           </span>
-                                <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${isSelected ? "bg-blue-700 text-blue-100" : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"}`}>
+                          <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${isSelected ? "bg-blue-700 text-blue-100" : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"}`}>
                             {subj.curriculum || "Global"}
                           </span>
-                              </div>
-                              <div className={`mt-1.5 flex flex-wrap items-center gap-2 text-xs ${isSelected ? "text-blue-100" : "text-gray-500 dark:text-gray-400"}`}>
-                                <span className="font-mono font-medium">{subj.course_code}</span>
-                              </div>
-                            </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-              )}
+                        </div>
+                        <div className={`mt-1.5 flex flex-wrap items-center gap-2 text-xs ${isSelected ? "text-blue-100" : "text-gray-500 dark:text-gray-400"}`}>
+                          <span className="font-mono font-medium">{subj.course_code}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
-              <div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="course_code">Course Code *</Label>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="course_code">Course Code *</Label>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {(formData.course_code || "").length}/10
                 </span>
-                </div>
-                <TextInput
-                    id="course_code"
-                    placeholder="e.g. CS101"
-                    value={formData.course_code || ""}
-                    onChange={handleInputChange}
-                    color={courseCodeError ? "failure" : "gray"}
-                    maxLength={10}
-                    disabled={isAddingExisting}
-                />
-                {courseCodeError && (
-                    <HelperText color="failure">{courseCodeError}</HelperText>
-                )}
               </div>
+              <TextInput
+                id="course_code"
+                placeholder="e.g. CS101"
+                value={formData.course_code || ""}
+                onChange={handleInputChange}
+                color={courseCodeError ? "failure" : "gray"}
+                maxLength={10}
+                disabled={isAddingExisting}
+              />
+              {courseCodeError && (
+                <HelperText color="failure">{courseCodeError}</HelperText>
+              )}
+            </div>
 
-              <div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="course_name">Course Name *</Label>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="course_name">Course Name *</Label>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {(formData.course_name || "").length}/200
                 </span>
-                </div>
-                <TextInput
-                    id="course_name"
-                    placeholder="e.g. Intro to Computing"
-                    value={formData.course_name || ""}
-                    onChange={handleInputChange}
-                    color={courseNameError ? "failure" : "gray"}
-                    maxLength={200}
-                    disabled={isAddingExisting}
-                />
-                {courseNameError && (
-                    <HelperText color="failure">{courseNameError}</HelperText>
-                )}
               </div>
+              <TextInput
+                id="course_name"
+                placeholder="e.g. Intro to Computing"
+                value={formData.course_name || ""}
+                onChange={handleInputChange}
+                color={courseNameError ? "failure" : "gray"}
+                maxLength={200}
+                disabled={isAddingExisting}
+              />
+              {courseNameError && (
+                <HelperText color="failure">{courseNameError}</HelperText>
+              )}
+            </div>
 
+            {/* Year Level & Semester / Term Selection */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="year_level_select">Year Level *</Label>
                 <Select
-                    id="year_level_select"
-                    value={selectedYear}
-                    color={yearLevelError ? "failure" : "gray"}
-                    onChange={(e) => {
-                      const yr = e.target.value;
-                      setSelectedYear(yr);
-                      setYearLevelError(
-                          yr.trim() === "" ? "Year Level is required." : "",
-                      );
-                      setFormData((prev) => ({ ...prev, program_code: "" }));
-                    }}
+                  id="year_level_select"
+                  value={selectedYear}
+                  color={yearLevelError ? "failure" : "gray"}
+                  onChange={(e) => {
+                    const yr = e.target.value;
+                    const prevLevel = getEducationLevel(selectedYear);
+                    const nextLevel = getEducationLevel(yr);
+                    setSelectedYear(yr);
+                    setYearLevelError(
+                      yr.trim() === "" ? "Year Level is required." : "",
+                    );
+                    setFormData((prev) => ({ ...prev, program_code: "" }));
+                    if (prevLevel !== nextLevel) {
+                      setSelectedTerm("");
+                      setTermError("");
+                    }
+                  }}
                 >
                   <option value="">Select Year...</option>
                   <option value="11">Grade 11</option>
@@ -1608,256 +1636,299 @@ export default function SubjectsManagement() {
                   <option value="4th Year">4th Year</option>
                 </Select>
                 {yearLevelError && (
-                    <HelperText color="failure">{yearLevelError}</HelperText>
+                  <HelperText color="failure">{yearLevelError}</HelperText>
                 )}
               </div>
 
               <div>
-                <Label htmlFor="program_code">Program *</Label>
+                <Label htmlFor="term_select">{currentEduLevel === "tertiary" ? "Semester *" : "Term *"}</Label>
                 <Select
-                    id="program_code"
-                    value={formData.program_code || ""}
-                    onChange={handleInputChange}
-                    disabled={!selectedYear || isLoadingPrograms}
-                    color={programError ? "failure" : "gray"}
+                  id="term_select"
+                  value={selectedTerm}
+                  disabled={!selectedYear}
+                  color={termError ? "failure" : "gray"}
+                  onChange={(e) => {
+                    const tm = e.target.value;
+                    setSelectedTerm(tm);
+                    setTermError(tm.trim() === "" ? `${currentEduLevel === "tertiary" ? "Semester" : "Term"} is required.` : "");
+                  }}
                 >
                   <option value="">
-                    {isLoadingPrograms
-                        ? "Loading programs..."
-                        : !selectedYear
-                            ? "Select Year Level first..."
-                            : "Select Program..."}
+                    {!selectedYear ? "Select Year first..." : `Select ${currentEduLevel === "tertiary" ? "Semester" : "Term"}...`}
                   </option>
-                  {programsList.map((prog) => (
-                      <option key={prog.program_code} value={prog.program_code}>
-                        {prog.program_code} - {prog.program_name}
-                      </option>
-                  ))}
+                  {currentEduLevel === "tertiary" && (
+                    <>
+                      <option value="Semester 1">Semester 1</option>
+                      <option value="Semester 2">Semester 2</option>
+                    </>
+                  )}
+                  {currentEduLevel === "shs" && (
+                    <>
+                      <option value="Term 1">Term 1</option>
+                      <option value="Term 2">Term 2</option>
+                      <option value="Term 3">Term 3</option>
+                      <option value="Term 4">Term 4</option>
+                    </>
+                  )}
                 </Select>
-                {programError && (
-                    <HelperText color="failure">{programError}</HelperText>
-                )}
+                {termError && <HelperText color="failure">{termError}</HelperText>}
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="program_code">Program *</Label>
+              <Select
+                id="program_code"
+                value={formData.program_code || ""}
+                onChange={handleInputChange}
+                disabled={!selectedYear || isLoadingPrograms}
+                color={programError ? "failure" : "gray"}
+              >
+                <option value="">
+                  {isLoadingPrograms
+                    ? "Loading programs..."
+                    : !selectedYear
+                      ? "Select Year Level first..."
+                      : "Select Program..."}
+                </option>
+                {programsList.map((prog) => (
+                  <option key={prog.program_code} value={prog.program_code}>
+                    {prog.program_code} - {prog.program_name}
+                  </option>
+                ))}
+              </Select>
+              {programError && (
+                <HelperText color="failure">{programError}</HelperText>
+              )}
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <Label htmlFor="curriculum">Curriculum *</Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextState = !isNewCurriculum;
+                    setIsNewCurriculum(nextState);
+                    setFormData((prev) => ({ ...prev, curriculum: "" }));
+                    setCurriculumError("");
+                  }}
+                  className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  {isNewCurriculum
+                    ? "Select existing Curriculum"
+                    : "+ Enter new Curriculum"}
+                </button>
               </div>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <Label htmlFor="curriculum">Curriculum *</Label>
-                  <button
-                      type="button"
-                      onClick={() => {
-                        const nextState = !isNewCurriculum;
-                        setIsNewCurriculum(nextState);
-                        setFormData((prev) => ({ ...prev, curriculum: "" }));
-                        setCurriculumError("");
-                      }}
-                      className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    {isNewCurriculum
-                        ? "Select existing Curriculum"
-                        : "+ Enter new Curriculum"}
-                  </button>
-                </div>
-
-                {isNewCurriculum ? (
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-500 dark:text-gray-400" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
+              {isNewCurriculum ? (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500 dark:text-gray-400" />
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
                       {(formData.curriculum || "").length}/12
                     </span>
-                      </div>
-                      <TextInput
-                          id="curriculum-text-input"
-                          type="text"
-                          placeholder="e.g. BSIT-22-01"
-                          value={formData.curriculum || ""}
-                          onChange={handleCustomCurriculumChange}
-                          color={curriculumError ? "failure" : "gray"}
-                          maxLength={12}
-                      />
-                      {curriculumError ? (
-                          <HelperText className="mt-1 text-red-600 dark:text-red-500">
-                            {curriculumError}
-                          </HelperText>
-                      ) : (
-                          <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
-                            Format: <b className="font-mono">BSIT-22-01</b> (Allowed:{" "}
-                            <b className="font-mono">A-Z, 0-9, -</b>)
-                          </HelperText>
-                      )}
-                    </div>
-                ) : (
-                    <div>
-                      <Select
-                          id="curriculum"
-                          value={formData.curriculum || ""}
-                          onChange={handleInputChange}
-                          disabled={isLoadingCurricula}
-                          color={curriculumError ? "failure" : "gray"}
+                  </div>
+                  <TextInput
+                    id="curriculum-text-input"
+                    type="text"
+                    placeholder="e.g. BSIT-22-01"
+                    value={formData.curriculum || ""}
+                    onChange={handleCustomCurriculumChange}
+                    color={curriculumError ? "failure" : "gray"}
+                    maxLength={12}
+                  />
+                  {curriculumError ? (
+                    <HelperText className="mt-1 text-red-600 dark:text-red-500">
+                      {curriculumError}
+                    </HelperText>
+                  ) : (
+                    <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                      Format: <b className="font-mono">BSIT-22-01</b> (Allowed:{" "}
+                      <b className="font-mono">A-Z, 0-9, -</b>)
+                    </HelperText>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <Select
+                    id="curriculum"
+                    value={formData.curriculum || ""}
+                    onChange={handleInputChange}
+                    disabled={isLoadingCurricula}
+                    color={curriculumError ? "failure" : "gray"}
+                  >
+                    <option value="" hidden={true}>
+                      {isLoadingCurricula
+                        ? "Loading curricula..."
+                        : "Select Curriculum..."}
+                    </option>
+                    {curriculaList.map((curr) => (
+                      <option
+                        key={curr.curriculum_id}
+                        value={curr.curriculum_version}
                       >
-                        <option value="" hidden={true}>
-                          {isLoadingCurricula
-                              ? "Loading curricula..."
-                              : "Select Curriculum..."}
-                        </option>
-                        {curriculaList.map((curr) => (
-                            <option
-                                key={curr.curriculum_id}
-                                value={curr.curriculum_version}
-                            >
-                              {curr.curriculum_version}
-                            </option>
-                        ))}
-                      </Select>
-                      {curriculumError && (
-                          <HelperText color="failure">{curriculumError}</HelperText>
-                      )}
-                    </div>
+                        {curr.curriculum_version}
+                      </option>
+                    ))}
+                  </Select>
+                  {curriculumError && (
+                    <HelperText color="failure">{curriculumError}</HelperText>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="lecture_units">Lec Units (0 - 8)</Label>
+                <TextInput
+                  id="lecture_units"
+                  type="number"
+                  min={0}
+                  max={8}
+                  step="0.5"
+                  value={formData.lecture_units ?? 0}
+                  onChange={handleInputChange}
+                  color={lecUnitsError ? "failure" : "gray"}
+                />
+                {lecUnitsError && (
+                  <HelperText color="failure">{lecUnitsError}</HelperText>
                 )}
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="lecture_units">Lec Units (0 - 8)</Label>
-                  <TextInput
-                      id="lecture_units"
-                      type="number"
-                      min={0}
-                      max={8}
-                      step="0.5"
-                      value={formData.lecture_units ?? 0}
-                      onChange={handleInputChange}
-                      color={lecUnitsError ? "failure" : "gray"}
-                  />
-                  {lecUnitsError && (
-                      <HelperText color="failure">{lecUnitsError}</HelperText>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="lab_units">Lab Units (0 - 8)</Label>
-                  <TextInput
-                      id="lab_units"
-                      type="number"
-                      min={0}
-                      max={8}
-                      step="0.5"
-                      value={formData.lab_units ?? 0}
-                      onChange={handleInputChange}
-                      color={labUnitsError ? "failure" : "gray"}
-                  />
-                  {labUnitsError && (
-                      <HelperText color="failure">{labUnitsError}</HelperText>
-                  )}
-                </div>
-              </div>
-
               <div>
-                <Label htmlFor="lab_type">Laboratory Type</Label>
-                <Select
-                    id="lab_type"
-                    value={formData.lab_type || ""}
-                    onChange={handleInputChange}
-                    disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
-                >
-                  <option value="" hidden={true}>
-                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
+                <Label htmlFor="lab_units">Lab Units (0 - 8)</Label>
+                <TextInput
+                  id="lab_units"
+                  type="number"
+                  min={0}
+                  max={8}
+                  step="0.5"
+                  value={formData.lab_units ?? 0}
+                  onChange={handleInputChange}
+                  color={labUnitsError ? "failure" : "gray"}
+                />
+                {labUnitsError && (
+                  <HelperText color="failure">{labUnitsError}</HelperText>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="lab_type">Laboratory Type</Label>
+              <Select
+                id="lab_type"
+                value={formData.lab_type || ""}
+                onChange={handleInputChange}
+                disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
+              >
+                <option value="" hidden={true}>
+                  {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
+                </option>
+                {roomTypeList.map((type) => (
+                  <option key={type.room_type_id} value={type.room_type_id}>
+                    {type.value}
                   </option>
-                  {roomTypeList.map((type) => (
-                      <option key={type.room_type_id} value={type.room_type_id}>
-                        {type.value}
-                      </option>
-                  ))}
-                </Select>
+                ))}
+              </Select>
+            </div>
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            onClick={() => setOpenAddConfirmation(true)}
+            disabled={isFormInvalid || isPending}
+          >
+            Create Subject
+          </Button>
+          <Button color="alternative" onClick={handleCloseModals}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* --- MODAL: ADD CONFIRMATION --- */}
+      <Modal show={openAddConfirmation} onClose={() => setOpenAddConfirmation(false)}>
+        <ModalHeader>Confirm Add Subject</ModalHeader>
+        <ModalBody className={"dark:text-white"}>
+          Are you sure these details are correct? Please verify them carefully,
+          as this is your final opportunity to make changes.
+          <div className={"flex gap-8"}>
+            <div className={"my-3"}>
+              <Label className={"text-gray-400"}>Course Code</Label>
+              <div className={"font-bold dark:text-white"}>
+                {formData.course_code}
               </div>
             </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-                onClick={() => setOpenAddConfirmation(true)}
-                disabled={isFormInvalid || isPending}
-            >
-              Create Subject
-            </Button>
-            <Button color="alternative" onClick={handleCloseModals}>
-              Cancel
-            </Button>
-          </ModalFooter>
-        </Modal>
-
-        {/* --- MODAL: ADD CONFIRMATION --- */}
-        <Modal show={openAddConfirmation} onClose={() => setOpenAddConfirmation(false)}>
-          <ModalHeader>Confirm Add Subject</ModalHeader>
-          <ModalBody className={"dark:text-white"}>
-            Are you sure these details are correct? Please verify them carefully,
-            as this is your final opportunity to make changes.
-            <div className={"flex gap-8"}>
-              <div className={"my-3"}>
-                <Label className={"text-gray-400"}>Course Code</Label>
-                <div className={"font-bold dark:text-white"}>
-                  {formData.course_code}
-                </div>
-              </div>
-              <div className={"my-3"}>
-                <Label className={"text-gray-400"}>Course Name</Label>
-                <div className={"font-bold dark:text-white"}>
-                  {formData.course_name}
-                </div>
+            <div className={"my-3"}>
+              <Label className={"text-gray-400"}>Course Name</Label>
+              <div className={"font-bold dark:text-white"}>
+                {formData.course_name}
               </div>
             </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-                onClick={handleCreateSubject}
-                disabled={isFormInvalid || isPending}
-            >
-              Create Subject
-            </Button>
-            <Button
-                color="alternative"
-                onClick={() => setOpenAddConfirmation(false)}
-            >
-              Cancel
-            </Button>
-          </ModalFooter>
-        </Modal>
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            onClick={handleCreateSubject}
+            disabled={isFormInvalid || isPending}
+          >
+            Create Subject
+          </Button>
+          <Button
+            color="alternative"
+            onClick={() => setOpenAddConfirmation(false)}
+          >
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
 
-        {/* --- MODAL: EDIT SUBJECT --- */}
-        <Modal show={openEditModal} onClose={handleCloseModals} size="md">
-          <ModalHeader>Edit Subject</ModalHeader>
-          <ModalBody>
-            <div className="flex flex-col gap-4">
-              <div>
-                <div className="items-center justify-between">
-                  <Label htmlFor="course_code">Course Code</Label>
-                </div>
-                <div className={"font-semibold dark:text-white"}>
-                  {formData.course_code || ""}
-                </div>
+      {/* --- MODAL: EDIT SUBJECT --- */}
+      <Modal show={openEditModal} onClose={handleCloseModals} size="md">
+        <ModalHeader>Edit Subject</ModalHeader>
+        <ModalBody>
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="items-center justify-between">
+                <Label htmlFor="course_code">Course Code</Label>
               </div>
-
-              <div>
-                <div className="items-center justify-between">
-                  <Label htmlFor="course_name">Course Name</Label>
-                </div>
-                <div className={"font-semibold dark:text-white"}>
-                  {formData.course_name || ""}
-                </div>
+              <div className={"font-semibold dark:text-white"}>
+                {formData.course_code || ""}
               </div>
+            </div>
 
+            <div>
+              <div className="items-center justify-between">
+                <Label htmlFor="course_name">Course Name</Label>
+              </div>
+              <div className={"font-semibold dark:text-white"}>
+                {formData.course_name || ""}
+              </div>
+            </div>
+
+            {/* Year Level & Semester/Term Selection */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="year_level_select_edit">Year Level *</Label>
                 <Select
-                    id="year_level_select_edit"
-                    value={selectedYear}
-                    color={yearLevelError ? "failure" : "gray"}
-                    onChange={(e) => {
-                      const yr = e.target.value;
-                      setSelectedYear(yr);
-                      setYearLevelError(
-                          yr.trim() === "" ? "Year Level is required." : "",
-                      );
-                      setFormData((prev) => ({ ...prev, program_code: "" }));
-                    }}
+                  id="year_level_select_edit"
+                  value={selectedYear}
+                  color={yearLevelError ? "failure" : "gray"}
+                  onChange={(e) => {
+                    const yr = e.target.value;
+                    const prevLevel = getEducationLevel(selectedYear);
+                    const nextLevel = getEducationLevel(yr);
+                    setSelectedYear(yr);
+                    setYearLevelError(
+                      yr.trim() === "" ? "Year Level is required." : "",
+                    );
+                    setFormData((prev) => ({ ...prev, program_code: "" }));
+                    if (prevLevel !== nextLevel) {
+                      setSelectedTerm("");
+                      setTermError("");
+                    }
+                  }}
                 >
                   <option value="">Select Year...</option>
                   <option value="11">Grade 11</option>
@@ -1868,216 +1939,251 @@ export default function SubjectsManagement() {
                   <option value="4th Year">4th Year</option>
                 </Select>
                 {yearLevelError && (
-                    <HelperText color="failure">{yearLevelError}</HelperText>
+                  <HelperText color="failure">{yearLevelError}</HelperText>
                 )}
               </div>
 
               <div>
-                <Label htmlFor="program_code">Program *</Label>
+                <Label htmlFor="term_select_edit">{currentEduLevel === "tertiary" ? "Semester *" : "Term *"}</Label>
                 <Select
-                    id="program_code"
-                    value={formData.program_code || ""}
-                    onChange={handleInputChange}
-                    disabled={!selectedYear || isLoadingPrograms}
-                    color={programError ? "failure" : "gray"}
+                  id="term_select_edit"
+                  value={selectedTerm}
+                  disabled={!selectedYear}
+                  color={termError ? "failure" : "gray"}
+                  onChange={(e) => {
+                    const tm = e.target.value;
+                    setSelectedTerm(tm);
+                    setTermError(tm.trim() === "" ? `${currentEduLevel === "tertiary" ? "Semester" : "Term"} is required.` : "");
+                  }}
                 >
                   <option value="">
-                    {isLoadingPrograms
-                        ? "Loading programs..."
-                        : !selectedYear
-                            ? "Select Year Level first..."
-                            : "Select Program..."}
+                    {!selectedYear ? "Select Year first..." : `Select ${currentEduLevel === "tertiary" ? "Semester" : "Term"}...`}
                   </option>
-                  {programsList.map((prog) => (
-                      <option key={prog.program_code} value={prog.program_code}>
-                        {prog.program_code} - {prog.program_name}
-                      </option>
-                  ))}
+                  {currentEduLevel === "tertiary" && (
+                    <>
+                      <option value="Semester 1">Semester 1</option>
+                      <option value="Semester 2">Semester 2</option>
+                    </>
+                  )}
+                  {currentEduLevel === "shs" && (
+                    <>
+                      <option value="Term 1">Term 1</option>
+                      <option value="Term 2">Term 2</option>
+                      <option value="Term 3">Term 3</option>
+                      <option value="Term 4">Term 4</option>
+                    </>
+                  )}
                 </Select>
-                {programError && (
-                    <HelperText color="failure">{programError}</HelperText>
-                )}
+                {termError && <HelperText color="failure">{termError}</HelperText>}
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="program_code">Program *</Label>
+              <Select
+                id="program_code"
+                value={formData.program_code || ""}
+                onChange={handleInputChange}
+                disabled={!selectedYear || isLoadingPrograms}
+                color={programError ? "failure" : "gray"}
+              >
+                <option value="">
+                  {isLoadingPrograms
+                    ? "Loading programs..."
+                    : !selectedYear
+                      ? "Select Year Level first..."
+                      : "Select Program..."}
+                </option>
+                {programsList.map((prog) => (
+                  <option key={prog.program_code} value={prog.program_code}>
+                    {prog.program_code} - {prog.program_name}
+                  </option>
+                ))}
+              </Select>
+              {programError && (
+                <HelperText color="failure">{programError}</HelperText>
+              )}
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <Label htmlFor="curriculum">Curriculum *</Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextState = !isNewCurriculum;
+                    setIsNewCurriculum(nextState);
+                    setFormData((prev) => ({ ...prev, curriculum: "" }));
+                    setCurriculumError("");
+                  }}
+                  className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  {isNewCurriculum
+                    ? "Select existing Curriculum"
+                    : "+ Enter new Curriculum"}
+                </button>
               </div>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <Label htmlFor="curriculum">Curriculum *</Label>
-                  <button
-                      type="button"
-                      onClick={() => {
-                        const nextState = !isNewCurriculum;
-                        setIsNewCurriculum(nextState);
-                        setFormData((prev) => ({ ...prev, curriculum: "" }));
-                        setCurriculumError("");
-                      }}
-                      className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    {isNewCurriculum
-                        ? "Select existing Curriculum"
-                        : "+ Enter new Curriculum"}
-                  </button>
-                </div>
-
-                {isNewCurriculum ? (
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-500 dark:text-gray-400" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
+              {isNewCurriculum ? (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500 dark:text-gray-400" />
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
                       {(formData.curriculum || "").length}/12
                     </span>
-                      </div>
-                      <TextInput
-                          id="curriculum-text-input-edit"
-                          type="text"
-                          placeholder="e.g. BSIT-22-01"
-                          value={formData.curriculum || ""}
-                          onChange={handleCustomCurriculumChange}
-                          color={curriculumError ? "failure" : "gray"}
-                          maxLength={12}
-                      />
-                      {curriculumError ? (
-                          <HelperText className="mt-1 text-red-600 dark:text-red-500">
-                            {curriculumError}
-                          </HelperText>
-                      ) : (
-                          <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
-                            Format: <b className="font-mono">BSIT-22-01</b> (Allowed:{" "}
-                            <b className="font-mono">A-Z, 0-9, -</b>)
-                          </HelperText>
-                      )}
-                    </div>
-                ) : (
-                    <div>
-                      <Select
-                          id="curriculum"
-                          value={formData.curriculum || ""}
-                          onChange={handleInputChange}
-                          disabled={isLoadingCurricula}
-                          color={curriculumError ? "failure" : "gray"}
+                  </div>
+                  <TextInput
+                    id="curriculum-text-input-edit"
+                    type="text"
+                    placeholder="e.g. BSIT-22-01"
+                    value={formData.curriculum || ""}
+                    onChange={handleCustomCurriculumChange}
+                    color={curriculumError ? "failure" : "gray"}
+                    maxLength={12}
+                  />
+                  {curriculumError ? (
+                    <HelperText className="mt-1 text-red-600 dark:text-red-500">
+                      {curriculumError}
+                    </HelperText>
+                  ) : (
+                    <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                      Format: <b className="font-mono">BSIT-22-01</b> (Allowed:{" "}
+                      <b className="font-mono">A-Z, 0-9, -</b>)
+                    </HelperText>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <Select
+                    id="curriculum"
+                    value={formData.curriculum || ""}
+                    onChange={handleInputChange}
+                    disabled={isLoadingCurricula}
+                    color={curriculumError ? "failure" : "gray"}
+                  >
+                    <option value="" hidden={true}>
+                      {isLoadingCurricula
+                        ? "Loading curricula..."
+                        : "Select Curriculum..."}
+                    </option>
+                    {curriculaList.map((curr) => (
+                      <option
+                        key={curr.curriculum_id}
+                        value={curr.curriculum_version}
                       >
-                        <option value="" hidden={true}>
-                          {isLoadingCurricula
-                              ? "Loading curricula..."
-                              : "Select Curriculum..."}
-                        </option>
-                        {curriculaList.map((curr) => (
-                            <option
-                                key={curr.curriculum_id}
-                                value={curr.curriculum_version}
-                            >
-                              {curr.curriculum_version}
-                            </option>
-                        ))}
-                      </Select>
-                      {curriculumError && (
-                          <HelperText color="failure">{curriculumError}</HelperText>
-                      )}
-                    </div>
+                        {curr.curriculum_version}
+                      </option>
+                    ))}
+                  </Select>
+                  {curriculumError && (
+                    <HelperText color="failure">{curriculumError}</HelperText>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="lecture_units">Lec Units (0 - 8)</Label>
+                <TextInput
+                  id="lecture_units"
+                  type="number"
+                  min={0}
+                  max={8}
+                  step="0.5"
+                  value={formData.lecture_units ?? 0}
+                  onChange={handleInputChange}
+                  color={lecUnitsError ? "failure" : "gray"}
+                />
+                {lecUnitsError && (
+                  <HelperText color="failure">{lecUnitsError}</HelperText>
                 )}
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="lecture_units">Lec Units (0 - 8)</Label>
-                  <TextInput
-                      id="lecture_units"
-                      type="number"
-                      min={0}
-                      max={8}
-                      step="0.5"
-                      value={formData.lecture_units ?? 0}
-                      onChange={handleInputChange}
-                      color={lecUnitsError ? "failure" : "gray"}
-                  />
-                  {lecUnitsError && (
-                      <HelperText color="failure">{lecUnitsError}</HelperText>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="lab_units">Lab Units (0 - 8)</Label>
-                  <TextInput
-                      id="lab_units"
-                      type="number"
-                      min={0}
-                      max={8}
-                      step="0.5"
-                      value={formData.lab_units ?? 0}
-                      onChange={handleInputChange}
-                      color={labUnitsError ? "failure" : "gray"}
-                  />
-                  {labUnitsError && (
-                      <HelperText color="failure">{labUnitsError}</HelperText>
-                  )}
-                </div>
-              </div>
-
               <div>
-                <Label htmlFor="lab_type">Laboratory Type</Label>
-                <Select
-                    id="lab_type"
-                    value={formData.lab_type || ""}
-                    onChange={handleInputChange}
-                    disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
-                >
-                  <option value="" hidden={true}>
-                    {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
-                  </option>
-                  {roomTypeList.map((type) => (
-                      <option key={type.room_type_id} value={type.room_type_id}>
-                        {type.value}
-                      </option>
-                  ))}
-                </Select>
+                <Label htmlFor="lab_units">Lab Units (0 - 8)</Label>
+                <TextInput
+                  id="lab_units"
+                  type="number"
+                  min={0}
+                  max={8}
+                  step="0.5"
+                  value={formData.lab_units ?? 0}
+                  onChange={handleInputChange}
+                  color={labUnitsError ? "failure" : "gray"}
+                />
+                {labUnitsError && (
+                  <HelperText color="failure">{labUnitsError}</HelperText>
+                )}
               </div>
             </div>
-          </ModalBody>
-          <ModalFooter className="flex flex-row items-center justify-between gap-3">
-            <Button
-                color="red"
-                onClick={() => {
-                  setOpenEditModal(false);
-                  setOpenDeleteModal(true);
-                }}
-            >
-              <HiOutlineTrash className="h-4 w-4 sm:mr-2" />
-              <span className={"hidden sm:block"}>Delete</span>
-            </Button>
 
-            <div className="flex gap-2">
-              <Button
-                  onClick={handleUpdateSubject}
-                  disabled={isFormInvalid || isPending}
+            <div>
+              <Label htmlFor="lab_type">Laboratory Type</Label>
+              <Select
+                id="lab_type"
+                value={formData.lab_type || ""}
+                onChange={handleInputChange}
+                disabled={isLoadingRoomTypes || (formData.lab_units ?? 0) === 0}
               >
-                Save Changes
-              </Button>
-              <Button color="alternative" onClick={handleCloseModals}>
-                Cancel
-              </Button>
+                <option value="" hidden={true}>
+                  {(formData.lab_units ?? 0) === 0 ? "No lab units (Disabled)" : "Select Laboratory Type..."}
+                </option>
+                {roomTypeList.map((type) => (
+                  <option key={type.room_type_id} value={type.room_type_id}>
+                    {type.value}
+                  </option>
+                ))}
+              </Select>
             </div>
-          </ModalFooter>
-        </Modal>
+          </div>
+        </ModalBody>
+        <ModalFooter className="flex flex-row items-center justify-between gap-3">
+          <Button
+            color="red"
+            onClick={() => {
+              setOpenEditModal(false);
+              setOpenDeleteModal(true);
+            }}
+          >
+            <HiOutlineTrash className="h-4 w-4 sm:mr-2" />
+            <span className={"hidden sm:block"}>Delete</span>
+          </Button>
 
-        {/* --- MODAL: CONFIRM DELETE --- */}
-        <Modal show={openDeleteModal} onClose={handleCloseModals} size="md">
-          <ModalHeader>Confirm Delete</ModalHeader>
-          <ModalBody>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Are you sure you want to delete{" "}
-              <strong className="text-gray-900 dark:text-white">
-                {selectedSubject?.course_code} - {selectedSubject?.course_name}
-              </strong>
-              ? This action cannot be undone.
-            </p>
-          </ModalBody>
-          <ModalFooter className="flex justify-end gap-2">
-            <Button color="red" onClick={handleDeleteSubject}>
-              Confirm Delete
+          <div className="flex gap-2">
+            <Button
+              onClick={handleUpdateSubject}
+              disabled={isFormInvalid || isPending}
+            >
+              Save Changes
             </Button>
             <Button color="alternative" onClick={handleCloseModals}>
               Cancel
             </Button>
-          </ModalFooter>
-        </Modal>
-      </div>
+          </div>
+        </ModalFooter>
+      </Modal>
+
+      {/* --- MODAL: CONFIRM DELETE --- */}
+      <Modal show={openDeleteModal} onClose={handleCloseModals} size="md">
+        <ModalHeader>Confirm Delete</ModalHeader>
+        <ModalBody>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Are you sure you want to delete{" "}
+            <strong className="text-gray-900 dark:text-white">
+              {selectedSubject?.course_code} - {selectedSubject?.course_name}
+            </strong>
+            ? This action cannot be undone.
+          </p>
+        </ModalBody>
+        <ModalFooter className="flex justify-end gap-2">
+          <Button color="red" onClick={handleDeleteSubject}>
+            Confirm Delete
+          </Button>
+          <Button color="alternative" onClick={handleCloseModals}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </div>
   );
 }
