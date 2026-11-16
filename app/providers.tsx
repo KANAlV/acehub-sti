@@ -1,46 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { MsalProvider } from "@azure/msal-react";
 import { msalInstance } from "@/lib/msal";
-import { AuthenticationResult } from "@azure/msal-browser";
+
+interface SessionContextType {
+  sessionEmail: string | null;
+  sessionLoaded: boolean;
+}
+
+export const SessionContext = createContext<SessionContextType>({
+  sessionEmail: null,
+  sessionLoaded: false,
+});
+
+export function useSession() {
+  return useContext(SessionContext);
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
 
   useEffect(() => {
     const init = async () => {
       // 1. Initialize MSAL instance
       await msalInstance.initialize();
 
-      // 2. Process incoming authentication response from Microsoft redirect
+      // 2. Check for accounts in memory (popup auth stores tokens in memory)
+      const currentAccounts = msalInstance.getAllAccounts();
+      if (currentAccounts.length > 0) {
+        msalInstance.setActiveAccount(currentAccounts[0]);
+      }
+
+      // 3. Check httpOnly cookie session for page reload persistence
       try {
-        const response: AuthenticationResult | null =
-          await msalInstance.handleRedirectPromise();
-
-        if (response && response.account) {
-          msalInstance.setActiveAccount(response.account);
-
-          // 3. Sync newly logged-in user to database via API or Server Action
-          await fetch("/api/users/sync", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: response.account.username,
-              name: response.account.name || "",
-              tenantId: response.account.tenantId,
-            }),
-          });
-        } else {
-          // Fallback to active/first account if already logged in
-          const currentAccounts = msalInstance.getAllAccounts();
-          if (currentAccounts.length > 0) {
-            msalInstance.setActiveAccount(currentAccounts[0]);
-          }
+        const res = await fetch("/api/check-session");
+        const data = await res.json();
+        if (data.authenticated && data.email) {
+          setSessionEmail(data.email);
         }
       } catch (error) {
-        console.error("Error processing MSAL redirect promise:", error);
+        console.error("Error checking cookie session:", error);
       } finally {
+        setSessionLoaded(true);
         setIsInitialized(true);
       }
     };
@@ -52,5 +56,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     return null; // Don't render pages until auth state is completely resolved
   }
 
-  return <MsalProvider instance={msalInstance}>{children}</MsalProvider>;
+  return (
+    <SessionContext.Provider value={{ sessionEmail, sessionLoaded }}>
+      <MsalProvider instance={msalInstance}>{children}</MsalProvider>
+    </SessionContext.Provider>
+  );
 }

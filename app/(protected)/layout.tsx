@@ -53,6 +53,7 @@ import { useMsal } from "@azure/msal-react";
 import { InteractionRequiredAuthError } from "@azure/msal-browser";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import PermissionRedirect from "@/utils/PermissionRedirect";
+import { useSession } from "@/app/providers";
 
 interface UserPermissions {
   booking: boolean;
@@ -76,7 +77,11 @@ export default function ProtectedLayout({
   children: React.ReactNode;
 }) {
   const { instance, accounts } = useMsal();
-  const account = instance.getActiveAccount() || accounts[0];
+  const { sessionEmail } = useSession();
+  const msalAccount = instance.getActiveAccount() || accounts[0];
+
+  // Fallback to cookie session when MSAL memory is empty (after page reload)
+  const account = msalAccount || (sessionEmail ? { username: sessionEmail, name: sessionEmail.split("@")[0] } : null);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -169,11 +174,12 @@ export default function ProtectedLayout({
   /* --- Navigation Bar Funcs --- */
   useEffect(() => {
     async function fetchProfilePicture() {
-      if (!account) return;
+      // Skip profile picture fetch if using cookie-only session (no MSAL tokens in memory)
+      if (!msalAccount) return;
 
       const request = {
         scopes: ["User.Read"],
-        account: account,
+        account: msalAccount,
       };
 
       try {
@@ -194,7 +200,26 @@ export default function ProtectedLayout({
         }
       } catch (error) {
         if (error instanceof InteractionRequiredAuthError) {
-          instance.acquireTokenRedirect(request);
+          try {
+            const response = await instance.acquireTokenPopup(request);
+            if (response.accessToken) {
+              const graphResponse = await fetch(
+                "https://graph.microsoft.com/v1.0/me/photo/$value",
+                {
+                  headers: {
+                    Authorization: `Bearer ${response.accessToken}`,
+                  },
+                },
+              );
+              if (graphResponse.ok) {
+                const blob = await graphResponse.blob();
+                const imageUrl = URL.createObjectURL(blob);
+                setProfilePhoto(imageUrl);
+              }
+            }
+          } catch (popupError) {
+            console.warn("Popup token refresh failed:", popupError);
+          }
         } else {
           console.warn("User profile photo not found or unavailable:", error);
         }
@@ -202,7 +227,7 @@ export default function ProtectedLayout({
     }
 
     void fetchProfilePicture();
-  }, [account, instance]);
+  }, [msalAccount, instance]);
 
   const userInitials = account?.name
     ? account.name
@@ -212,18 +237,18 @@ export default function ProtectedLayout({
         .substring(0, 2)
     : "U";
 
+  // Set httpOnly cookie when MSAL account is available (after fresh login)
   useEffect(() => {
-    const account = msalInstance.getActiveAccount();
-    if (account) {
+    if (msalAccount) {
       fetch("/api/set-user-cookie", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: account.username }),
+        body: JSON.stringify({ email: msalAccount.username }),
       }).catch((err) =>
         console.warn("Failed to set user_email cookie:", err)
       );
     }
-  }, []);
+  }, [msalAccount]);
 
   function redirectPage(page: string) {
     if (!pathname.toLowerCase().endsWith(page.toLowerCase())) {

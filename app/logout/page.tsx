@@ -9,17 +9,19 @@ export default function AutoLogoutPage() {
   useEffect(() => {
     const handleLogout = async () => {
       try {
+        // Clear httpOnly session cookie
+        await fetch("/api/logout", { method: "POST" });
+
+        // Logout from MSAL
         if (accounts.length > 0) {
-          await instance.logoutRedirect({
+          await instance.logoutPopup({
             account: accounts[0],
-            postLogoutRedirectUri: (window.location.href = "/"),
+            postLogoutRedirectUri: "/",
           });
         }
       } catch (error) {
-        console.error("Local logout failed:", error);
+        console.error("Logout failed:", error);
       } finally {
-        sessionStorage.clear();
-        localStorage.clear();
         window.location.href = "/";
       }
     };

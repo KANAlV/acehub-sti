@@ -37,7 +37,14 @@ export default function LoginPage() {
         const result = await authorizeAndSyncUser(userEmail, userName);
 
         if (result.authorized) {
-          // 2. Seed initial default configurations safely upon first login/sync
+          // 2. Set httpOnly cookie for session persistence across page reloads
+          await fetch("/api/set-user-cookie", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: userEmail }),
+          });
+
+          // 3. Seed initial default configurations safely upon first login/sync
           await seedConfiguration();
           await seedRoomTypes();
           await seedDepartments();
@@ -55,15 +62,15 @@ export default function LoginPage() {
     handleAuthAndSync();
   }, [accounts, inProgress, instance, router]);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (inProgress !== "none") return;
 
     try {
-      instance.loginRedirect({
+      await instance.loginPopup({
         scopes: ["User.Read"],
       });
     } catch (error) {
-      console.error("Login redirect failed:", error);
+      console.error("Login popup failed:", error);
     }
   };
 

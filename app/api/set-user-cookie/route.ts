@@ -17,8 +17,9 @@ export async function POST(request: NextRequest) {
     cookieStore.set("user_email", email, {
       path: "/",
       maxAge: 60 * 60 * 24, // 1 day
-      httpOnly: false,
+      httpOnly: true,
       sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
     });
 
     return NextResponse.json({ success: true });
