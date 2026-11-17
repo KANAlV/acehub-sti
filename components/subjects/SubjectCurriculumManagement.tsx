@@ -34,6 +34,7 @@ import {
   fetchPrograms,
   CurriculumRecord,
   CurriculumInput,
+  ProgramRecord,
 } from "@/app/actions/system";
 
 import { filterCurricula } from "@/utils/validation";
@@ -163,11 +164,11 @@ export default function SubjectCurriculumManagement() {
           fetchPrograms(null, "shs", "program_code", "ASC", 0, 1),
           fetchPrograms(null, "tertiary", "program_code", "ASC", 0, 1),
         ]);
-        const shsPrograms = (shsRes?.data || shsRes || []).map((p: any) => ({
+        const shsPrograms = (shsRes?.data || shsRes || []).map((p: ProgramRecord) => ({
           program_code: p.program_code,
           program_name: p.program_name,
         }));
-        const tertiaryPrograms = (tertiaryRes?.data || tertiaryRes || []).map((p: any) => ({
+        const tertiaryPrograms = (tertiaryRes?.data || tertiaryRes || []).map((p: ProgramRecord) => ({
           program_code: p.program_code,
           program_name: p.program_name,
         }));
