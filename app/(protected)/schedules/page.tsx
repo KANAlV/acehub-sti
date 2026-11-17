@@ -28,6 +28,7 @@ import {
   AccordionTitle,
   AccordionContent,
   ToggleSwitch,
+  Tooltip,
 } from "flowbite-react";
 import {
   filterAlphanumericDashUnderscore,
@@ -58,13 +59,15 @@ import {
   AssignedSubjectDetail,
   generateProgramSections,
   generateRoomAndClassSchedules,
+  generateRoomAndClassSchedulesWithTeachers,
+  assignTeachersToSchedule,
   ScheduleEntry,
   fetchSubjectsForGeneration,
 } from "@/app/actions/AutoScheduleGeneration";
 import Image from "next/image";
 
 // For Debugging Only (Developer-controlled code flag)
-const testMode = false;
+const testMode = true;
 
 // --- Types matching database statement schema --- //
 export interface ScheduleRecord {
@@ -117,6 +120,8 @@ export default function ScheduleManagement() {
   const [curriculumAdd, setCurriculumAdd] = useState<CurriculumRecord[]>([]);
   const [isCurriculaSearching, setIsCurriculaSearching] =
     useState<boolean>(false);
+  const [selectedCurriculumFilter, setSelectedCurriculumFilter] =
+    useState<string>("ALL");
   const [isSubmittingAutoGeneration, setIsSubmittingAutoGeneration] =
     useState<boolean>(false);
   const [generationProgress, setGenerationProgress] = useState<number>(0);
@@ -250,6 +255,7 @@ export default function ScheduleManagement() {
     setCurriculumAdd([]);
     setCurriculaSearch("");
     setIsCurriculaSearching(false);
+    setSelectedCurriculumFilter("ALL");
     setGenerationProgress(0);
     setGenerationStatusText("");
     setPendingAutoPayload(null);
@@ -450,7 +456,7 @@ export default function ScheduleManagement() {
         `Generated ${sectionRes.sections.length} sections. Running room allocation and timetable generation...`,
       );
 
-      const roomScheduleRes = await generateRoomAndClassSchedules(
+      const roomScheduleRes = await generateRoomAndClassSchedulesWithTeachers(
         scheduleName,
         curriculumIds,
         tertiaryTerm,
@@ -458,12 +464,18 @@ export default function ScheduleManagement() {
         allSubjects,
         shsTerm,
       );
-      console.log("=== ROOM & CLASS SCHEDULE ENTRIES ===", roomScheduleRes);
+      console.log("=== ROOM & CLASS SCHEDULE ENTRIES (WITH TEACHERS) ===", roomScheduleRes);
 
       isSuccess = roomScheduleRes.success;
       errorMessage = roomScheduleRes.error || "";
 
       if (isSuccess && roomScheduleRes.scheduleEntries.length > 0) {
+        // Teachers are already assigned by generateRoomAndClassSchedulesWithTeachers
+        setGenerationStatusText(
+          `Scheduled ${roomScheduleRes.scheduleEntries.length} entries with teachers assigned.`,
+        );
+        setGenerationProgress(80);
+
         function timeToMinutes(timeStr: string): number {
           const [hours, minutes] = timeStr.split(":").map(Number);
           return hours * 60 + minutes;
@@ -471,7 +483,7 @@ export default function ScheduleManagement() {
 
         entriesPayload = roomScheduleRes.scheduleEntries.map((entry) => ({
           subject_id: entry.subjectId || null,
-          teacher_id: null,
+          teacher_id: entry.teacherId || null,
           room_id: entry.roomId || null,
           section: entry.sectionCode,
           day: entry.day,
@@ -805,6 +817,25 @@ export default function ScheduleManagement() {
     });
   };
 
+  // Helper to count how many curricula are assigned to a program (by checking if curriculum_version contains program_code)
+  const programCurriculumCount = (programCode: string): number => {
+    const codeUpper = programCode.trim().toUpperCase();
+    return curriculumAdd.filter((curriculum) => {
+      const versionUpper = curriculum.curriculum_version?.trim().toUpperCase();
+      return versionUpper && versionUpper.includes(codeUpper);
+    }).length;
+  };
+
+  // Helper to get curricula filtered by program code
+  const getCurriculaForProgram = (programCode: string): CurriculumRecord[] => {
+    if (programCode === "ALL") return curriculumAdd;
+    const codeUpper = programCode.trim().toUpperCase();
+    return curriculumAdd.filter((curriculum) => {
+      const versionUpper = curriculum.curriculum_version?.trim().toUpperCase();
+      return versionUpper && versionUpper.includes(codeUpper);
+    });
+  };
+
   return (
     <>
       {/* Toast Notification */}
@@ -995,7 +1026,7 @@ export default function ScheduleManagement() {
                 ? "Semi-Auto Setup"
                 : "Use Template Setup"}
         </ModalHeader>
-        <ModalBody>
+        <ModalBody className={"scrollbar-thumb-gray-400 scrollbar-track-transparent dark:scrollbar-thumb-gray-600"}>
           {addStep === "selection" ? (
             <div className="space-y-4 select-none">
               <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -1010,6 +1041,7 @@ export default function ScheduleManagement() {
                     value="auto"
                     checked={creationMode === "auto"}
                     onChange={() => setCreationMode("auto")}
+                    className="shrink-0"
                   />
                   <Label htmlFor="mode-auto" className="cursor-pointer">
                     <span className="block font-semibold">
@@ -1029,6 +1061,7 @@ export default function ScheduleManagement() {
                     value="semi-auto"
                     checked={creationMode === "semi-auto"}
                     onChange={() => setCreationMode("semi-auto")}
+                    className="shrink-0"
                   />
                   <Label htmlFor="mode-semi-auto" className="cursor-pointer">
                     <span className="block font-semibold">
@@ -1048,6 +1081,7 @@ export default function ScheduleManagement() {
                     value="template"
                     checked={creationMode === "template"}
                     onChange={() => setCreationMode("template")}
+                    className="shrink-0"
                   />
                   <Label htmlFor="mode-template" className="cursor-pointer">
                     <span className="block font-semibold">Use Template</span>
@@ -1146,125 +1180,215 @@ export default function ScheduleManagement() {
                   </span>
                 </div>
 
-                <div className="flex gap-4">
-                  <div className="w-[75%]">
-                    <Label>Curriculum Search</Label>
-                    <TextInput
-                      value={curriculaSearch}
-                      placeholder={"e.g. BSIT-22-01"}
-                      onChange={(e) => setCurriculaSearch(e.target.value)}
-                    />
-                    <div className="max-h-32 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto">
-                      {isCurriculaSearching ? (
-                        <div className="flex items-center justify-center gap-2 p-3 text-xs text-gray-500">
-                          <Spinner size="sm" />
-                          <span>Searching curricula...</span>
-                        </div>
-                      ) : curriculaSearch.length >= 2 ? (
-                        curricula.filter(
-                          (item: CurriculumRecord) =>
-                            !curriculumAdd.some(
-                              (added: CurriculumRecord) =>
-                                added.curriculum_id === item.curriculum_id,
-                            ),
-                        ).length > 0 ? (
-                          curricula
-                            .filter(
-                              (item: CurriculumRecord) =>
-                                !curriculumAdd.some(
-                                  (added: CurriculumRecord) =>
-                                    added.curriculum_id === item.curriculum_id,
-                                ),
-                            )
-                            .map((item: CurriculumRecord) => (
-                              <div
-                                key={item.curriculum_id}
-                                onClick={() => handleAddCurriculum(item)}
-                                className="my-1 cursor-pointer rounded bg-black/5 p-2 text-xs hover:bg-black/10 dark:bg-white/10 dark:text-white"
-                              >
-                                {item.curriculum_version}
-                              </div>
-                            ))
-                        ) : (
-                          <div className="p-3 text-center text-xs text-gray-400 italic">
-                            No match found
-                          </div>
-                        )
-                      ) : (
-                        <div className="p-3 text-center text-xs text-gray-400 italic">
-                          Type at least 2 characters to search...
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-2">
+                <div className="flex items-stretch">
+                  {/* Left side - Main content area */}
+                  <div className="flex-1 rounded-l-lg border-t border-l border-b border-gray-500 dark:border-gray-300 p-4">
+                    {/* Total count */}
+                    <div className="flex items-center gap-2 pb-2">
                       <span className="text-xs font-bold dark:text-white">
-                        Added Curriculum
+                        Total Added Curriculum
                       </span>
                       <span className="text-xs font-extrabold dark:text-white">
                         ({curriculumAdd.length})
                       </span>
                     </div>
 
-                    <div className="mt-1 min-h-17.5 rounded-xl border border-gray-300/50 p-2 dark:border-gray-600">
-                      <div className="flex flex-wrap gap-2">
-                        {curriculumAdd.length > 0 ? (
-                          curriculumAdd.map((item: CurriculumRecord) => (
-                            <Badge
-                              key={item.curriculum_id}
-                              className="items-center"
-                              color={`${isShsCurriculum(item) ? "warning" : "info"}`}
-                            >
-                              <span className="inline-flex items-center gap-1.5">
-                                {item.curriculum_version}
-                                <HiX
-                                  className="h-4 w-4 cursor-pointer text-cyan-950 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400"
-                                  onClick={() => {
-                                    setCurriculumAdd((prev) =>
-                                      prev.filter(
-                                        (curriculum: CurriculumRecord) =>
-                                          curriculum.curriculum_id !==
-                                          item.curriculum_id,
-                                      ),
-                                    );
-                                  }}
-                                />
-                              </span>
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-xs text-gray-400 italic">
-                            No curricula added yet. Please search and select at
-                            least one.
-                          </span>
-                        )}
+                    {/* Curriculum Search */}
+                    <Label>Curriculum Search</Label>
+                    <div className="relative">
+                      <TextInput
+                        value={curriculaSearch}
+                        placeholder={"e.g. BSIT-22-01"}
+                        onChange={(e) => setCurriculaSearch(e.target.value)}
+                      />
+                      {(curriculaSearch.length >= 2 || isCurriculaSearching) && (
+                        <div className="absolute z-10 mt-1 w-full max-h-24 overflow-y-auto rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 scrollbar-thumb-gray-400 scrollbar-track-transparent">
+                          {isCurriculaSearching ? (
+                            <div className="flex items-center justify-center gap-2 p-3 text-xs text-gray-500">
+                              <Spinner size="sm" />
+                              <span>Searching curricula...</span>
+                            </div>
+                          ) : curricula.filter(
+                            (item: CurriculumRecord) =>
+                              !curriculumAdd.some(
+                                (added: CurriculumRecord) =>
+                                  added.curriculum_id === item.curriculum_id,
+                              ),
+                          ).length > 0 ? (
+                            curricula
+                              .filter(
+                                (item: CurriculumRecord) =>
+                                  !curriculumAdd.some(
+                                    (added: CurriculumRecord) =>
+                                      added.curriculum_id === item.curriculum_id,
+                                  ),
+                              )
+                              .map((item: CurriculumRecord) => (
+                                <div
+                                  key={item.curriculum_id}
+                                  onClick={() => handleAddCurriculum(item)}
+                                  className="py-1 cursor-pointer bg-black/5 p-2 text-xs hover:bg-black/10 dark:bg-white/10 dark:text-white"
+                                >
+                                  {item.curriculum_version}
+                                </div>
+                              ))
+                          ) : (
+                            <div className="p-3 text-center text-xs text-gray-400 italic">
+                              No match found
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Selected Curriculum display */}
+                    <div className="pt-3">
+                      <div className="rounded-lg p-3">
+                        <div className="pb-2 text-xs font-semibold text-gray-300">
+                          Selected Curriculum:
+                          {selectedCurriculumFilter !== "ALL" && (
+                            <span className="pl-1 text-gray-400">
+                              (Filtering by {selectedCurriculumFilter})
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-h-[100px] rounded p-2">
+                          {(() => {
+                            const filteredCurricula = getCurriculaForProgram(
+                              selectedCurriculumFilter,
+                            );
+                            return filteredCurricula.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {filteredCurricula.map(
+                                  (item: CurriculumRecord) => (
+                                    <Badge
+                                      key={item.curriculum_id}
+                                      className="items-center"
+                                      color={`${isShsCurriculum(item) ? "warning" : "info"}`}
+                                    >
+                                      <span className="inline-flex items-center gap-1.5">
+                                        {item.curriculum_version}
+                                        <HiX
+                                          className="h-4 w-4 cursor-pointer text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400"
+                                          onClick={() => {
+                                            setCurriculumAdd((prev) =>
+                                              prev.filter(
+                                                (curriculum: CurriculumRecord) =>
+                                                  curriculum.curriculum_id !==
+                                                  item.curriculum_id,
+                                              ),
+                                            );
+                                            // If inside a course tab, put the program code back in search
+                                            if (selectedCurriculumFilter !== "ALL") {
+                                              setCurriculaSearch(selectedCurriculumFilter);
+                                            }
+                                          }}
+                                        />
+                                      </span>
+                                    </Badge>
+                                  ),
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex h-[80px] items-center justify-center text-xs text-gray-500 italic">
+                                {selectedCurriculumFilter === "ALL"
+                                  ? "No curricula added yet. Please search and select at least one."
+                                  : `No curricula assigned to ${selectedCurriculumFilter}.`}
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="w-[25%] border-l border-gray-200 pl-3 dark:border-gray-700">
-                    <div className="text-center text-xs font-semibold text-cyan-700 dark:text-cyan-300">
-                      Programs
-                    </div>
-                    <div className="text-center text-xs font-semibold text-yellow-700 dark:text-yellow-300">
-                      & Strands
-                    </div>
+                  {/* Right side - Program/Strand filter tabs */}
+                  <div className="shrink-0 w-[15%] min-w-[120px] flex flex-col gap-1.5">
+                    <div className="flex-1 max-h-96 overflow-y-auto scrollbar-thumb-gray-400 scrollbar-track-transparent">
+                      {/* ALL tab */}
+                      <button
+                        onClick={() => setSelectedCurriculumFilter("ALL")}
+                        className={`w-full px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                          selectedCurriculumFilter === "ALL"
+                            ? "rounded-r-lg border-t border-r border-b border-gray-500 dark:border-gray-300 dark:text-white"
+                            : "rounded-r-lg border-l border-gray-500 dark:border-gray-300 bg-gray-200 text-gray-600 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span>ALL</span>
+                          {(() => {
+                            const allCounts = programs.map((p) =>
+                              programCurriculumCount(p.program_code),
+                            );
+                            const allHaveOne =
+                              allCounts.length > 0 &&
+                              allCounts.every((c) => c === 1);
+                            const allHaveNone =
+                              allCounts.length > 0 &&
+                              allCounts.every((c) => c === 0);
+                            if (allHaveOne)
+                              return (
+                                <Tooltip content="All courses have their curriculum">
+                                  <HiCheck className="h-4 w-4 text-green-400 shrink-0 cursor-help" />
+                                </Tooltip>
+                              );
+                            if (allHaveNone)
+                              return (
+                                <Tooltip content="No courses have their curriculum">
+                                  <HiX className="h-4 w-4 text-red-400 shrink-0 cursor-help" />
+                                </Tooltip>
+                              );
+                            return (
+                              <Tooltip content="Some courses are missing or have extra curriculum">
+                                <HiExclamation className="h-4 w-4 text-yellow-400 shrink-0 cursor-help" />
+                              </Tooltip>
+                            );
+                          })()}
+                        </div>
+                      </button>
 
-                    <div className="max-h-44 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto pt-1">
-                      {programs.map((item: ProgramRecord) => (
-                        <Badge
-                          color={
-                            item.year_level.toLowerCase() === "tertiary"
-                              ? "info"
-                              : "warning"
-                          }
-                          key={item.program_code}
-                          className="my-1 cursor-pointer justify-center border border-gray-400 text-[10px] transition-opacity hover:opacity-80"
-                          onClick={() => setCurriculaSearch(item.program_code)}
-                        >
-                          {item.program_code}
-                        </Badge>
-                      ))}
+                      {/* Program/Strand tabs */}
+                      {programs.map((item: ProgramRecord) => {
+                        const curriculumCount = programCurriculumCount(
+                          item.program_code,
+                        );
+                        const isSelected =
+                          selectedCurriculumFilter === item.program_code;
+                        const isTertiary = item.year_level?.toLowerCase() === "tertiary";
+
+                        return (
+                          <button
+                            key={item.program_code}
+                            onClick={() => {
+                              setSelectedCurriculumFilter(item.program_code);
+                              // Auto-search if no curriculum exists for this program
+                              if (curriculumCount === 0) {
+                                setCurriculaSearch(item.program_code);
+                              }
+                            }}
+                            className={`w-full px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                              isSelected
+                                ? "rounded-r-lg border-t border-r border-b border-gray-500 dark:border-gray-300 dark:text-white"
+                                : isTertiary
+                                  ? "rounded-r-lg border-l border-gray-500 dark:border-gray-300 bg-cyan-900 text-cyan-300 hover:bg-cyan-800 dark:bg-cyan-950 dark:text-cyan-400 dark:hover:bg-cyan-900"
+                                  : "rounded-r-lg border-l border-gray-500 dark:border-gray-300 bg-yellow-900 text-yellow-300 hover:bg-yellow-800 dark:bg-yellow-950 dark:text-yellow-400 dark:hover:bg-yellow-900"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="truncate">{item.program_code}</span>
+                              {curriculumCount === 0 ? (
+                                <HiX className="h-4 w-4 text-red-400 shrink-0" />
+                              ) : curriculumCount >= 2 ? (
+                                <Tooltip content="has more than one curriculum">
+                                  <HiExclamation className="h-4 w-4 text-yellow-400 shrink-0 cursor-help" />
+                                </Tooltip>
+                              ) : (
+                                <HiCheck className="h-4 w-4 text-green-400 shrink-0" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1733,6 +1857,9 @@ export default function ScheduleManagement() {
                                       <div>
                                         Room: {matchedEntry.roomName}
                                       </div>
+                                      <div>
+                                        Teacher: {matchedEntry.teacherName || "None"}
+                                      </div>
                                       <div className="font-mono">
                                         {matchedEntry.startTime} -{" "}
                                         {matchedEntry.endTime}
@@ -1778,7 +1905,7 @@ export default function ScheduleManagement() {
                   </table>
                 </div>
               ) : (
-                <div className="max-h-[600px] overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                <div className="max-h-150 overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                   <Table hoverable>
                     <TableHead>
                       <TableRow>
@@ -1790,6 +1917,7 @@ export default function ScheduleManagement() {
                         <TableHeadCell>Day</TableHeadCell>
                         <TableHeadCell>Time</TableHeadCell>
                         <TableHeadCell>Units</TableHeadCell>
+                        <TableHeadCell>Teacher</TableHeadCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -1821,12 +1949,15 @@ export default function ScheduleManagement() {
                               {entry.startTime} - {entry.endTime}
                             </TableCell>
                             <TableCell>{entry.units}</TableCell>
+                            <TableCell className="text-gray-700 dark:text-gray-300">
+                              {entry.teacherName || "None"}
+                            </TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
                           <TableCell
-                            colSpan={8}
+                            colSpan={9}
                             className="py-6 text-center text-gray-400 italic"
                           >
                             No entries found matching the selected filters.

@@ -2,7 +2,7 @@
 
 import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useSession } from "@/app/providers";
 
 export default function ProtectedRoute({
@@ -13,11 +13,10 @@ export default function ProtectedRoute({
   const { accounts, inProgress } = useMsal();
   const { sessionEmail, sessionLoaded } = useSession();
   const router = useRouter();
-  const [hasCheckedSession, setHasCheckedSession] = useState(false);
 
   useEffect(() => {
-    if (!sessionLoaded || !hasCheckedSession) return;
-    setHasCheckedSession(true);
+    // Wait until session is loaded
+    if (!sessionLoaded) return;
 
     // If MSAL has an account in memory, user is authenticated
     if (accounts.length > 0) return;
@@ -29,7 +28,7 @@ export default function ProtectedRoute({
     if (inProgress === "none") {
       router.push("/login");
     }
-  }, [accounts, inProgress, sessionEmail, sessionLoaded, hasCheckedSession, router]);
+  }, [accounts, inProgress, sessionEmail, sessionLoaded, router]);
 
   // Show nothing while MSAL is resolving credentials or session is loading
   if (inProgress !== "none" || !sessionLoaded) {

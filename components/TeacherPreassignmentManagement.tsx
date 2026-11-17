@@ -121,6 +121,8 @@ export default function TeacherPreassignmentManagement({
   // --- Curricula ---
   const [curricula, setCurricula] = useState<CurriculumRecord[]>([]);
   const [curriculaSearch, setCurriculaSearch] = useState("");
+  const [selectedCurriculumFilter, setSelectedCurriculumFilter] =
+    useState<string>("ALL");
 
   // --- Search & Filter State ---
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -766,6 +768,7 @@ export default function TeacherPreassignmentManagement({
   function closeConfigModal() {
     setOpenConfigModal(false);
     setCurriculaSearch("");
+    setSelectedCurriculumFilter("ALL");
     setIsSubmittingConfig(false);
   }
 
@@ -1051,6 +1054,25 @@ export default function TeacherPreassignmentManagement({
       const progCode = p.program_code?.trim().toUpperCase();
 
       return isNonTertiary && progCode && versionUpper.includes(progCode);
+    });
+  };
+
+  // Helper to count how many curricula are assigned to a program
+  const programCurriculumCount = (programCode: string): number => {
+    const codeUpper = programCode.trim().toUpperCase();
+    return curriculumAdd.filter((curriculum) => {
+      const versionUpper = curriculum.curriculum_version.trim().toUpperCase();
+      return versionUpper.includes(codeUpper);
+    }).length;
+  };
+
+  // Helper to get curricula filtered by program code
+  const getCurriculaForProgram = (programCode: string): CurriculumRecord[] => {
+    if (programCode === "ALL") return curriculumAdd;
+    const codeUpper = programCode.trim().toUpperCase();
+    return curriculumAdd.filter((curriculum) => {
+      const versionUpper = curriculum.curriculum_version.trim().toUpperCase();
+      return versionUpper.includes(codeUpper);
     });
   };
 
@@ -1734,128 +1756,221 @@ export default function TeacherPreassignmentManagement({
           </span>
         </ModalHeader>
         <ModalBody>
-          <div className={"flex"}>
-            <div className={"w-[80%]"}>
-              <div className="mb-2 text-sm text-gray-600 dark:text-gray-300">
-                <span>Recommended benchmark: </span>
+          <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+            <h3 className="mb-1 text-sm font-bold text-gray-900 dark:text-white">
+              Subject Constraints (Curricula)
+            </h3>
+            <div className="mb-3 text-xs text-gray-600 dark:text-gray-300">
+              <span>Recommended benchmark: </span>
+              <span className="font-bold text-blue-600 dark:text-blue-400">
                 {recommendedConstraints} total curricula
-                <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                  Based on all active programs and strands.
-                </span>
-              </div>
-
-              <div>
-                <Label>Curriculum Search</Label>
-                <TextInput
-                  value={curriculaSearch}
-                  placeholder={"e.g. BSIT-22-01"}
-                  onChange={(e) => setCurriculaSearch(e.target.value)}
-                />
-                <div>
-                  {curricula
-                    .filter(
-                      (item) =>
-                        !curriculumAdd.some(
-                          (added) => added.curriculum_id === item.curriculum_id,
-                        ),
-                    )
-                    .map((item) => {
-                      return (
-                        <div
-                          key={item.curriculum_id}
-                          onClick={() => handleAddCurriculum(item)}
-                          className={
-                            "my-1 cursor-pointer rounded bg-black/15 p-2 hover:bg-black/10 dark:text-white"
-                          }
-                        >
-                          {item.curriculum_version}
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-
-              <div className={"flex items-center gap-2"}>
-                <h3 className={"py-3 dark:text-white"}>Added Curriculum</h3>
-                <span className={"font-extrabold dark:text-white"}>
-                  ({curriculumAdd.length})
-                </span>
-              </div>
-
-              <div
-                className={"min-h-24 rounded-xl border border-gray-500/50 p-2"}
-              >
-                <div className={"flex flex-wrap gap-2"}>
-                  {curriculumAdd.length > 0 &&
-                    curriculumAdd.map((item) => {
-                      const isShs = isShsCurriculum(item);
-                      return (
-                        <Badge
-                          key={item.curriculum_id}
-                          className={"items-center"}
-                          color={isShs ? "warning" : "info"} // Yellow for SHS/Strands, Blue for Tertiary
-                        >
-                          <span className={"inline-flex items-center gap-1.5"}>
-                            {item.curriculum_version}
-                            <HiX
-                              className={
-                                "h-4 w-4 cursor-pointer hover:text-red-500 dark:hover:text-red-400"
-                              }
-                              onClick={() => {
-                                setCurriculumAdd((prev) =>
-                                  prev.filter(
-                                    (curriculum) =>
-                                      curriculum.curriculum_id !==
-                                      item.curriculum_id,
-                                  ),
-                                );
-                              }}
-                            />
-                          </span>
-                        </Badge>
-                      );
-                    })}
-                </div>
-              </div>
+              </span>
+              <span className="block text-[11px] text-gray-500">
+                Based on all active programs and strands.
+              </span>
             </div>
 
-            <div className={"ml-3 w-[20%] border-l border-gray-500 pl-2"}>
-              <div
-                className={
-                  "mx-2 text-center font-semibold text-cyan-700 dark:text-cyan-300"
-                }
-              >
-                Programs
-              </div>
-              <div
-                className={
-                  "mx-2 text-center font-semibold text-yellow-700 dark:text-yellow-300"
-                }
-              >
-                & Strands
+            <div className="flex items-stretch">
+              {/* Left side - Main content area */}
+              <div className="flex-1 rounded-l-lg border-t border-l border-b border-gray-500 dark:border-gray-300 p-4">
+                {/* Total count */}
+                <div className="flex items-center gap-2 pb-2">
+                  <span className="text-xs font-bold dark:text-white">
+                    Total Added Curriculum
+                  </span>
+                  <span className="text-xs font-extrabold dark:text-white">
+                    ({curriculumAdd.length})
+                  </span>
+                </div>
+
+                {/* Curriculum Search */}
+                <Label>Curriculum Search</Label>
+                <div className="relative">
+                  <TextInput
+                    value={curriculaSearch}
+                    placeholder={"e.g. BSIT-22-01"}
+                    onChange={(e) => setCurriculaSearch(e.target.value)}
+                  />
+                  {curriculaSearch.length >= 2 && (
+                    <div className="absolute z-10 mt-1 w-full max-h-24 overflow-y-auto rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 scrollbar-thumb-gray-400 scrollbar-track-transparent">
+                      {curricula.filter(
+                        (item) =>
+                          !curriculumAdd.some(
+                            (added) => added.curriculum_id === item.curriculum_id,
+                          ),
+                      ).length > 0 ? (
+                        curricula
+                          .filter(
+                            (item) =>
+                              !curriculumAdd.some(
+                                (added) => added.curriculum_id === item.curriculum_id,
+                              ),
+                          )
+                          .map((item) => (
+                            <div
+                              key={item.curriculum_id}
+                              onClick={() => handleAddCurriculum(item)}
+                              className="py-1 cursor-pointer bg-black/5 p-2 text-xs hover:bg-black/10 dark:bg-white/10 dark:text-white"
+                            >
+                              {item.curriculum_version}
+                            </div>
+                          ))
+                      ) : (
+                        <div className="p-3 text-center text-xs text-gray-400 italic">
+                          No match found
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Selected Curriculum display */}
+                <div className="pt-3">
+                  <div className="rounded-lg p-3">
+                    <div className="pb-2 text-xs font-semibold text-gray-300">
+                      Selected Curriculum:
+                      {selectedCurriculumFilter !== "ALL" && (
+                        <span className="pl-1 text-gray-400">
+                          (Filtering by {selectedCurriculumFilter})
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-h-[100px] rounded p-2">
+                      {(() => {
+                        const filteredCurricula = getCurriculaForProgram(
+                          selectedCurriculumFilter,
+                        );
+                        return filteredCurricula.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {filteredCurricula.map((item) => (
+                              <Badge
+                                key={item.curriculum_id}
+                                className="items-center"
+                                color={`${isShsCurriculum(item) ? "warning" : "info"}`}
+                              >
+                                <span className="inline-flex items-center gap-1.5">
+                                  {item.curriculum_version}
+                                  <HiX
+                                    className="h-4 w-4 cursor-pointer text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400"
+                                    onClick={() => {
+                                      setCurriculumAdd((prev) =>
+                                        prev.filter(
+                                          (curriculum) =>
+                                            curriculum.curriculum_id !==
+                                            item.curriculum_id,
+                                        ),
+                                      );
+                                      // If inside a course tab, put the program code back in search
+                                      if (selectedCurriculumFilter !== "ALL") {
+                                        setCurriculaSearch(selectedCurriculumFilter);
+                                      }
+                                    }}
+                                  />
+                                </span>
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex h-[80px] items-center justify-center text-xs text-gray-500 italic">
+                            {selectedCurriculumFilter === "ALL"
+                              ? "No curricula added yet. Please search and select at least one."
+                              : `No curricula assigned to ${selectedCurriculumFilter}.`}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div
-                className={
-                  "max-h-56 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto"
-                }
-              >
-                {programs.map((item) => {
-                  return (
-                    <Badge
-                      color={
-                        item.year_level.toLowerCase() === "tertiary"
-                          ? "info"
-                          : "warning"
-                      }
-                      key={item.program_code}
-                      className={"my-1 justify-center border border-gray-400 cursor-pointer"}
-                      onClick={() => setCurriculaSearch(item.program_code)}
-                    >
-                      {item.program_code}
-                    </Badge>
-                  );
-                })}
+              {/* Right side - Program/Strand filter tabs */}
+              <div className="shrink-0 w-[15%] min-w-[120px] flex flex-col gap-1.5">
+                <div className="flex-1 max-h-96 overflow-y-auto scrollbar-thumb-gray-400 scrollbar-track-transparent">
+                  {/* ALL tab */}
+                  <button
+                    onClick={() => setSelectedCurriculumFilter("ALL")}
+                    className={`w-full px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                      selectedCurriculumFilter === "ALL"
+                        ? "rounded-r-lg border-t border-r border-b border-gray-500 dark:border-gray-300 dark:text-white"
+                        : "rounded-r-lg border-l border-gray-500 dark:border-gray-300 bg-gray-200 text-gray-600 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>ALL</span>
+                      {(() => {
+                        const allCounts = programs.map((p) =>
+                          programCurriculumCount(p.program_code),
+                        );
+                        const allHaveOne =
+                          allCounts.length > 0 &&
+                          allCounts.every((c) => c === 1);
+                        const allHaveNone =
+                          allCounts.length > 0 &&
+                          allCounts.every((c) => c === 0);
+                        if (allHaveOne)
+                          return (
+                            <Tooltip content="All courses have their curriculum">
+                              <HiCheck className="h-4 w-4 text-green-400 shrink-0 cursor-help" />
+                            </Tooltip>
+                          );
+                        if (allHaveNone)
+                          return (
+                            <Tooltip content="No courses have their curriculum">
+                              <HiX className="h-4 w-4 text-red-400 shrink-0 cursor-help" />
+                            </Tooltip>
+                          );
+                        return (
+                          <Tooltip content="Some courses are missing or have extra curriculum">
+                            <HiExclamation className="h-4 w-4 text-yellow-400 shrink-0 cursor-help" />
+                          </Tooltip>
+                        );
+                      })()}
+                    </div>
+                  </button>
+
+                  {/* Program/Strand tabs */}
+                  {programs.map((item) => {
+                    const curriculumCount = programCurriculumCount(
+                      item.program_code,
+                    );
+                    const isSelected =
+                      selectedCurriculumFilter === item.program_code;
+                    const isTertiary = item.year_level?.toLowerCase() === "tertiary";
+
+                    return (
+                      <button
+                        key={item.program_code}
+                        onClick={() => {
+                          setSelectedCurriculumFilter(item.program_code);
+                          // Auto-search if no curriculum exists for this program
+                          if (curriculumCount === 0) {
+                            setCurriculaSearch(item.program_code);
+                          }
+                        }}
+                        className={`w-full px-3 py-2 text-left text-xs font-semibold transition-colors ${
+                          isSelected
+                            ? "rounded-r-lg border-t border-r border-b border-gray-500 dark:border-gray-300 dark:text-white"
+                            : isTertiary
+                              ? "rounded-r-lg border-l border-gray-500 dark:border-gray-300 bg-cyan-900 text-cyan-300 hover:bg-cyan-800 dark:bg-cyan-950 dark:text-cyan-400 dark:hover:bg-cyan-900"
+                              : "rounded-r-lg border-l border-gray-500 dark:border-gray-300 bg-yellow-900 text-yellow-300 hover:bg-yellow-800 dark:bg-yellow-950 dark:text-yellow-400 dark:hover:bg-yellow-900"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="truncate">{item.program_code}</span>
+                          {curriculumCount === 0 ? (
+                            <HiX className="h-4 w-4 text-red-400 shrink-0" />
+                          ) : curriculumCount >= 2 ? (
+                            <Tooltip content="has more than one curriculum">
+                              <HiExclamation className="h-4 w-4 text-yellow-400 shrink-0 cursor-help" />
+                            </Tooltip>
+                          ) : (
+                            <HiCheck className="h-4 w-4 text-green-400 shrink-0" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>

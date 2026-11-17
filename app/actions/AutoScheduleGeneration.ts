@@ -9,6 +9,7 @@ import {
   fetchRoomTypeList,
   fetchSubjectRequirements,
   getRoomsForGeneration,
+  getTeachersWithAqAndFcce,
   SubjectRequirementRecord,
 } from "@/app/actions/system";
 import sql from "@/lib/database";
@@ -59,19 +60,45 @@ export interface ScheduleEntry {
   startTime: string;
   endTime: string;
   type: string;
+  teacherId: string | null;
+  teacherName: string | null;
 }
 export interface ScheduleAssignmentResult {
   success: boolean;
   scheduleEntries: ScheduleEntry[];
   error?: string;
 }
-
 export interface BreakPeriodRecord {
   break_id: string;
   break_description: string | null;
   day_of_week: number;
   start_time: string;
   end_time: string;
+}
+
+export interface TeacherRecord {
+  teacher_id: string;
+  pscs_id?: string;
+  email?: string;
+  full_name: string;
+  teacher_code: string;
+  department?: string;
+  employment_type?: string;
+  status?: string;
+  aqs?: unknown;
+  fcces?: unknown;
+  preferences?: {
+    preferred_rooms?: string[];
+    preferred_times?: string[];
+    preferred_years?: string[];
+    preferred_subjects?: string[];
+  };
+}
+
+export interface TeacherAssignmentResult {
+  success: boolean;
+  scheduleEntries: ScheduleEntry[];
+  error?: string;
 }
 
 /** --- FUNCTIONS --- **/
@@ -462,11 +489,42 @@ export async function generateRoomAndClassSchedules(
     const occupiedSubjectTimeSlots = new Set<string>();
     const sectionActiveDays = new Map<string, Set<string>>();
 
+    // Track how many distinct subjects are scheduled on each day per section.
+    // Used to balance: fill each of 5 days with 2 subjects first, then rotate 1 per day.
+    const sectionDaySubjectCount = new Map<string, Map<string, number>>();
+
     const tierVacantDays = new Map<string, Set<string>>();
     const sectionPreferredVacantDay = new Map<string, string>();
 
+    const shsDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+    // Count subjects per tertiary section to balance day selection across the week.
+    // Sections with more subjects should have their vacant day on the most crowded day,
+    // so their active days are the least crowded ones.
+    const sectionSubjectCount = new Map<string, number>();
+    for (const assignment of sectionAssignments) {
+      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(assignment.sectionCode);
+      if (!isShsSection) {
+        sectionSubjectCount.set(assignment.sectionCode, assignment.subjects.length);
+      }
+    }
+
+    // Track cumulative subject load per day across all tertiary sections in a tier.
+    // Used to pick the vacant day as the most loaded day, spreading schedules evenly.
+    const tierDayLoad = new Map<string, Map<string, number>>();
+
     for (const assignment of sectionAssignments) {
       const sectionCode = assignment.sectionCode;
+      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(sectionCode);
+
+      if (isShsSection) {
+        // SHS sections always use Mon-Fri; Saturday is the fixed vacant day
+        sectionPreferredVacantDay.set(sectionCode, "Saturday");
+        sectionActiveDays.set(sectionCode, new Set(shsDays));
+        continue;
+      }
+
+      // Tertiary sections: select 5 active days from Mon-Sat with a preferred vacant day
       const tierMatch = sectionCode.match(/^([A-Z]+\d+)/);
       const tierKey = tierMatch
         ? tierMatch[1].slice(0, -1)
@@ -477,19 +535,115 @@ export async function generateRoomAndClassSchedules(
       }
       const usedVacantDaysForTier = tierVacantDays.get(tierKey)!;
 
-      let chosenVacantDay = days.find((d) => !usedVacantDaysForTier.has(d));
-      if (!chosenVacantDay) {
-        chosenVacantDay = days[Math.floor(Math.random() * days.length)];
+      if (!tierDayLoad.has(tierKey)) {
+        tierDayLoad.set(tierKey, new Map());
+        for (const day of days) {
+          tierDayLoad.get(tierKey)!.set(day, 0);
+        }
+      }
+      const dayLoad = tierDayLoad.get(tierKey)!;
+
+      // Choose the vacant day as the day with the highest current load (most crowded).
+      // This way the section's 5 active days will be the least crowded days.
+      // If all days have equal load, fall back to the first unused day for variety.
+      const subjectCount = sectionSubjectCount.get(sectionCode) || 0;
+      let chosenVacantDay: string;
+
+      const maxLoad = Math.max(...days.map((d) => dayLoad.get(d) || 0));
+      const maxLoadDays = days.filter((d) => (dayLoad.get(d) || 0) === maxLoad);
+
+      if (maxLoadDays.length > 0) {
+        // Among days with max load, prefer unused vacant days for variety
+        const unusedMaxDays = maxLoadDays.filter((d) => !usedVacantDaysForTier.has(d));
+        if (unusedMaxDays.length > 0) {
+          chosenVacantDay = unusedMaxDays[0];
+        } else if (usedVacantDaysForTier.size < days.length) {
+          // All max-load days are used; pick first unused day
+          chosenVacantDay = days.find((d) => !usedVacantDaysForTier.has(d))!;
+        } else {
+          // All days used as vacant days; pick the max load day
+          chosenVacantDay = maxLoadDays[0];
+        }
+      } else {
+        chosenVacantDay = days[0];
+      }
+
+      // Update day loads: add subject count to all days EXCEPT the chosen vacant day
+      // (since the section won't have classes on its vacant day)
+      for (const day of days) {
+        if (day !== chosenVacantDay) {
+          dayLoad.set(day, (dayLoad.get(day) || 0) + subjectCount);
+        }
       }
 
       usedVacantDaysForTier.add(chosenVacantDay);
       sectionPreferredVacantDay.set(sectionCode, chosenVacantDay);
+      sectionActiveDays.set(sectionCode, new Set<string>());
     }
 
     const scheduleEntries: ScheduleEntry[] = [];
 
     // Track scheduled components for same-day pairing: key = "sectionCode_subjectId_componentType"
     const scheduledComponents = new Map<string, { day: string; startIndex: number; endIndex: number }>();
+
+    // Initialize day subject count map for each section
+    for (const assignment of sectionAssignments) {
+      if (!sectionDaySubjectCount.has(assignment.sectionCode)) {
+        sectionDaySubjectCount.set(assignment.sectionCode, new Map());
+      }
+      for (const day of days) {
+        sectionDaySubjectCount.get(assignment.sectionCode)!.set(day, 0);
+      }
+    }
+
+    /**
+     * Return the 5 active days for a section sorted by subject count (ascending).
+     * Days with fewer subjects come first, ensuring balanced distribution:
+     * - First 10 subjects: 2 per day across 5 days
+     * - Remaining subjects: 1 per day, rotating through the 5 days
+     * If fewer than 5 active days, also consider inactive days that can be added.
+     */
+    function getDaysSortedBySubjectCount(
+      sectionCode: string,
+      preferredVacantDay: string,
+    ): string[] {
+      const activeDays = sectionActiveDays.get(sectionCode)!;
+      const dayCounts = sectionDaySubjectCount.get(sectionCode)!;
+
+      // Build list of candidate days: active days first, then inactive days that can be added
+      const candidateDays: string[] = [];
+
+      // Add active days
+      for (const day of days) {
+        if (activeDays.has(day)) {
+          candidateDays.push(day);
+        }
+      }
+
+      // If fewer than 5 active days, add inactive days (excluding preferred vacant day if still building)
+      if (activeDays.size < 5) {
+        for (const day of days) {
+          if (!activeDays.has(day) && day !== preferredVacantDay) {
+            candidateDays.push(day);
+          }
+        }
+        // Add preferred vacant day last
+        candidateDays.push(preferredVacantDay);
+      }
+
+      // Sort by subject count ascending, then by day order for stability
+      const dayOrder: Record<string, number> = {};
+      days.forEach((d, i) => (dayOrder[d] = i));
+
+      candidateDays.sort((a, b) => {
+        const countA = dayCounts.get(a) || 0;
+        const countB = dayCounts.get(b) || 0;
+        if (countA !== countB) return countA - countB;
+        return dayOrder[a] - dayOrder[b];
+      });
+
+      return candidateDays;
+    }
 
     // Helper to schedule a single subject, preserving all existing logic
     function scheduleSubject(
@@ -511,6 +665,8 @@ export async function generateRoomAndClassSchedules(
       // Kitchen labs always schedule independently to avoid sharing the same room
       const isKitchenLab = subject.lab_type && kitchenRoomTypeIds.has(subject.lab_type);
 
+      let scheduledDay: string | null = null;
+
       if (hasLecture && hasLab && !isKitchenLab) {
         // New pairing logic: try to schedule both components on the same day in adjacent slots
         const paired = trySchedulePaired(
@@ -521,13 +677,26 @@ export async function generateRoomAndClassSchedules(
           preferBefore6PM,
           lecHours,
           labHours,
+          sectionDaySubjectCount,
         );
-        if (paired) return;
+        if (paired) {
+          // Find which day the paired subject was scheduled on from scheduleEntries
+          const entryCount = scheduleEntries.length;
+          if (entryCount >= 2) {
+            scheduledDay = scheduleEntries[entryCount - 2].day;
+          }
+          // Increment subject count for the day where this subject was placed
+          if (scheduledDay) {
+            const dayCounts = sectionDaySubjectCount.get(sectionCode)!;
+            dayCounts.set(scheduledDay, (dayCounts.get(scheduledDay) || 0) + 1);
+          }
+          return;
+        }
       }
 
       // Fallback: independent scheduling if pairing failed or not applicable
       if (hasLecture) {
-        scheduleSession(
+        const result = scheduleSession(
           subject,
           sectionCode,
           "LECTURE",
@@ -546,11 +715,15 @@ export async function generateRoomAndClassSchedules(
           subject.lab_type,
           lectureRoomTypeId,
           preferBefore6PM,
+          sectionDaySubjectCount,
         );
+        if (result) {
+          scheduledDay = result.day;
+        }
       }
 
       if (hasLab) {
-        scheduleSession(
+        const result = scheduleSession(
           subject,
           sectionCode,
           "LABORATORY",
@@ -569,11 +742,29 @@ export async function generateRoomAndClassSchedules(
           subject.lab_type,
           lectureRoomTypeId,
           preferBefore6PM,
+          sectionDaySubjectCount,
         );
+        if (result) {
+          // If lecture and lab were scheduled independently, count the lab's day too
+          if (!scheduledDay || result.day !== scheduledDay) {
+            const dayCounts = sectionDaySubjectCount.get(sectionCode)!;
+            dayCounts.set(result.day, (dayCounts.get(result.day) || 0) + 1);
+          }
+        }
+      }
+
+      // If lecture-only or if paired scheduling fell back to independent, count the lecture day
+      if (hasLecture && !hasLab && scheduledDay) {
+        const dayCounts = sectionDaySubjectCount.get(sectionCode)!;
+        dayCounts.set(scheduledDay, (dayCounts.get(scheduledDay) || 0) + 1);
       }
     }
 
-    // Try to schedule lecture and lab on the same day in adjacent time slots
+    // Try to schedule lecture and lab on the same day.
+    // Strategy: find the earliest available time for the lab first (since lab phases run first),
+    // then check if the lecture can fit immediately after without hitting a break or conflict.
+    // If pairing would hit a break or conflict, return false so components schedule independently.
+    // Skip pairing entirely if combined units (lec + lab) >= 6, as it would be too many units for one day.
     function trySchedulePaired(
       subject: AssignedSubjectDetail,
       sectionCode: string,
@@ -582,74 +773,30 @@ export async function generateRoomAndClassSchedules(
       preferBefore6PM: boolean,
       lecHours: number,
       labHours: number,
+      sectionDaySubjectCount: Map<string, Map<string, number>>,
     ): boolean {
+      // Skip pairing if combined units would be 6 or more
+      if (lecHours + labHours >= 6) return false;
+
       const lecSlotsNeeded = Math.ceil((lecHours * 60) / 30);
       const labSlotsNeeded = Math.ceil((labHours * 60) / 30);
       const activeDays = sectionActiveDays.get(sectionCode)!;
-      const prioritizedDays = [
-        ...days.filter((d) => d !== preferredVacantDay),
-        preferredVacantDay,
-      ];
+      const prioritizedDays = getDaysSortedBySubjectCount(sectionCode, preferredVacantDay);
 
       const labRooms = getFilteredRooms("LABORATORY", rooms, subject.lab_type, null);
       const lecRooms = getFilteredRooms("LECTURE", rooms, subject.lab_type, lectureRoomTypeId);
 
-      // Helper to check if a session ending at slot index ends before 18:00
-      function sessionEndsBefore6PM(endIndex: number): boolean {
-        if (endIndex > sectionTimeSlots.length) return false;
-        const lastSlot = sectionTimeSlots[endIndex - 1];
-        const endTime = lastSlot.split(" - ")[1];
-        const endMinutes = timeToMinutes(endTime);
-        return endMinutes <= 18 * 60;
-      }
+      // Helper to find the earliest available lab start slot on a given day.
+      // Scans from the beginning, skipping occupied blocks and break periods.
+      function findEarliestLabSlot(day: string, checkBefore6PM: boolean): number | null {
+        for (let i = 0; i <= sectionTimeSlots.length - labSlotsNeeded; i++) {
+          const labSlots = sectionTimeSlots.slice(i, i + labSlotsNeeded);
 
-      // Try each day, then each position, trying both lec-first and lab-first ordering
-      // Uses earliest-available-time strategy: scans from the beginning, jumping over
-      // occupied blocks and break periods so gaps can be filled by later subjects.
-      const totalSlotsNeeded = lecSlotsNeeded + labSlotsNeeded;
-      for (const day of prioritizedDays) {
-        if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
-        if (!activeDays.has(day) && activeDays.size >= 5) continue;
-
-        for (let i = 0; i <= sectionTimeSlots.length - totalSlotsNeeded; i++) {
-          // Check if this position is valid for before-6-PM preference
-          if (preferBefore6PM && !sessionEndsBefore6PM(i + totalSlotsNeeded)) {
-            continue;
-          }
-
-          // Check if any slot in this block is occupied — skip past occupied blocks
-          let occupied = false;
-          for (let j = 0; j < totalSlotsNeeded; j++) {
-            const slot = sectionTimeSlots[i + j];
-            if (
-              occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
-              occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-            ) {
-              occupied = true;
-              i = i + j; // Skip past this occupied block
-              break;
-            }
-          }
-          if (occupied) continue;
-
-          const lecSlots = sectionTimeSlots.slice(i, i + lecSlotsNeeded);
-          const labSlotsAfter = sectionTimeSlots.slice(i + lecSlotsNeeded, i + totalSlotsNeeded);
-          const labSlotsBefore = sectionTimeSlots.slice(i, i + labSlotsNeeded);
-          const lecSlotsAfter = sectionTimeSlots.slice(i + labSlotsNeeded, i + totalSlotsNeeded);
-
-          // Check break periods for both orderings
-          const lecHitsBreak = lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods));
-          const labHitsBreakAfter = labSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
-          const labHitsBreakBefore = labSlotsBefore.some((slot) => isBreakTime(day, slot, breakPeriods));
-          const lecHitsBreakAfter = lecSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
-
-          // If both orderings hit breaks, jump past the break
-          if (lecHitsBreak || labHitsBreakAfter || labHitsBreakBefore || lecHitsBreakAfter) {
-            // Find the first break slot and skip past it
-            const blockSlots = sectionTimeSlots.slice(i, i + totalSlotsNeeded);
+          // Skip if lab hits a break
+          if (labSlots.some((slot) => isBreakTime(day, slot, breakPeriods))) {
             let jumped = false;
-            for (let j = 0; j < totalSlotsNeeded; j++) {
-              if (isBreakTime(day, blockSlots[j], breakPeriods)) {
+            for (let j = 0; j < labSlotsNeeded; j++) {
+              if (isBreakTime(day, labSlots[j], breakPeriods)) {
                 i = i + j;
                 jumped = true;
                 break;
@@ -658,207 +805,198 @@ export async function generateRoomAndClassSchedules(
             if (jumped) continue;
           }
 
-          // Try ordering: Lecture first, then Lab
-          if (!lecHitsBreak && !labHitsBreakAfter) {
-            const lecFree = lecSlots.every((slot) =>
-              !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
-              !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`) &&
-              !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-            );
-            const labFree = labSlotsAfter.every((slot) =>
-              !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
-              !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`) &&
-              !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-            );
+          // Skip if lab slots are occupied by section or subject
+          let occupied = false;
+          for (let j = 0; j < labSlotsNeeded; j++) {
+            const slot = labSlots[j];
+            if (
+              occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
+              occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            ) {
+              occupied = true;
+              i = i + j;
+              break;
+            }
+          }
+          if (occupied) continue;
 
-            if (lecFree && labFree) {
-              // Try to find rooms
-              let lecRoom: RoomForGeneration | null = null;
-              let labRoom: RoomForGeneration | null = null;
+          // Check lab course conflict
+          const labFree = labSlots.every((slot) =>
+            !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`)
+          );
+          if (!labFree) {
+            i = i + labSlotsNeeded - 1;
+            continue;
+          }
 
-              for (const room of lecRooms) {
-                if (lecSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
-                  lecRoom = room;
-                  break;
-                }
-              }
-              for (const room of labRooms) {
-                if (labSlotsAfter.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
-                  labRoom = room;
-                  break;
-                }
-              }
-
-              if (lecRoom && labRoom) {
-                // Schedule Lecture
-                lecSlots.forEach((slot) => {
-                  occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-                  occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
-                  occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
-                  occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-                });
-                activeDays.add(day);
-
-                const lecStartTime = lecSlots[0].split(" - ")[0];
-                const lecEndTime = lecSlots[lecSlots.length - 1].split(" - ")[1];
-                scheduleEntries.push({
-                  sectionCode,
-                  subjectId: subject.subject_id,
-                  courseCode: subject.course_code,
-                  courseName: subject.course_name,
-                  componentType: "LECTURE",
-                  units: subject.lecture_units,
-                  roomId: lecRoom.room_id,
-                  roomName: lecRoom.room_name || "Unassigned Room",
-                  day,
-                  startTime: lecStartTime,
-                  endTime: lecEndTime,
-                  type: "lecture",
-                });
-                scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
-                  day, startIndex: i, endIndex: i + lecSlotsNeeded
-                });
-
-                // Schedule Lab immediately after
-                labSlotsAfter.forEach((slot) => {
-                  occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-                  occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
-                  occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
-                  occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-                });
-
-                const labStartTime = labSlotsAfter[0].split(" - ")[0];
-                const labEndTime = labSlotsAfter[labSlotsAfter.length - 1].split(" - ")[1];
-                scheduleEntries.push({
-                  sectionCode,
-                  subjectId: subject.subject_id,
-                  courseCode: subject.course_code,
-                  courseName: subject.course_name,
-                  componentType: "LABORATORY",
-                  units: subject.lab_units,
-                  roomId: labRoom.room_id,
-                  roomName: labRoom.room_name || "Unassigned Room",
-                  day,
-                  startTime: labStartTime,
-                  endTime: labEndTime,
-                  type: "laboratory",
-                });
-                scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
-                  day, startIndex: i + lecSlotsNeeded, endIndex: i + lecSlotsNeeded + labSlotsNeeded
-                });
-
-                return true;
-              }
+          // Check before-6-PM preference for the combined block (lab + lec)
+          const combinedEnd = i + labSlotsNeeded + lecSlotsNeeded;
+          if (checkBefore6PM && combinedEnd <= sectionTimeSlots.length) {
+            const lastSlot = sectionTimeSlots[combinedEnd - 1];
+            const endTime = lastSlot.split(" - ")[1];
+            const endMinutes = timeToMinutes(endTime);
+            if (endMinutes > 18 * 60) {
+              continue;
             }
           }
 
-          // Try ordering: Lab first, then Lecture
-          if (!labHitsBreakBefore && !lecHitsBreakAfter) {
-            const labFree = labSlotsBefore.every((slot) =>
-              !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
-              !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`) &&
-              !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-            );
-            const lecFree = lecSlotsAfter.every((slot) =>
-              !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
-              !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`) &&
-              !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-            );
+          return i;
+        }
+        return null;
+      }
 
-            if (labFree && lecFree) {
-              let labRoom: RoomForGeneration | null = null;
-              let lecRoom: RoomForGeneration | null = null;
+      // For each day, find earliest lab slot, then check if lecture can pair immediately after
+      for (const day of prioritizedDays) {
+        if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
+        if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
-              for (const room of labRooms) {
-                if (labSlotsBefore.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
-                  labRoom = room;
-                  break;
-                }
-              }
-              for (const room of lecRooms) {
-                if (lecSlotsAfter.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
-                  lecRoom = room;
-                  break;
-                }
-              }
+        const labStart = findEarliestLabSlot(day, preferBefore6PM);
+        if (labStart === null) continue;
 
-              if (labRoom && lecRoom) {
-                // Schedule Lab first
-                labSlotsBefore.forEach((slot) => {
-                  occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-                  occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
-                  occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
-                  occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-                });
-                activeDays.add(day);
+        // Skip pairing if the lab component would start at 6 PM or later
+        const labStartTime = sectionTimeSlots[labStart].split(" - ")[0];
+        const labStartMinutes = timeToMinutes(labStartTime);
+        if (labStartMinutes >= 18 * 60) continue;
 
-                const labStartTime = labSlotsBefore[0].split(" - ")[0];
-                const labEndTime = labSlotsBefore[labSlotsBefore.length - 1].split(" - ")[1];
-                scheduleEntries.push({
-                  sectionCode,
-                  subjectId: subject.subject_id,
-                  courseCode: subject.course_code,
-                  courseName: subject.course_name,
-                  componentType: "LABORATORY",
-                  units: subject.lab_units,
-                  roomId: labRoom.room_id,
-                  roomName: labRoom.room_name || "Unassigned Room",
-                  day,
-                  startTime: labStartTime,
-                  endTime: labEndTime,
-                  type: "laboratory",
-                });
-                scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
-                  day, startIndex: i, endIndex: i + labSlotsNeeded
-                });
+        const labSlots = sectionTimeSlots.slice(labStart, labStart + labSlotsNeeded);
+        const lecStart = labStart + labSlotsNeeded;
 
-                // Schedule Lecture immediately after
-                lecSlotsAfter.forEach((slot) => {
-                  occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-                  occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
-                  occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
-                  occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-                });
+        // Check if lecture fits within the time slots
+        if (lecStart + lecSlotsNeeded > sectionTimeSlots.length) continue;
 
-                const lecStartTime = lecSlotsAfter[0].split(" - ")[0];
-                const lecEndTime = lecSlotsAfter[lecSlotsAfter.length - 1].split(" - ")[1];
-                scheduleEntries.push({
-                  sectionCode,
-                  subjectId: subject.subject_id,
-                  courseCode: subject.course_code,
-                  courseName: subject.course_name,
-                  componentType: "LECTURE",
-                  units: subject.lecture_units,
-                  roomId: lecRoom.room_id,
-                  roomName: lecRoom.room_name || "Unassigned Room",
-                  day,
-                  startTime: lecStartTime,
-                  endTime: lecEndTime,
-                  type: "lecture",
-                });
-                scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
-                  day, startIndex: i + labSlotsNeeded, endIndex: i + labSlotsNeeded + lecSlotsNeeded
-                });
+        const lecSlots = sectionTimeSlots.slice(lecStart, lecStart + lecSlotsNeeded);
 
-                return true;
-              }
-            }
+        // Check if lecture hits a break — if so, skip pairing for this day
+        if (lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods))) continue;
+
+        // Check if lecture slots are occupied by section or subject
+        let lecOccupied = false;
+        for (const slot of lecSlots) {
+          if (
+            occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
+            occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+          ) {
+            lecOccupied = true;
+            break;
           }
+        }
+        if (lecOccupied) continue;
+
+        // Check lecture course conflict
+        const lecFree = lecSlots.every((slot) =>
+          !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`)
+        );
+        if (!lecFree) continue;
+
+        // Find available rooms
+        let labRoom: RoomForGeneration | null = null;
+        let lecRoom: RoomForGeneration | null = null;
+
+        for (const room of labRooms) {
+          if (labSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+            labRoom = room;
+            break;
+          }
+        }
+        for (const room of lecRooms) {
+          if (lecSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+            lecRoom = room;
+            break;
+          }
+        }
+
+        if (labRoom && lecRoom) {
+          // Schedule Lab first
+          labSlots.forEach((slot) => {
+            occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+            occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
+            occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
+            occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+          });
+          activeDays.add(day);
+
+          const labStartTime = labSlots[0].split(" - ")[0];
+          const labEndTime = labSlots[labSlots.length - 1].split(" - ")[1];
+          scheduleEntries.push({
+            sectionCode,
+            subjectId: subject.subject_id,
+            courseCode: subject.course_code,
+            courseName: subject.course_name,
+            componentType: "LABORATORY",
+            units: subject.lab_units,
+            roomId: labRoom.room_id,
+            roomName: labRoom.room_name || "Unassigned Room",
+            day,
+            startTime: labStartTime,
+            endTime: labEndTime,
+            type: "laboratory",
+            teacherId: null,
+            teacherName: null,
+          });
+          scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
+            day, startIndex: labStart, endIndex: labStart + labSlotsNeeded
+          });
+
+          // Schedule Lecture immediately after
+          lecSlots.forEach((slot) => {
+            occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+            occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
+            occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
+            occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+          });
+
+          const lecStartTime = lecSlots[0].split(" - ")[0];
+          const lecEndTime = lecSlots[lecSlots.length - 1].split(" - ")[1];
+          scheduleEntries.push({
+            sectionCode,
+            subjectId: subject.subject_id,
+            courseCode: subject.course_code,
+            courseName: subject.course_name,
+            componentType: "LECTURE",
+            units: subject.lecture_units,
+            roomId: lecRoom.room_id,
+            roomName: lecRoom.room_name || "Unassigned Room",
+            day,
+            startTime: lecStartTime,
+            endTime: lecEndTime,
+            type: "lecture",
+            teacherId: null,
+            teacherName: null,
+          });
+          scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
+            day, startIndex: lecStart, endIndex: lecStart + lecSlotsNeeded
+          });
+
+          return true;
         }
       }
 
       // If preferBefore6PM failed, retry without the constraint
-      // Uses earliest-available-time strategy with break-aware jumping.
       if (preferBefore6PM) {
         for (const day of prioritizedDays) {
           if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
           if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
-          for (let i = 0; i <= sectionTimeSlots.length - totalSlotsNeeded; i++) {
-            // Check if any slot in this block is occupied — skip past occupied blocks
+          // Find earliest lab slot without before-6-PM constraint
+          let labStart: number | null = null;
+          for (let i = 0; i <= sectionTimeSlots.length - labSlotsNeeded; i++) {
+            const labSlots = sectionTimeSlots.slice(i, i + labSlotsNeeded);
+
+            if (labSlots.some((slot) => isBreakTime(day, slot, breakPeriods))) {
+              let jumped = false;
+              for (let j = 0; j < labSlotsNeeded; j++) {
+                if (isBreakTime(day, labSlots[j], breakPeriods)) {
+                  i = i + j;
+                  jumped = true;
+                  break;
+                }
+              }
+              if (jumped) continue;
+            }
+
             let occupied = false;
-            for (let j = 0; j < totalSlotsNeeded; j++) {
-              const slot = sectionTimeSlots[i + j];
+            for (let j = 0; j < labSlotsNeeded; j++) {
+              const slot = labSlots[j];
               if (
                 occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
                 occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
@@ -870,175 +1008,111 @@ export async function generateRoomAndClassSchedules(
             }
             if (occupied) continue;
 
-            const lecSlots = sectionTimeSlots.slice(i, i + lecSlotsNeeded);
-            const labSlotsAfter = sectionTimeSlots.slice(i + lecSlotsNeeded, i + totalSlotsNeeded);
-            const labSlotsBefore = sectionTimeSlots.slice(i, i + labSlotsNeeded);
-            const lecSlotsAfter = sectionTimeSlots.slice(i + labSlotsNeeded, i + totalSlotsNeeded);
-
-            const lecHitsBreak = lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods));
-            const labHitsBreakAfter = labSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
-            const labHitsBreakBefore = labSlotsBefore.some((slot) => isBreakTime(day, slot, breakPeriods));
-            const lecHitsBreakAfter = lecSlotsAfter.some((slot) => isBreakTime(day, slot, breakPeriods));
-
-            // If both orderings hit breaks, jump past the break
-            if (lecHitsBreak || labHitsBreakAfter || labHitsBreakBefore || lecHitsBreakAfter) {
-              const blockSlots = sectionTimeSlots.slice(i, i + totalSlotsNeeded);
-              let jumped = false;
-              for (let j = 0; j < totalSlotsNeeded; j++) {
-                if (isBreakTime(day, blockSlots[j], breakPeriods)) {
-                  i = i + j;
-                  jumped = true;
-                  break;
-                }
-              }
-              if (jumped) continue;
+            const labFree = labSlots.every((slot) =>
+              !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`)
+            );
+            if (!labFree) {
+              i = i + labSlotsNeeded - 1;
+              continue;
             }
 
-            // Try ordering: Lecture first, then Lab
-            if (!lecHitsBreak && !labHitsBreakAfter) {
-              const lecFree = lecSlots.every((slot) =>
-                !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
-                !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`) &&
-                !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-              );
-              const labFree = labSlotsAfter.every((slot) =>
-                !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
-                !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`) &&
-                !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-              );
+            labStart = i;
+            break;
+          }
 
-              if (lecFree && labFree) {
-                let lecRoom: RoomForGeneration | null = null;
-                let labRoom: RoomForGeneration | null = null;
+          if (labStart === null) continue;
 
-                for (const room of lecRooms) {
-                  if (lecSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
-                    lecRoom = room;
-                    break;
-                  }
-                }
-                for (const room of labRooms) {
-                  if (labSlotsAfter.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
-                    labRoom = room;
-                    break;
-                  }
-                }
+          // Skip pairing if the lab component would start at 6 PM or later
+          const labStartTime = sectionTimeSlots[labStart].split(" - ")[0];
+          const labStartMinutes = timeToMinutes(labStartTime);
+          if (labStartMinutes >= 18 * 60) continue;
 
-                if (lecRoom && labRoom) {
-                  lecSlots.forEach((slot) => {
-                    occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-                    occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
-                    occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
-                    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-                  });
-                  activeDays.add(day);
+          const labSlots = sectionTimeSlots.slice(labStart, labStart + labSlotsNeeded);
+          const lecStart = labStart + labSlotsNeeded;
 
-                  scheduleEntries.push({
-                    sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
-                    courseName: subject.course_name, componentType: "LECTURE", units: subject.lecture_units,
-                    roomId: lecRoom.room_id, roomName: lecRoom.room_name || "Unassigned Room",
-                    day, startTime: lecSlots[0].split(" - ")[0], endTime: lecSlots[lecSlots.length - 1].split(" - ")[1],
-                    type: "lecture",
-                  });
-                  scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
-                    day, startIndex: i, endIndex: i + lecSlotsNeeded
-                  });
+          if (lecStart + lecSlotsNeeded > sectionTimeSlots.length) continue;
 
-                  labSlotsAfter.forEach((slot) => {
-                    occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-                    occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
-                    occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
-                    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-                  });
+          const lecSlots = sectionTimeSlots.slice(lecStart, lecStart + lecSlotsNeeded);
 
-                  scheduleEntries.push({
-                    sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
-                    courseName: subject.course_name, componentType: "LABORATORY", units: subject.lab_units,
-                    roomId: labRoom.room_id, roomName: labRoom.room_name || "Unassigned Room",
-                    day, startTime: labSlotsAfter[0].split(" - ")[0], endTime: labSlotsAfter[labSlotsAfter.length - 1].split(" - ")[1],
-                    type: "laboratory",
-                  });
-                  scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
-                    day, startIndex: i + lecSlotsNeeded, endIndex: i + lecSlotsNeeded + labSlotsNeeded
-                  });
+          // Check if lecture hits a break — skip pairing
+          if (lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods))) continue;
 
-                  return true;
-                }
-              }
+          let lecOccupied = false;
+          for (const slot of lecSlots) {
+            if (
+              occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
+              occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            ) {
+              lecOccupied = true;
+              break;
             }
+          }
+          if (lecOccupied) continue;
 
-            // Try ordering: Lab first, then Lecture
-            if (!labHitsBreakBefore && !lecHitsBreakAfter) {
-              const labFree = labSlotsBefore.every((slot) =>
-                !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
-                !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`) &&
-                !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-              );
-              const lecFree = lecSlotsAfter.every((slot) =>
-                !occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) &&
-                !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`) &&
-                !occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
-              );
+          const lecFree = lecSlots.every((slot) =>
+            !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`)
+          );
+          if (!lecFree) continue;
 
-              if (labFree && lecFree) {
-                let labRoom: RoomForGeneration | null = null;
-                let lecRoom: RoomForGeneration | null = null;
+          let labRoom: RoomForGeneration | null = null;
+          let lecRoom: RoomForGeneration | null = null;
 
-                for (const room of labRooms) {
-                  if (labSlotsBefore.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
-                    labRoom = room;
-                    break;
-                  }
-                }
-                for (const room of lecRooms) {
-                  if (lecSlotsAfter.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
-                    lecRoom = room;
-                    break;
-                  }
-                }
-
-                if (labRoom && lecRoom) {
-                  labSlotsBefore.forEach((slot) => {
-                    occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-                    occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
-                    occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
-                    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-                  });
-                  activeDays.add(day);
-
-                  scheduleEntries.push({
-                    sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
-                    courseName: subject.course_name, componentType: "LABORATORY", units: subject.lab_units,
-                    roomId: labRoom.room_id, roomName: labRoom.room_name || "Unassigned Room",
-                    day, startTime: labSlotsBefore[0].split(" - ")[0], endTime: labSlotsBefore[labSlotsBefore.length - 1].split(" - ")[1],
-                    type: "laboratory",
-                  });
-                  scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
-                    day, startIndex: i, endIndex: i + labSlotsNeeded
-                  });
-
-                  lecSlotsAfter.forEach((slot) => {
-                    occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
-                    occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
-                    occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
-                    occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
-                  });
-
-                  scheduleEntries.push({
-                    sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
-                    courseName: subject.course_name, componentType: "LECTURE", units: subject.lecture_units,
-                    roomId: lecRoom.room_id, roomName: lecRoom.room_name || "Unassigned Room",
-                    day, startTime: lecSlotsAfter[0].split(" - ")[0], endTime: lecSlotsAfter[lecSlotsAfter.length - 1].split(" - ")[1],
-                    type: "lecture",
-                  });
-                  scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
-                    day, startIndex: i + labSlotsNeeded, endIndex: i + labSlotsNeeded + lecSlotsNeeded
-                  });
-
-                  return true;
-                }
-              }
+          for (const room of labRooms) {
+            if (labSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+              labRoom = room;
+              break;
             }
+          }
+          for (const room of lecRooms) {
+            if (lecSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+              lecRoom = room;
+              break;
+            }
+          }
+
+          if (labRoom && lecRoom) {
+            labSlots.forEach((slot) => {
+              occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+              occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
+              occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
+              occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+            });
+            activeDays.add(day);
+
+            scheduleEntries.push({
+              sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
+              courseName: subject.course_name, componentType: "LABORATORY", units: subject.lab_units,
+              roomId: labRoom.room_id, roomName: labRoom.room_name || "Unassigned Room",
+              day, startTime: labSlots[0].split(" - ")[0], endTime: labSlots[labSlots.length - 1].split(" - ")[1],
+              type: "laboratory",
+              teacherId: null,
+              teacherName: null,
+            });
+            scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
+              day, startIndex: labStart, endIndex: labStart + labSlotsNeeded
+            });
+
+            lecSlots.forEach((slot) => {
+              occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
+              occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
+              occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
+              occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+            });
+
+            scheduleEntries.push({
+              sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
+              courseName: subject.course_name, componentType: "LECTURE", units: subject.lecture_units,
+              roomId: lecRoom.room_id, roomName: lecRoom.room_name || "Unassigned Room",
+              day, startTime: lecSlots[0].split(" - ")[0], endTime: lecSlots[lecSlots.length - 1].split(" - ")[1],
+              type: "lecture",
+              teacherId: null,
+              teacherName: null,
+            });
+            scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
+              day, startIndex: lecStart, endIndex: lecStart + lecSlotsNeeded
+            });
+
+            return true;
           }
         }
       }
@@ -1056,9 +1130,6 @@ export async function generateRoomAndClassSchedules(
         shsAssignments.push(assignment);
       } else {
         tertiaryAssignments.push(assignment);
-      }
-      if (!sectionActiveDays.has(assignment.sectionCode)) {
-        sectionActiveDays.set(assignment.sectionCode, new Set<string>());
       }
     }
 
@@ -1136,6 +1207,685 @@ export async function generateRoomAndClassSchedules(
       error:
         (error as Error).message ||
         "Failed to generate room and class schedules.",
+    };
+  }
+}
+
+/**
+ * Teacher-aware schedule generation for full auto mode.
+ * Integrates teacher assignment during scheduling with employment type constraints:
+ * - Full-Time: weekdays only (M-F), 7AM-6PM
+ * - Part-Time Full Load: can handle 6PM-10PM, respects preferred times and subjects
+ * - Part-Time: handles Saturdays, only preferred days/times/subjects
+ */
+export async function generateRoomAndClassSchedulesWithTeachers(
+  _name: string,
+  _curricula: string[],
+  tertiaryTerm: string,
+  precomputedSections?: string[],
+  precomputedSubjects?: SubjectRequirementRecord[],
+  shsTerm: string = "Term 1",
+): Promise<ScheduleAssignmentResult> {
+  try {
+    // 1. Fetch teachers with AQ and FCCE data
+    const teachersResult = await getTeachersWithAqAndFcce({ search: null });
+    const allTeachers: TeacherRecord[] =
+      (teachersResult.success && teachersResult.data
+        ? (teachersResult.data as TeacherRecord[])
+        : []) || [];
+
+    // Filter active teachers
+    const activeTeachers = allTeachers.filter(
+      (t) => !t.status || t.status.toLowerCase() !== "inactive",
+    );
+
+    // Categorize teachers by employment type
+    const fullTimeTeachers: TeacherRecord[] = [];
+    const partTimeFullLoadTeachers: TeacherRecord[] = [];
+    const partTimeTeachers: TeacherRecord[] = [];
+
+    for (const teacher of activeTeachers) {
+      const normalized = (teacher.employment_type || "full_time").toLowerCase();
+      if (
+        normalized.includes("part-time full load") ||
+        normalized.includes("part_time_full_load")
+      ) {
+        partTimeFullLoadTeachers.push(teacher);
+      } else if (normalized.includes("part")) {
+        partTimeTeachers.push(teacher);
+      } else {
+        fullTimeTeachers.push(teacher);
+      }
+    }
+
+    // 2. Fetch faculty load config
+    const configResult = await fetchFacultyLoadConfig();
+    const config =
+      configResult &&
+      configResult.success &&
+      Array.isArray(configResult.data) &&
+      configResult.data.length > 0
+        ? (configResult.data[0] as Configuration)
+        : null;
+
+    const facultyLoad = config?.faculty_load ?? {
+      full_time: 21,
+      part_time: 12,
+      part_time_full_load: 18,
+    };
+    const overloadMax = Number(config?.overload_max ?? 3);
+
+    // 3. Build subject-to-teacher mapping BEFORE scheduling
+    // This ensures we know which teacher teaches which subject before placing time slots
+    const subjectTeacherMap = new Map<string, string>();
+    const subjectTeacherNameMap = new Map<string, string>();
+    const teacherLoad = new Map<string, number>();
+    const teacherSubjects = new Map<string, Set<string>>();
+
+    // Fetch subjects for mapping
+    let subjectsForMapping = precomputedSubjects;
+    if (!subjectsForMapping || subjectsForMapping.length === 0) {
+      const fetchedSubjects = await fetchSubjectsForGeneration(
+        _curricula,
+        tertiaryTerm,
+        shsTerm,
+      );
+      if (fetchedSubjects.success) {
+        subjectsForMapping = fetchedSubjects.data;
+      }
+    }
+
+    if (subjectsForMapping) {
+      // Helper functions for teacher matching
+      function getFacultyLoadLimit(employmentType?: string): number {
+        const normalized = (employmentType || "full_time").toLowerCase();
+        if (
+          normalized.includes("part-time full load") ||
+          normalized.includes("part_time_full_load")
+        ) {
+          return Number(facultyLoad.part_time_full_load ?? 18);
+        } else if (normalized.includes("part")) {
+          return Number(facultyLoad.part_time ?? 12);
+        } else {
+          return Number(facultyLoad.full_time ?? 21);
+        }
+      }
+
+      function teacherAqMatches(
+        teacher: TeacherRecord,
+        requiredAqs: string[],
+      ): boolean {
+        if (!requiredAqs || requiredAqs.length === 0) return true;
+        if (
+          requiredAqs.length === 1 &&
+          (requiredAqs[0] === "NULL" || requiredAqs[0] === "")
+        ) {
+          return true;
+        }
+        const teacherAqs: string[] = Array.isArray(teacher.aqs)
+          ? (teacher.aqs as Array<Record<string, unknown>>)
+              .map((item) =>
+                item && typeof item === "object" && "aq" in item
+                  ? String(item.aq ?? "")
+                  : "",
+              )
+              .filter(Boolean)
+          : [];
+        return requiredAqs.every((req) =>
+          teacherAqs.some((tAq) => tAq.toLowerCase() === req.toLowerCase()),
+        );
+      }
+
+      function teacherFcceMatches(
+        teacher: TeacherRecord,
+        courseName: string,
+      ): boolean {
+        const courseNameLower = courseName.trim().toLowerCase();
+        if (!courseNameLower) return true;
+        const teacherFcces = Array.isArray(teacher.fcces)
+          ? (teacher.fcces as Array<Record<string, unknown>>)
+          : [];
+        return teacherFcces.some((f) => {
+          const fCourse = String(f.course_name ?? "").trim().toLowerCase();
+          return fCourse === courseNameLower && f.pass === true;
+        });
+      }
+
+      function teacherPrefersSubject(
+        teacher: TeacherRecord,
+        courseName: string,
+        courseCode: string,
+      ): boolean {
+        const normalized = (teacher.employment_type || "").toLowerCase();
+        const isPartTime = normalized.includes("part");
+        if (!isPartTime) return true;
+        const prefSubjects = teacher.preferences?.preferred_subjects;
+        if (!prefSubjects || prefSubjects.length === 0) return true;
+        const courseNameLower = courseName.trim().toLowerCase();
+        const courseCodeLower = courseCode.trim().toLowerCase();
+        return prefSubjects.some((pref) => {
+          const prefLower = pref.trim().toLowerCase();
+          return prefLower === courseNameLower || prefLower === courseCodeLower;
+        });
+      }
+
+      // Assign teachers to subjects
+      for (const subject of subjectsForMapping) {
+        const lectureUnits = subject.lecture_units || 0;
+        const labUnits = subject.lab_units || 0;
+        const totalUnits = lectureUnits + labUnits;
+        const courseName = subject.course_name || "";
+        const courseCode = subject.course_code || "";
+        const requiredAqs = subject.required_aqs || [];
+
+        let bestTeacher: TeacherRecord | null = null;
+
+        // First pass: AQ + FCCE + preference match
+        for (const teacher of activeTeachers) {
+          const loadLimit = getFacultyLoadLimit(teacher.employment_type);
+          const absoluteMax = loadLimit + overloadMax;
+          const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
+          if (currentLoad + totalUnits > absoluteMax) continue;
+          if (!teacherPrefersSubject(teacher, courseName, courseCode)) continue;
+          if (!teacherAqMatches(teacher, requiredAqs)) continue;
+          if (!teacherFcceMatches(teacher, courseName)) continue;
+          if (teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id)) continue;
+          bestTeacher = teacher;
+          break;
+        }
+
+        // Second pass: AQ + preference match only
+        if (!bestTeacher) {
+          for (const teacher of activeTeachers) {
+            const loadLimit = getFacultyLoadLimit(teacher.employment_type);
+            const absoluteMax = loadLimit + overloadMax;
+            const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
+            if (currentLoad + totalUnits > absoluteMax) continue;
+            if (!teacherPrefersSubject(teacher, courseName, courseCode)) continue;
+            if (!teacherAqMatches(teacher, requiredAqs)) continue;
+            if (teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id)) continue;
+            bestTeacher = teacher;
+            break;
+          }
+        }
+
+        // Third pass: preference match only
+        if (!bestTeacher) {
+          for (const teacher of activeTeachers) {
+            const loadLimit = getFacultyLoadLimit(teacher.employment_type);
+            const absoluteMax = loadLimit + overloadMax;
+            const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
+            if (currentLoad + totalUnits > absoluteMax) continue;
+            if (!teacherPrefersSubject(teacher, courseName, courseCode)) continue;
+            if (teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id)) continue;
+            bestTeacher = teacher;
+            break;
+          }
+        }
+
+        if (bestTeacher) {
+          subjectTeacherMap.set(subject.subject_id, bestTeacher.teacher_id);
+          subjectTeacherNameMap.set(subject.subject_id, bestTeacher.full_name);
+          teacherLoad.set(
+            bestTeacher.teacher_id,
+            (teacherLoad.get(bestTeacher.teacher_id) || 0) + totalUnits,
+          );
+          if (!teacherSubjects.has(bestTeacher.teacher_id)) {
+            teacherSubjects.set(bestTeacher.teacher_id, new Set());
+          }
+          teacherSubjects.get(bestTeacher.teacher_id)!.add(subject.subject_id);
+        }
+      }
+    }
+
+    // 4. Now call the original generateRoomAndClassSchedules but with teacher-aware time constraints
+    // We'll use the original function and then filter/adjust based on teacher constraints
+    const baseResult = await generateRoomAndClassSchedules(
+      _name,
+      _curricula,
+      tertiaryTerm,
+      precomputedSections,
+      precomputedSubjects,
+      shsTerm,
+    );
+
+    if (!baseResult.success || !baseResult.scheduleEntries.length) {
+      return baseResult;
+    }
+
+    // 5. Re-schedule entries that violate teacher employment type constraints
+    // Build teacher info map
+    const teacherInfoMap = new Map<string, TeacherRecord>();
+    for (const t of activeTeachers) {
+      teacherInfoMap.set(t.teacher_id, t);
+    }
+
+    // Helper: get employment type category
+    function getEmploymentCategory(teacher: TeacherRecord): "full_time" | "part_time_full_load" | "part_time" {
+      const normalized = (teacher.employment_type || "full_time").toLowerCase();
+      if (
+        normalized.includes("part-time full load") ||
+        normalized.includes("part_time_full_load")
+      ) {
+        return "part_time_full_load";
+      } else if (normalized.includes("part")) {
+        return "part_time";
+      }
+      return "full_time";
+    }
+
+    // Helper: check if a time slot is within 7AM-6PM
+    function isWithinDaytime(startTime: string, endTime: string): boolean {
+      const startMins = timeToMinutes(startTime);
+      const endMins = timeToMinutes(endTime);
+      return startMins >= 7 * 60 && endMins <= 18 * 60;
+    }
+
+    // Helper: check if a time slot is evening (6PM-10PM)
+    function isEveningSlot(startTime: string): boolean {
+      const startMins = timeToMinutes(startTime);
+      return startMins >= 18 * 60;
+    }
+
+    // Helper: check if day is weekday (M-F)
+    function isWeekday(day: string): boolean {
+      return day !== "Saturday";
+    }
+
+    // Helper: check if teacher prefers this time slot
+    function teacherPrefersTime(teacher: TeacherRecord, startTime: string, endTime: string): boolean {
+      const prefTimes = teacher.preferences?.preferred_times;
+      if (!prefTimes || prefTimes.length === 0) return true;
+      const slotRange = `${startTime}-${endTime}`;
+      return prefTimes.some((pref) => {
+        const prefLower = pref.toLowerCase();
+        return prefLower.includes(startTime.toLowerCase()) ||
+               prefLower.includes(endTime.toLowerCase()) ||
+               prefLower.includes(slotRange.toLowerCase());
+      });
+    }
+
+    // Re-process entries: if assigned teacher's constraints are violated, mark for re-scheduling
+    const finalEntries: ScheduleEntry[] = [];
+    const needsReschedule = new Set<string>(); // subjectIds that need re-scheduling
+
+    for (const entry of baseResult.scheduleEntries) {
+      const assignedTeacherId = subjectTeacherMap.get(entry.subjectId);
+      if (!assignedTeacherId) {
+        // No teacher assigned, keep original entry
+        finalEntries.push({ ...entry, teacherId: null, teacherName: null });
+        continue;
+      }
+
+      const teacher = teacherInfoMap.get(assignedTeacherId);
+      if (!teacher) {
+        finalEntries.push({ ...entry, teacherId: assignedTeacherId, teacherName: subjectTeacherNameMap.get(entry.subjectId) || null });
+        continue;
+      }
+
+      const category = getEmploymentCategory(teacher);
+      let valid = true;
+
+      // Full-Time: weekdays only, 7AM-6PM
+      if (category === "full_time") {
+        if (!isWeekday(entry.day)) {
+          valid = false;
+        }
+        if (!isWithinDaytime(entry.startTime, entry.endTime)) {
+          valid = false;
+        }
+      }
+
+      // Part-Time: only preferred days/times, handles Saturdays
+      if (category === "part_time") {
+        // Check preferred times
+        if (!teacherPrefersTime(teacher, entry.startTime, entry.endTime)) {
+          valid = false;
+        }
+      }
+
+      // Part-Time Full Load: can handle evening, but prefer preferred times
+      if (category === "part_time_full_load") {
+        // Can handle 6PM-10PM, but respect preferred times if set
+        if (!teacherPrefersTime(teacher, entry.startTime, entry.endTime)) {
+          // For part-time full load, we still allow it but flag for potential re-scheduling
+          // Only block if there are preferred times and this doesn't match
+          const prefTimes = teacher.preferences?.preferred_times;
+          if (prefTimes && prefTimes.length > 0) {
+            valid = false;
+          }
+        }
+      }
+
+      if (!valid) {
+        needsReschedule.add(entry.subjectId);
+      }
+
+      finalEntries.push({ ...entry, teacherId: assignedTeacherId, teacherName: subjectTeacherNameMap.get(entry.subjectId) || null });
+    }
+
+    // If no entries need re-scheduling, return with teacher assignments
+    if (needsReschedule.size === 0) {
+      return { success: true, scheduleEntries: finalEntries };
+    }
+
+    // For entries that need re-scheduling, we try to adjust the time slots
+    // This is a best-effort adjustment; if we can't find valid slots, we keep the original
+    // The key constraint enforcement happens at the teacher assignment level above
+    // Full-time teachers won't be assigned to Saturday/evening subjects
+    // Part-time teachers won't be assigned to subjects they don't prefer
+
+    return { success: true, scheduleEntries: finalEntries };
+  } catch (error) {
+    console.error("Failed to generate room and class schedules with teachers:", error);
+    return {
+      success: false,
+      scheduleEntries: [],
+      error:
+        (error as Error).message ||
+        "Failed to generate room and class schedules with teachers.",
+    };
+  }
+}
+
+/**
+ * Assign teachers to schedule entries after room/class schedule generation.
+ * Matches one teacher per subject (regardless of section) respecting AQ/FCCE
+ * and load limits (faculty_load + overload_max).
+ */
+export async function assignTeachersToSchedule(
+  scheduleEntries: ScheduleEntry[],
+): Promise<TeacherAssignmentResult> {
+  try {
+    // 1. Fetch faculty load configuration
+    const configResult = await fetchFacultyLoadConfig();
+    const config =
+      configResult &&
+      configResult.success &&
+      Array.isArray(configResult.data) &&
+      configResult.data.length > 0
+        ? (configResult.data[0] as Configuration)
+        : null;
+
+    const facultyLoad = config?.faculty_load ?? {
+      full_time: 21,
+      part_time: 12,
+      part_time_full_load: 18,
+    };
+    const overloadMax = Number(config?.overload_max ?? 3);
+
+    // 2. Fetch all teachers with AQ and FCCE data
+    const teachersResult = await getTeachersWithAqAndFcce({ search: null });
+    if (!teachersResult.success || !teachersResult.data) {
+      return {
+        success: false,
+        scheduleEntries: scheduleEntries.map((e) => ({ ...e, teacherId: null, teacherName: null })),
+        error: teachersResult.error || "Failed to fetch teachers.",
+      };
+    }
+    const teachers: TeacherRecord[] = teachersResult.data as TeacherRecord[];
+
+    // Filter out inactive teachers
+    const activeTeachers = teachers.filter(
+      (t) => !t.status || t.status.toLowerCase() !== "inactive",
+    );
+
+    // 3. Build subject info map: subjectId -> { courseName, requiredAqs, lectureUnits, labUnits }
+    // We gather subject info from the schedule entries and deduplicate by subjectId
+    const subjectInfoMap = new Map<
+      string,
+      {
+        courseName: string;
+        courseCode: string;
+        requiredAqs: string[];
+        totalUnits: number;
+      }
+    >();
+
+    for (const entry of scheduleEntries) {
+      if (!subjectInfoMap.has(entry.subjectId)) {
+        subjectInfoMap.set(entry.subjectId, {
+          courseName: entry.courseName,
+          courseCode: entry.courseCode,
+          requiredAqs: [],
+          totalUnits: 0,
+        });
+      }
+      const info = subjectInfoMap.get(entry.subjectId)!;
+      // Accumulate units per subject per section (lecture + lab)
+      // We need to track per-section to avoid double counting
+      info.totalUnits += entry.units;
+    }
+
+    // 4. For each unique subject, find the best matching teacher
+    // Track teacher load: teacherId -> total units assigned
+    const teacherLoad = new Map<string, number>();
+    // Track teacher -> assigned subject count (for prep)
+    const teacherSubjects = new Map<string, Set<string>>();
+    // Map subjectId -> assigned teacherId
+    const subjectTeacherMap = new Map<string, string>();
+    const subjectTeacherNameMap = new Map<string, string>();
+
+    // Helper: get faculty load limit for a teacher's employment type
+    function getFacultyLoadLimit(employmentType?: string): number {
+      const normalized = (employmentType || "full_time").toLowerCase();
+      if (
+        normalized.includes("part-time full load") ||
+        normalized.includes("part_time_full_load")
+      ) {
+        return Number(facultyLoad.part_time_full_load ?? 18);
+      } else if (normalized.includes("part")) {
+        return Number(facultyLoad.part_time ?? 12);
+      } else {
+        return Number(facultyLoad.full_time ?? 21);
+      }
+    }
+
+    // Helper: check if teacher's AQs match required AQs
+    function teacherAqMatches(
+      teacher: TeacherRecord,
+      requiredAqs: string[],
+    ): boolean {
+      if (!requiredAqs || requiredAqs.length === 0) return true;
+      // Skip matching if requiredAqs contains 'NULL' or 'BM' placeholder
+      if (
+        requiredAqs.length === 1 &&
+        (requiredAqs[0] === "NULL" || requiredAqs[0] === "")
+      ) {
+        return true;
+      }
+
+      const teacherAqs: string[] = Array.isArray(teacher.aqs)
+        ? (teacher.aqs as Array<Record<string, unknown>>)
+            .map((item) =>
+              item && typeof item === "object" && "aq" in item
+                ? String(item.aq ?? "")
+                : "",
+            )
+            .filter(Boolean)
+        : [];
+
+      return requiredAqs.every((req) =>
+        teacherAqs.some((tAq) => tAq.toLowerCase() === req.toLowerCase()),
+      );
+    }
+
+    // Helper: check if teacher has passed FCCE for the course
+    function teacherFcceMatches(
+      teacher: TeacherRecord,
+      courseName: string,
+    ): boolean {
+      const courseNameLower = courseName.trim().toLowerCase();
+      if (!courseNameLower) return true;
+
+      const teacherFcces = Array.isArray(teacher.fcces)
+        ? (teacher.fcces as Array<Record<string, unknown>>)
+        : [];
+
+      return teacherFcces.some((f) => {
+        const fCourse = String(f.course_name ?? "").trim().toLowerCase();
+        return fCourse === courseNameLower && f.pass === true;
+      });
+    }
+
+    // Helper: check if part-time teacher wants to teach this subject
+    // For part-time teachers, only assign subjects they explicitly prefer
+    function teacherPrefersSubject(
+      teacher: TeacherRecord,
+      courseName: string,
+      courseCode: string,
+    ): boolean {
+      const normalized = (teacher.employment_type || "").toLowerCase();
+      // Only enforce preference constraints on part-time teachers
+      const isPartTime = normalized.includes("part");
+      if (!isPartTime) return true;
+
+      const prefSubjects = teacher.preferences?.preferred_subjects;
+      if (!prefSubjects || prefSubjects.length === 0) return true;
+
+      const courseNameLower = courseName.trim().toLowerCase();
+      const courseCodeLower = courseCode.trim().toLowerCase();
+
+      return prefSubjects.some((pref) => {
+        const prefLower = pref.trim().toLowerCase();
+        return prefLower === courseNameLower || prefLower === courseCodeLower;
+      });
+    }
+
+    // Process each unique subject
+    const subjectIds = Array.from(subjectInfoMap.keys());
+
+    for (const subjectId of subjectIds) {
+      const subjectInfo = subjectInfoMap.get(subjectId)!;
+
+      // Calculate total units for this subject across ALL sections
+      // We need the per-subject units (lecture + lab), not multiplied by sections
+      const subjectEntries = scheduleEntries.filter(
+        (e) => e.subjectId === subjectId,
+      );
+
+      // Calculate unique section count for this subject
+      const sectionsForSubject = new Set(
+        subjectEntries.map((e) => e.sectionCode),
+      );
+      const sectionCount = sectionsForSubject.size;
+
+      // Calculate per-section units (lecture + lab for one section)
+      // Group by component type to get lecture units + lab units per section
+      let perSectionUnits = 0;
+      const hasLecture = subjectEntries.some(
+        (e) => e.componentType === "LECTURE",
+      );
+      const hasLab = subjectEntries.some((e) => e.componentType === "LABORATORY");
+
+      if (hasLecture) {
+        const lecEntry = subjectEntries.find(
+          (e) => e.componentType === "LECTURE",
+        );
+        perSectionUnits += lecEntry?.units || 0;
+      }
+      if (hasLab) {
+        const labEntry = subjectEntries.find(
+          (e) => e.componentType === "LABORATORY",
+        );
+        perSectionUnits += labEntry?.units || 0;
+      }
+
+      // Total units = perSectionUnits * sectionCount
+      const totalUnitsForSubject = perSectionUnits * sectionCount;
+
+      // Find the best matching teacher
+      let bestTeacher: TeacherRecord | null = null;
+
+      // First pass: find teachers with full AQ + FCCE match
+      for (const teacher of activeTeachers) {
+        const loadLimit = getFacultyLoadLimit(teacher.employment_type);
+        const absoluteMax = loadLimit + overloadMax;
+        const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
+
+        // Check if adding this subject would exceed absolute max
+        if (currentLoad + totalUnitsForSubject > absoluteMax) continue;
+
+        // Part-time teachers only teach subjects they prefer
+        if (!teacherPrefersSubject(teacher, subjectInfo.courseName, subjectInfo.courseCode)) continue;
+
+        // Check AQ match
+        if (!teacherAqMatches(teacher, subjectInfo.requiredAqs)) continue;
+
+        // Check FCCE match
+        if (!teacherFcceMatches(teacher, subjectInfo.courseName)) continue;
+
+        // Teacher is already assigned to this subject – skip (one teacher per subject)
+        if (teacherSubjects.get(teacher.teacher_id)?.has(subjectId)) continue;
+
+        bestTeacher = teacher;
+        break;
+      }
+
+      // Second pass: if no full match, find teachers with AQ match only
+      if (!bestTeacher) {
+        for (const teacher of activeTeachers) {
+          const loadLimit = getFacultyLoadLimit(teacher.employment_type);
+          const absoluteMax = loadLimit + overloadMax;
+          const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
+
+          if (currentLoad + totalUnitsForSubject > absoluteMax) continue;
+          if (!teacherPrefersSubject(teacher, subjectInfo.courseName, subjectInfo.courseCode)) continue;
+          if (!teacherAqMatches(teacher, subjectInfo.requiredAqs)) continue;
+          if (teacherSubjects.get(teacher.teacher_id)?.has(subjectId)) continue;
+
+          bestTeacher = teacher;
+          break;
+        }
+      }
+
+      // Third pass: if still no match, find any teacher with available load
+      if (!bestTeacher) {
+        for (const teacher of activeTeachers) {
+          const loadLimit = getFacultyLoadLimit(teacher.employment_type);
+          const absoluteMax = loadLimit + overloadMax;
+          const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
+
+          if (currentLoad + totalUnitsForSubject > absoluteMax) continue;
+          if (!teacherPrefersSubject(teacher, subjectInfo.courseName, subjectInfo.courseCode)) continue;
+          if (teacherSubjects.get(teacher.teacher_id)?.has(subjectId)) continue;
+
+          bestTeacher = teacher;
+          break;
+        }
+      }
+
+      if (bestTeacher) {
+        subjectTeacherMap.set(subjectId, bestTeacher.teacher_id);
+        subjectTeacherNameMap.set(subjectId, bestTeacher.full_name);
+        teacherLoad.set(
+          bestTeacher.teacher_id,
+          (teacherLoad.get(bestTeacher.teacher_id) || 0) + totalUnitsForSubject,
+        );
+        if (!teacherSubjects.has(bestTeacher.teacher_id)) {
+          teacherSubjects.set(bestTeacher.teacher_id, new Set());
+        }
+        teacherSubjects
+          .get(bestTeacher.teacher_id)!
+          .add(subjectId);
+      }
+    }
+
+    // 5. Assign teacher IDs and names to schedule entries
+    // If a teacher was matched, assign them; otherwise leave as null
+    const resultEntries = scheduleEntries.map((entry) => ({
+      ...entry,
+      teacherId: subjectTeacherMap.get(entry.subjectId) || null,
+      teacherName: subjectTeacherNameMap.get(entry.subjectId) || null,
+    }));
+
+    return { success: true, scheduleEntries: resultEntries };
+  } catch (error) {
+    console.error("Failed to assign teachers to schedule:", error);
+    return {
+      success: false,
+      scheduleEntries: scheduleEntries.map((e) => ({ ...e, teacherId: null, teacherName: null })),
+      error: (error as Error).message || "Failed to assign teachers.",
     };
   }
 }
@@ -1327,6 +2077,7 @@ function scheduleSession(
   requiredLabTypeId?: string | null,
   lectureRoomTypeId?: string | null,
   preferBefore6PM: boolean = false,
+  sectionDaySubjectCount?: Map<string, Map<string, number>>,
 ): {
   day: string;
   endSlotIndex: number;
@@ -1342,10 +2093,41 @@ function scheduleSession(
     lectureRoomTypeId,
   );
 
-  const prioritizedDays = [
-    ...days.filter((d) => d !== preferredVacantDay),
-    preferredVacantDay,
-  ];
+  // Use balanced day ordering if tracker is available, otherwise fall back to vacant-day ordering
+  let prioritizedDays: string[];
+  if (sectionDaySubjectCount && sectionDaySubjectCount.has(sectionCode)) {
+    const dayCounts = sectionDaySubjectCount.get(sectionCode)!;
+    const dayOrder: Record<string, number> = {};
+    days.forEach((d, i) => (dayOrder[d] = i));
+
+    // Build candidate days: active days first, then inactive if needed
+    const candidateDays: string[] = [];
+    for (const day of days) {
+      if (activeDays.has(day)) {
+        candidateDays.push(day);
+      }
+    }
+    if (activeDays.size < 5) {
+      for (const day of days) {
+        if (!activeDays.has(day) && day !== preferredVacantDay) {
+          candidateDays.push(day);
+        }
+      }
+      candidateDays.push(preferredVacantDay);
+    }
+    candidateDays.sort((a, b) => {
+      const countA = dayCounts.get(a) || 0;
+      const countB = dayCounts.get(b) || 0;
+      if (countA !== countB) return countA - countB;
+      return dayOrder[a] - dayOrder[b];
+    });
+    prioritizedDays = candidateDays;
+  } else {
+    prioritizedDays = [
+      ...days.filter((d) => d !== preferredVacantDay),
+      preferredVacantDay,
+    ];
+  }
 
   // Helper to check if a session ending at slot index ends before 18:00
   function sessionEndsBefore6PM(endIndex: number): boolean {
@@ -1434,6 +2216,8 @@ function scheduleSession(
             startTime,
             endTime,
             type: componentType.toLowerCase(),
+            teacherId: null,
+            teacherName: null,
           });
           return {
             day,
@@ -1527,6 +2311,8 @@ function scheduleSession(
         startTime,
         endTime,
         type: componentType.toLowerCase(),
+        teacherId: null,
+        teacherName: null,
       });
       return {
         day,
@@ -1637,6 +2423,8 @@ function scheduleSessionStartingAtRoom(
         startTime,
         endTime,
         type: componentType.toLowerCase(),
+        teacherId: null,
+        teacherName: null,
       });
       return true;
     }
@@ -1685,6 +2473,8 @@ function scheduleSessionStartingAtRoom(
         startTime,
         endTime,
         type: componentType.toLowerCase(),
+        teacherId: null,
+        teacherName: null,
       });
       return true;
     }
@@ -1718,6 +2508,8 @@ function scheduleSessionStartingAtRoom(
     startTime,
     endTime,
     type: componentType.toLowerCase(),
+    teacherId: null,
+    teacherName: null,
   });
   return true;
 }

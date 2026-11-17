@@ -85,6 +85,7 @@ export default function TeacherAQs() {
   const [aqSearchQuery, setAqSearchQuery] = useState("");
   const [aqSearchResults, setAqSearchResults] = useState<SuggestionItem[]>([]);
   const [selectedAQOption, setSelectedAQOption] = useState("");
+  const [selectedAQItem, setSelectedAQItem] = useState<SuggestionItem | null>(null);
   const [isAQLocked, setIsAQLocked] = useState(false);
   const [isSearchingAqs, setIsSearchingAqs] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -281,6 +282,7 @@ export default function TeacherAQs() {
       const initialQuery = selectedTeacher.department || "";
       setAqSearchQuery(initialQuery);
       setSelectedAQOption("");
+      setSelectedAQItem(null);
       setIsAQLocked(false);
       setShowSuggestions(true);
       void handleAQSearch(initialQuery);
@@ -302,25 +304,18 @@ export default function TeacherAQs() {
   };
 
   const handleSelectAQ = (item: SuggestionItem) => {
-    if (item.type === "cluster") {
-      // For clusters, use the cluster name as the selection
-      setSelectedAQOption(item.name);
-      setAqSearchQuery(item.name);
-      setIsAQLocked(true);
-      setShowSuggestions(false);
-      setAqSubmitError("");
-    } else {
-      setSelectedAQOption(item.name);
-      setAqSearchQuery(item.name);
-      setIsAQLocked(true);
-      setShowSuggestions(false);
-      setAqSubmitError("");
-    }
+    setSelectedAQOption(item.name);
+    setSelectedAQItem(item);
+    setAqSearchQuery(item.name);
+    setIsAQLocked(true);
+    setShowSuggestions(false);
+    setAqSubmitError("");
   };
 
   const handleUnlockAQ = () => {
     setIsAQLocked(false);
     setSelectedAQOption("");
+    setSelectedAQItem(null);
     setShowSuggestions(true);
   };
 
@@ -427,7 +422,7 @@ export default function TeacherAQs() {
       return;
     }
 
-    if (!aqSearchResults.some((item) => item.name === selectedAQOption)) {
+    if (!selectedAQItem) {
       setAqSubmitError(
         "Selected Academic Qualification does not exist in system records or is already assigned.",
       );
@@ -442,25 +437,67 @@ export default function TeacherAQs() {
     setIsSubmittingAQ(true);
     setAqSubmitError("");
 
-    const customAqCode = `AQ-${Date.now()}`;
-    const aqContents: Record<string, JSONValue> = {
-      custom_aq_id: customAqCode,
-    };
+    const aqNames: string[] = [];
+
+    if (selectedAQItem.type === "cluster") {
+      // For clusters, collect all individual AQ names from entries
+      const entries = selectedAQItem.entries || [];
+      entries.forEach((entry: MaqClusterEntryItem) => {
+        const aqName = typeof entry === "string" ? entry : entry.aq;
+        if (aqName) {
+          aqNames.push(aqName);
+        }
+      });
+    } else {
+      // For individual AQs, use the selected name
+      aqNames.push(selectedAQOption);
+    }
+
+    if (aqNames.length === 0) {
+      setAqSubmitError("No valid Academic Qualifications found in selection.");
+      setIsSubmittingAQ(false);
+      return;
+    }
 
     try {
-      const res = await createTeacherAQ(
-        selectedTeacher.pscs_id,
-        selectedAQOption,
-        aqContents,
-        "Approved",
-      );
+      let successCount = 0;
+      let firstError: string | null = null;
 
-      if (res?.success) {
-        triggerToast("success", "Academic Qualification added successfully!");
+      for (const aqName of aqNames) {
+        const customAqCode = `AQ-${Date.now()}-${successCount}`;
+        const aqContents: Record<string, JSONValue> = {
+          custom_aq_id: customAqCode,
+        };
+
+        const res = await createTeacherAQ(
+          selectedTeacher.pscs_id,
+          aqName,
+          aqContents,
+          "Approved",
+        );
+
+        if (res?.success) {
+          successCount++;
+        } else {
+          if (!firstError) {
+            firstError = res?.error || "Failed to add one or more Academic Qualifications.";
+          }
+        }
+      }
+
+      if (successCount > 0) {
+        if (firstError && successCount < aqNames.length) {
+          triggerToast(
+            "success",
+            `${successCount} of ${aqNames.length} Academic Qualifications added successfully.`,
+          );
+        } else {
+          triggerToast("success", "Academic Qualification(s) added successfully!");
+        }
         await loadData(currentPage, employmentFilter);
         closeAqAddModal();
       } else {
-        setAqSubmitError(res?.error || "Failed to add Academic Qualification.");
+        setAqSubmitError(firstError || "Failed to add Academic Qualification.");
       }
     } catch (err: unknown) {
       const message =
@@ -491,6 +528,7 @@ export default function TeacherAQs() {
   function closeAqAddModal() {
     setIsAddAQOpen(false);
     setSelectedAQOption("");
+    setSelectedAQItem(null);
     setAqSearchQuery("");
     setIsAQLocked(false);
   }
