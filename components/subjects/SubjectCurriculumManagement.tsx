@@ -31,11 +31,18 @@ import { useMsal } from "@azure/msal-react";
 import {
   fetchCurricula,
   createCurriculum,
+  fetchPrograms,
   CurriculumRecord,
   CurriculumInput,
+  ProgramRecord,
 } from "@/app/actions/system";
 
 import { filterCurricula } from "@/utils/validation";
+
+interface ProgramOption {
+  program_code: string;
+  program_name: string;
+}
 
 export default function SubjectCurriculumManagement() {
   const router = useRouter();
@@ -57,6 +64,10 @@ export default function SubjectCurriculumManagement() {
 
   const [openAddCurriculumModal, setOpenAddCurriculumModal] = useState<boolean>(false);
   const [openAddConfirmation, setOpenAddConfirmation] = useState<boolean>(false);
+
+  const [programsList, setProgramsList] = useState<ProgramOption[]>([]);
+  const [selectedCourse, setSelectedCourse] = useState<string>("");
+  const [courseSuffix, setCourseSuffix] = useState<string>("");
 
   const initialCurriculumForm: CurriculumInput = {
     curriculum_version: "",
@@ -146,6 +157,29 @@ export default function SubjectCurriculumManagement() {
     loadCurriculaData();
   }, [loadCurriculaData]);
 
+  useEffect(() => {
+    const loadPrograms = async () => {
+      try {
+        const [shsRes, tertiaryRes] = await Promise.all([
+          fetchPrograms(null, "shs", "program_code", "ASC", 0, 1),
+          fetchPrograms(null, "tertiary", "program_code", "ASC", 0, 1),
+        ]);
+        const shsPrograms = (shsRes?.data || shsRes || []).map((p: ProgramRecord) => ({
+          program_code: p.program_code,
+          program_name: p.program_name,
+        }));
+        const tertiaryPrograms = (tertiaryRes?.data || tertiaryRes || []).map((p: ProgramRecord) => ({
+          program_code: p.program_code,
+          program_name: p.program_name,
+        }));
+        setProgramsList([...shsPrograms, ...tertiaryPrograms].sort((a, b) => a.program_code.localeCompare(b.program_code)));
+      } catch (err) {
+        console.error("Failed to fetch programs:", err);
+      }
+    };
+    loadPrograms();
+  }, []);
+
   const handleSorting = (column: string) => {
     startTransition(() => {
       if (sortBy === column) {
@@ -163,19 +197,31 @@ export default function SubjectCurriculumManagement() {
     setOpenAddConfirmation(false);
     setFormData(initialCurriculumForm);
     setVersionError("");
+    setSelectedCourse("");
+    setCourseSuffix("");
   };
 
-  const handleVersionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const buildCurriculumVersion = (course: string, suffix: string): string => {
+    const combined = (course || "") + (suffix || "");
+    const filtered = filterCurricula(combined);
+    return filtered.slice(0, 20);
+  };
+
+  const handleCourseChange = (courseCode: string) => {
+    setSelectedCourse(courseCode);
+    const combined = buildCurriculumVersion(courseCode, courseSuffix);
+    setFormData((prev) => ({ ...prev, curriculum_version: combined }));
+    setVersionError(!combined.trim() ? "Curriculum version is required." : "");
+  };
+
+  const handleSuffixChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value;
     const filtered = filterCurricula(rawVal);
-    const truncated = filtered.slice(0, 12);
-
-    setFormData((prev) => ({
-      ...prev,
-      curriculum_version: truncated,
-    }));
-
-    setVersionError(!truncated.trim() ? "Curriculum version is required." : "");
+    const truncated = filtered.slice(0, 20);
+    setCourseSuffix(truncated);
+    const combined = buildCurriculumVersion(selectedCourse, truncated);
+    setFormData((prev) => ({ ...prev, curriculum_version: combined }));
+    setVersionError(!combined.trim() ? "Curriculum version is required." : "");
   };
 
   const handleCreateCurriculum = async () => {
@@ -244,6 +290,8 @@ export default function SubjectCurriculumManagement() {
           onClick={() => {
             setFormData(initialCurriculumForm);
             setVersionError("");
+            setSelectedCourse("");
+            setCourseSuffix("");
             setOpenAddCurriculumModal(true);
           }}
           className="w-full sm:w-auto whitespace-nowrap"
@@ -368,29 +416,62 @@ export default function SubjectCurriculumManagement() {
         <ModalBody>
           <div className="flex flex-col gap-4">
             <div>
+              <Label htmlFor="course_select" className="mb-1 block">Course *</Label>
+              <div className="relative">
+                <select
+                  id="course_select"
+                  value={selectedCourse}
+                  onChange={(e) => handleCourseChange(e.target.value)}
+                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white max-h-40 overflow-y-auto"
+                >
+                  <option value="">Select a course...</option>
+                  {programsList.map((prog) => (
+                    <option key={prog.program_code} value={prog.program_code}>
+                      {prog.program_code} — {prog.program_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                Choose the base course (e.g., BSIT, BSCS, SHS-11)
+              </HelperText>
+            </div>
+            <div>
               <div className="flex items-center justify-between">
-                <Label htmlFor="curriculum_version">Curriculum Version *</Label>
+                <Label htmlFor="course_suffix">Suffix *</Label>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    {(formData.curriculum_version || "").length}/12
-                                </span>
+                  {(courseSuffix || "").length}/20
+                </span>
               </div>
               <TextInput
-                id="curriculum_version"
+                id="course_suffix"
                 type="text"
-                placeholder="e.g. BSIT-22-01"
-                value={formData.curriculum_version || ""}
-                onChange={handleVersionChange}
-                color={versionError ? "failure" : "gray"}
-                maxLength={12}
+                placeholder="Select a course first"
+                value={courseSuffix || ""}
+                onChange={handleSuffixChange}
+                color={versionError && !selectedCourse ? "failure" : "gray"}
+                maxLength={20}
+                disabled={!selectedCourse}
               />
-              {versionError ? (
-                <HelperText className="mt-1 text-red-600 dark:text-red-500">{versionError}</HelperText>
-              ) : (
-                <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
-                  Format: <b className="font-mono">BSIT-22-01</b> (Allowed: <b className="font-mono">A-Z, 0-9, -</b>)
-                </HelperText>
-              )}
+              <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                Enter the version suffix (e.g., <b className="font-mono">26T2</b>)
+              </HelperText>
             </div>
+            {formData.curriculum_version && (
+              <div>
+                <Label htmlFor="preview_version" className="mb-1 block">Preview</Label>
+                <div className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 font-mono text-sm text-blue-700 dark:border-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                  {formData.curriculum_version}
+                </div>
+              </div>
+            )}
+            {versionError ? (
+              <HelperText className="mt-1 text-red-600 dark:text-red-500">{versionError}</HelperText>
+            ) : (
+              <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                Format: <b className="font-mono">Course + Suffix</b> (e.g., BSIT + 26T2 = BSIT26T2). Max 20 characters.
+              </HelperText>
+            )}
           </div>
         </ModalBody>
         <ModalFooter>

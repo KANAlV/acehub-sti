@@ -1699,12 +1699,14 @@ export async function fetchDistinctCourseNames(
 export async function fetchSubjectsCount(
   search: string | null = null,
   programCode: string | null = null,
+  curriculum: string | null = null,
 ) {
   try {
     const [result] = await sql<{ subjects_count: number }[]>`
       SELECT subjects_count(
                ${search || null},
-               ${programCode || null}
+               ${programCode || null},
+               ${curriculum || null}
              );
     `;
 
