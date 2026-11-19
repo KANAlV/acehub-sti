@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useTransition, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Table,
@@ -30,6 +30,7 @@ import { useMsal } from "@azure/msal-react";
 
 import {
   fetchCurricula,
+  fetchCurriculaCount,
   createCurriculum,
   fetchPrograms,
   CurriculumRecord,
@@ -52,6 +53,7 @@ export default function SubjectCurriculumManagement() {
   const actor = activeAccount?.username || "system";
 
   const [curriculaList, setCurriculaList] = useState<CurriculumRecord[]>([]);
+  const [totalCurricula, setTotalCurricula] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPending, startTransition] = useTransition();
 
@@ -130,13 +132,16 @@ export default function SubjectCurriculumManagement() {
   const loadCurriculaData = useCallback(() => {
     startTransition(async () => {
       try {
-        const res = await fetchCurricula(
-          debouncedSearch || null,
-          sortBy,
-          sortDir,
-          10,
-          1,
-        );
+        const [res, countRes] = await Promise.all([
+          fetchCurricula(
+            debouncedSearch || null,
+            sortBy,
+            sortDir,
+            maxRow,
+            currentPage,
+          ),
+          fetchCurriculaCount(debouncedSearch || null),
+        ]);
         if (res?.success && Array.isArray(res.data)) {
           setCurriculaList(res.data);
         } else if (Array.isArray(res)) {
@@ -144,14 +149,18 @@ export default function SubjectCurriculumManagement() {
         } else {
           setCurriculaList([]);
         }
+        if (countRes?.success !== false) {
+          setTotalCurricula(countRes?.count ?? 0);
+        }
       } catch (err) {
         console.error("Failed to fetch curricula:", err);
         setCurriculaList([]);
+        setTotalCurricula(0);
       } finally {
         setIsLoading(false);
       }
     });
-  }, [debouncedSearch, sortBy, sortDir]);
+  }, [debouncedSearch, sortBy, sortDir, currentPage, maxRow]);
 
   useEffect(() => {
     loadCurriculaData();
@@ -202,7 +211,7 @@ export default function SubjectCurriculumManagement() {
   };
 
   const buildCurriculumVersion = (course: string, suffix: string): string => {
-    const combined = (course || "") + (suffix || "");
+    const combined = (course || "") + "-" + (suffix || "");
     const filtered = filterCurricula(combined);
     return filtered.slice(0, 20);
   };
@@ -239,12 +248,6 @@ export default function SubjectCurriculumManagement() {
 
   const isFormInvalid = !formData.curriculum_version?.trim() || Boolean(versionError);
 
-  const paginatedCurricula = useMemo(() => {
-    return curriculaList.slice(
-      (currentPage - 1) * maxRow,
-      currentPage * maxRow,
-    );
-  }, [curriculaList, currentPage, maxRow]);
 
   const navigateToDetail = (version: string) => {
     router.push(`/subjects/${encodeURIComponent(version)}`);
@@ -347,8 +350,8 @@ export default function SubjectCurriculumManagement() {
             </TableRow>
           </TableHead>
           <TableBody className="divide-y">
-            {paginatedCurricula.length > 0 ? (
-              paginatedCurricula.map((item) => (
+            {curriculaList.length > 0 ? (
+              curriculaList.map((item) => (
                 <TableRow
                   key={item.curriculum_id}
                   className="cursor-pointer bg-white dark:border-gray-700 dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -405,7 +408,7 @@ export default function SubjectCurriculumManagement() {
         <Pagination
           layout="pagination"
           currentPage={currentPage}
-          totalPages={Math.ceil(curriculaList.length / maxRow) || 1}
+          totalPages={Math.ceil(totalCurricula / maxRow) || 1}
           onPageChange={(p) => setCurrentPage(p)}
           showIcons
         />
@@ -454,7 +457,7 @@ export default function SubjectCurriculumManagement() {
                 disabled={!selectedCourse}
               />
               <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
-                Enter the version suffix (e.g., <b className="font-mono">26T2</b>)
+                Enter the version suffix (e.g., <b className="font-mono">23-01</b>)
               </HelperText>
             </div>
             {formData.curriculum_version && (
@@ -469,7 +472,7 @@ export default function SubjectCurriculumManagement() {
               <HelperText className="mt-1 text-red-600 dark:text-red-500">{versionError}</HelperText>
             ) : (
               <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
-                Format: <b className="font-mono">Course + Suffix</b> (e.g., BSIT + 26T2 = BSIT26T2). Max 20 characters.
+                Format: <b className="font-mono">Course + Suffix</b> (e.g., BSIT + 23-01 = BSIT-23-01). Max 20 characters.
               </HelperText>
             )}
           </div>

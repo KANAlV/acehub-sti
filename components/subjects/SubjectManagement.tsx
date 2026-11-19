@@ -124,7 +124,11 @@ export default function SubjectsManagement() {
 
   const [curriculaList, setCurriculaList] = useState<CurriculumRecord[]>([]);
   const [isLoadingCurricula, setIsLoadingCurricula] = useState<boolean>(false);
+  const [curriculaSearch, setCurriculaSearch] = useState<string>("");
+  const [isCurriculaSearching, setIsCurriculaSearching] = useState<boolean>(false);
   const [programsList, setProgramsList] = useState<ProgramRecord[]>([]);
+  const [selectedCourse, setSelectedCourse] = useState<string>("");
+  const [courseSuffix, setCourseSuffix] = useState<string>("");
   const [isLoadingPrograms, setIsLoadingPrograms] = useState<boolean>(false);
   const [roomTypeList, setRoomTypeList] = useState<RoomType[]>([]);
   const [isLoadingRoomTypes, setIsLoadingRoomTypes] = useState<boolean>(false);
@@ -535,6 +539,29 @@ export default function SubjectsManagement() {
     }
   }, []);
 
+  const buildCurriculumVersion = useCallback((course: string, suffix: string): string => {
+    const combined = (course || "") + (suffix || "");
+    const filtered = filterCurricula(combined);
+    return filtered.slice(0, 20);
+  }, []);
+
+  const handleCourseChange = useCallback((courseCode: string) => {
+    setSelectedCourse(courseCode);
+    const combined = buildCurriculumVersion(courseCode, courseSuffix);
+    setFormData((prev) => ({ ...prev, curriculum: combined }));
+    setCurriculumError(!combined.trim() ? "Curriculum version is required." : "");
+  }, [courseSuffix, buildCurriculumVersion]);
+
+  const handleSuffixChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value;
+    const filtered = filterCurricula(rawVal);
+    const truncated = filtered.slice(0, 20);
+    setCourseSuffix(truncated);
+    const combined = buildCurriculumVersion(selectedCourse, truncated);
+    setFormData((prev) => ({ ...prev, curriculum: combined }));
+    setCurriculumError(!combined.trim() ? "Curriculum version is required." : "");
+  }, [selectedCourse, buildCurriculumVersion]);
+
   const handleInputChange = useCallback((
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
@@ -621,6 +648,8 @@ export default function SubjectsManagement() {
     setProgramError("");
     setCourseCodeError("");
     setCourseNameError("");
+    setSelectedCourse("");
+    setCourseSuffix("");
     setLecUnitsError("");
     setLabUnitsError("");
     setYearLevelError("");
@@ -1763,56 +1792,116 @@ export default function SubjectsManagement() {
               </div>
 
               {isNewCurriculum ? (
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-gray-400" />
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {(formData.curriculum || "").length}/12
-                    </span>
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <Label htmlFor="course_select" className="mb-1 block">Course *</Label>
+                    <Select
+                      id="course_select"
+                      value={selectedCourse}
+                      onChange={(e) => handleCourseChange(e.target.value)}
+                      disabled={isLoadingPrograms}
+                      color="gray"
+                    >
+                      <option value="">
+                        {isLoadingPrograms ? "Loading courses..." : "Select a course..."}
+                      </option>
+                      {programsList.map((prog) => (
+                        <option key={prog.program_code} value={prog.program_code}>
+                          {prog.program_code} — {prog.program_name}
+                        </option>
+                      ))}
+                    </Select>
+                    <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                      Choose the base course (e.g., BSIT, BSCS, SHS-11)
+                    </HelperText>
                   </div>
-                  <TextInput
-                    id="curriculum-text-input"
-                    type="text"
-                    placeholder="e.g. BSIT-22-01"
-                    value={formData.curriculum || ""}
-                    onChange={handleCustomCurriculumChange}
-                    color={curriculumError ? "failure" : "gray"}
-                    maxLength={12}
-                  />
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="course_suffix">Suffix *</Label>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {(courseSuffix || "").length}/20
+                      </span>
+                    </div>
+                    <TextInput
+                      id="course_suffix"
+                      type="text"
+                      placeholder="Select a course first"
+                      value={courseSuffix || ""}
+                      onChange={handleSuffixChange}
+                      color={curriculumError && !selectedCourse ? "failure" : "gray"}
+                      maxLength={20}
+                      disabled={!selectedCourse}
+                    />
+                    <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                      Enter the version suffix (e.g., <b className="font-mono">23-01</b>)
+                    </HelperText>
+                  </div>
+                  {formData.curriculum && (
+                    <div>
+                      <Label htmlFor="preview_version" className="mb-1 block">Preview</Label>
+                      <div className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 font-mono text-sm text-blue-700 dark:border-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                        {formData.curriculum}
+                      </div>
+                    </div>
+                  )}
                   {curriculumError ? (
                     <HelperText className="mt-1 text-red-600 dark:text-red-500">
                       {curriculumError}
                     </HelperText>
                   ) : (
                     <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
-                      Format: <b className="font-mono">BSIT-22-01</b> (Allowed:{" "}
-                      <b className="font-mono">A-Z, 0-9, -</b>)
+                      Format: <b className="font-mono">Course + Suffix</b> (e.g., BSIT + 23-01 = BSIT-23-01). Max 20 characters.
                     </HelperText>
                   )}
                 </div>
               ) : (
                 <div>
-                  <Select
-                    id="curriculum"
-                    value={formData.curriculum || ""}
-                    onChange={handleInputChange}
-                    disabled={isLoadingCurricula}
-                    color={curriculumError ? "failure" : "gray"}
-                  >
-                    <option value="" hidden={true}>
-                      {isLoadingCurricula
-                        ? "Loading curricula..."
-                        : "Select Curriculum..."}
-                    </option>
-                    {curriculaList.map((curr) => (
-                      <option
-                        key={curr.curriculum_id}
-                        value={curr.curriculum_version}
-                      >
-                        {curr.curriculum_version}
-                      </option>
-                    ))}
-                  </Select>
+                  <div className="relative">
+                    <TextInput
+                      id="curriculum"
+                      type="text"
+                      placeholder="e.g. BSIT-22-01"
+                      value={curriculaSearch}
+                      onChange={(e) => setCurriculaSearch(e.target.value)}
+                      color={curriculumError ? "failure" : "gray"}
+                    />
+                    {(curriculaSearch.length >= 2 || isCurriculaSearching) && (
+                      <div className="absolute z-10 mt-1 w-full max-h-24 overflow-y-auto rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 scrollbar-thumb-gray-400 scrollbar-track-transparent">
+                        {isCurriculaSearching ? (
+                          <div className="flex items-center justify-center gap-2 p-3 text-xs text-gray-500">
+                            <Spinner size="sm" />
+                            <span>Searching curricula...</span>
+                          </div>
+                        ) : curriculaList.filter(
+                          (item: CurriculumRecord) =>
+                            item.curriculum_version.toLowerCase().includes(curriculaSearch.toLowerCase()),
+                        ).length > 0 ? (
+                          curriculaList
+                            .filter(
+                              (item: CurriculumRecord) =>
+                                item.curriculum_version.toLowerCase().includes(curriculaSearch.toLowerCase()),
+                            )
+                            .map((item: CurriculumRecord) => (
+                              <div
+                                key={item.curriculum_id}
+                                onClick={() => {
+                                  setFormData((prev) => ({ ...prev, curriculum: item.curriculum_version }));
+                                  setCurriculaSearch("");
+                                  setCurriculumError("");
+                                }}
+                                className="py-1 cursor-pointer bg-black/5 p-2 text-xs hover:bg-black/10 dark:bg-white/10 dark:text-white"
+                              >
+                                {item.curriculum_version}
+                              </div>
+                            ))
+                        ) : (
+                          <div className="p-3 text-center text-xs text-gray-400 italic">
+                            No match found
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   {curriculumError && (
                     <HelperText color="failure">{curriculumError}</HelperText>
                   )}
@@ -2027,56 +2116,116 @@ export default function SubjectsManagement() {
               </div>
 
               {isNewCurriculum ? (
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-gray-400" />
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {(formData.curriculum || "").length}/12
-                    </span>
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <Label htmlFor="course_select_edit" className="mb-1 block">Course *</Label>
+                    <Select
+                      id="course_select_edit"
+                      value={selectedCourse}
+                      onChange={(e) => handleCourseChange(e.target.value)}
+                      disabled={isLoadingPrograms}
+                      color="gray"
+                    >
+                      <option value="">
+                        {isLoadingPrograms ? "Loading courses..." : "Select a course..."}
+                      </option>
+                      {programsList.map((prog) => (
+                        <option key={prog.program_code} value={prog.program_code}>
+                          {prog.program_code} — {prog.program_name}
+                        </option>
+                      ))}
+                    </Select>
+                    <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                      Choose the base course (e.g., BSIT, BSCS, SHS-11)
+                    </HelperText>
                   </div>
-                  <TextInput
-                    id="curriculum-text-input-edit"
-                    type="text"
-                    placeholder="e.g. BSIT-22-01"
-                    value={formData.curriculum || ""}
-                    onChange={handleCustomCurriculumChange}
-                    color={curriculumError ? "failure" : "gray"}
-                    maxLength={12}
-                  />
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="course_suffix_edit">Suffix *</Label>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {(courseSuffix || "").length}/20
+                      </span>
+                    </div>
+                    <TextInput
+                      id="course_suffix_edit"
+                      type="text"
+                      placeholder="Select a course first"
+                      value={courseSuffix || ""}
+                      onChange={handleSuffixChange}
+                      color={curriculumError && !selectedCourse ? "failure" : "gray"}
+                      maxLength={20}
+                      disabled={!selectedCourse}
+                    />
+                    <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
+                      Enter the version suffix (e.g., <b className="font-mono">23-01</b>)
+                    </HelperText>
+                  </div>
+                  {formData.curriculum && (
+                    <div>
+                      <Label htmlFor="preview_version_edit" className="mb-1 block">Preview</Label>
+                      <div className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 font-mono text-sm text-blue-700 dark:border-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                        {formData.curriculum}
+                      </div>
+                    </div>
+                  )}
                   {curriculumError ? (
                     <HelperText className="mt-1 text-red-600 dark:text-red-500">
                       {curriculumError}
                     </HelperText>
                   ) : (
                     <HelperText className="mt-1 text-gray-500 dark:text-gray-400">
-                      Format: <b className="font-mono">BSIT-22-01</b> (Allowed:{" "}
-                      <b className="font-mono">A-Z, 0-9, -</b>)
+                      Format: <b className="font-mono">Course + Suffix</b> (e.g., BSIT + 23-01 = BSIT-23-01). Max 20 characters.
                     </HelperText>
                   )}
                 </div>
               ) : (
                 <div>
-                  <Select
-                    id="curriculum"
-                    value={formData.curriculum || ""}
-                    onChange={handleInputChange}
-                    disabled={isLoadingCurricula}
-                    color={curriculumError ? "failure" : "gray"}
-                  >
-                    <option value="" hidden={true}>
-                      {isLoadingCurricula
-                        ? "Loading curricula..."
-                        : "Select Curriculum..."}
-                    </option>
-                    {curriculaList.map((curr) => (
-                      <option
-                        key={curr.curriculum_id}
-                        value={curr.curriculum_version}
-                      >
-                        {curr.curriculum_version}
-                      </option>
-                    ))}
-                  </Select>
+                  <div className="relative">
+                    <TextInput
+                      id="curriculum-edit"
+                      type="text"
+                      placeholder="e.g. BSIT-22-01"
+                      value={curriculaSearch}
+                      onChange={(e) => setCurriculaSearch(e.target.value)}
+                      color={curriculumError ? "failure" : "gray"}
+                    />
+                    {(curriculaSearch.length >= 2 || isCurriculaSearching) && (
+                      <div className="absolute z-10 mt-1 w-full max-h-24 overflow-y-auto rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 scrollbar-thumb-gray-400 scrollbar-track-transparent">
+                        {isCurriculaSearching ? (
+                          <div className="flex items-center justify-center gap-2 p-3 text-xs text-gray-500">
+                            <Spinner size="sm" />
+                            <span>Searching curricula...</span>
+                          </div>
+                        ) : curriculaList.filter(
+                          (item: CurriculumRecord) =>
+                            item.curriculum_version.toLowerCase().includes(curriculaSearch.toLowerCase()),
+                        ).length > 0 ? (
+                          curriculaList
+                            .filter(
+                              (item: CurriculumRecord) =>
+                                item.curriculum_version.toLowerCase().includes(curriculaSearch.toLowerCase()),
+                            )
+                            .map((item: CurriculumRecord) => (
+                              <div
+                                key={item.curriculum_id}
+                                onClick={() => {
+                                  setFormData((prev) => ({ ...prev, curriculum: item.curriculum_version }));
+                                  setCurriculaSearch("");
+                                  setCurriculumError("");
+                                }}
+                                className="py-1 cursor-pointer bg-black/5 p-2 text-xs hover:bg-black/10 dark:bg-white/10 dark:text-white"
+                              >
+                                {item.curriculum_version}
+                              </div>
+                            ))
+                        ) : (
+                          <div className="p-3 text-center text-xs text-gray-400 italic">
+                            No match found
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   {curriculumError && (
                     <HelperText color="failure">{curriculumError}</HelperText>
                   )}
