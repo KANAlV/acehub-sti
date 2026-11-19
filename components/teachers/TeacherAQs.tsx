@@ -1911,7 +1911,7 @@ export default function TeacherAQs() {
                 </div>
 
                 <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                  <span className="font-semibold uppercase tracking-wide">Validation Rule:</span> Template format: Columns A–E (Teacher Code, Name, Department, Employment, Total AQ) are read-only. Column F ("Add Cluster") is editable — select a cluster to add all its entry AQs. Column G ("Add Individual AQ") is editable — select an individual Academic Qualification. Status defaults to <b className="font-mono">Approved</b>.
+                  <span className="font-semibold uppercase tracking-wide">Validation Rule:</span> Template format: Columns A–E (Teacher Code, Name, Department, Employment, Total AQ) are read-only. Column F (&quot;Add Cluster&quot;) is editable — select a cluster to add all its entry AQs. Column G (&quot;Add Individual AQ&quot;) is editable — select an individual Academic Qualification. Status defaults to <b className="font-mono">Approved</b>.
                 </div>
 
                 {formatError && (
@@ -1980,7 +1980,7 @@ export default function TeacherAQs() {
                     Download Pre-Filled Excel Template
                   </h4>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Pre-filled with all teachers &amp; their AQ data. Columns A–E are read-only (Teacher Code, Name, Department, Employment, Total AQ). Column F ("Add Cluster") has a dropdown of clusters — selecting one adds all its entry AQs. Column G ("Add Individual AQ") has a dropdown of individual Academic Qualifications.
+                    Pre-filled with all teachers &amp; their AQ data. Columns A–E are read-only (Teacher Code, Name, Department, Employment, Total AQ). Column F (&quot;Add Cluster&quot;) has a dropdown of clusters — selecting one adds all its entry AQs. Column G (&quot;Add Individual AQ&quot;) has a dropdown of individual Academic Qualifications.
                   </p>
                 </div>
                 <Button
