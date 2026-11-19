@@ -48,7 +48,7 @@ interface ModuleGuide {
 }
 
 export default function HelpPage() {
-    const [activeModuleId, setActiveModuleId] = useState<string>("dashboard");
+    const [activeModuleId, setActiveModuleId] = useState<string>("getting_started");
     const [activeSubTabId, setActiveSubTabId] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState<string>("");
     const [debouncedSearch, setDebouncedSearch] = useState<string>("");
@@ -62,6 +62,158 @@ export default function HelpPage() {
     }, [searchQuery]);
 
     const modules: ModuleGuide[] = [
+        {
+            id: "getting_started",
+            title: "Getting Started — First-Time Setup",
+            route: "/configurations",
+            icon: HiCog,
+            description:
+                "Follow this step-by-step guide to configure AceHub for the first time. The system must be set up in the correct order — each step builds on the previous one so the automated scheduler has all the data it needs.",
+            roles: ["Academic Head"],
+            features: [
+                "Ordered configuration workflow: Config → Rooms → Courses → MAQ → Subjects → Teachers",
+                "Each step links to its corresponding module guide for detailed instructions",
+                "Prerequisites explained so you understand why the order matters",
+                "Quick checklist to verify your system is ready for schedule generation",
+            ],
+            steps: [
+                {
+                    stepNumber: 1,
+                    title: "Step 1 — Configurations: Set System-Wide Rules",
+                    description:
+                        "Before adding any rooms, courses, or teachers, configure the foundational rules that govern how the scheduler works.",
+                    details: [
+                        "Navigate to Configurations from the sidebar — this is the first and most important setup step.",
+                        "Class Settings: Set 'Max Students per Section' (1–50). This determines how many sections the scheduler creates when splitting program cohorts.",
+                        "Faculty Load: Define maximum teaching units for each employment type — Full-Time (FT), Part-Time Full Load (PTFL), and Part-Time (PT). These limits control how many units the scheduler can assign to each teacher.",
+                        "Prep Limits: Set the maximum number of unique subjects each employment type can teach (1–10). This prevents overloading teachers with too many different courses.",
+                        "Overloading Parameters: Set the maximum units above the load limit (0–10) that a teacher can be overloaded. This gives the scheduler flexibility when teacher pool is limited.",
+                        "Break Periods: Add lunch breaks, assembly times, or other recurring unavailable time slots by day of the week. The scheduler will avoid placing classes during these windows.",
+                        "Departments: Register all academic departments (e.g., CS Dept., Business Dept.) so teachers can be assigned to the correct division.",
+                        "Room Types: Define facility classifications (e.g., Lecture Room, Computer Lab, Multimedia Lab). These types determine which rooms can host which subjects — lab subjects require matching lab room types.",
+                        "After completing these settings, proceed to Step 2. Without proper configurations, the remaining steps will not work correctly.",
+                    ],
+                },
+                {
+                    stepNumber: 2,
+                    title: "Step 2 — Rooms: Register Classrooms & Laboratories",
+                    description:
+                        "Add all physical classrooms and laboratories that the scheduler can assign classes to.",
+                    details: [
+                        "Navigate to Rooms from the sidebar.",
+                        "Click '+ Add Room' to register each classroom or laboratory.",
+                        "Enter the Room Name (e.g., 'Lab 301', 'Room A-101'), select the Room Type from the dropdown (the types you configured in Step 1), and select the Floor Level (Floor 1–10).",
+                        "Floor level matters for transit-aware scheduling — rooms on the same floor are preferred for back-to-back classes to minimize teacher travel time.",
+                        "Add all available rooms before proceeding. The scheduler needs a complete pool of rooms to work with.",
+                        "You can also bulk-import rooms via Excel if you have a large facility inventory.",
+                        "Tip: Ensure your lab room types match the lab requirements you will define in your Subjects (Step 4). A 'Computer Lab' subject needs a room with the 'Computer Lab' type.",
+                    ],
+                },
+                {
+                    stepNumber: 3,
+                    title: "Step 3 — Courses: Define Programs & Student Counts",
+                    description:
+                        "Register all academic programs (SHS strands and Tertiary degree programs) and input student enrollment counts.",
+                    details: [
+                        "Navigate to Courses from the sidebar. There are two sub-modules: SHS Courses and Tertiary Courses.",
+                        "SHS Courses: Add each Senior High School strand (e.g., STEM, ABM, HUMSS) with student counts for Grade 11 and Grade 12. The scheduler uses these counts along with your Max Students per Section setting to determine how many sections to create.",
+                        "Tertiary Courses: Add each college degree program (e.g., BSIT, BSCS, BSHM) with student counts for 1st Year through 4th Year.",
+                        "Student counts are critical — the scheduler divides total students by Max Students per Section to calculate the number of sections. Inaccurate counts will result in too few or too many sections.",
+                        "After adding all programs and verifying student counts, proceed to Step 4.",
+                    ],
+                },
+                {
+                    stepNumber: 4,
+                    title: "Step 4 — MAQ: Define Academic Qualifications",
+                    description:
+                        "Create the master list of Academic Qualification codes that will be used to match teachers to subjects.",
+                    details: [
+                        "Navigate to MAQ (Matrix of Academic Qualifications) from the sidebar.",
+                        "Switch to the 'Matrix of Academic Qualifications' tab.",
+                        "Click '+ Add Qualification' to register each AQ code (e.g., BSCS, BSIT, MIT, BA English). These are the degree or certification codes that qualify teachers to teach specific subjects.",
+                        "Add all AQ codes that your faculty hold or may hold. You can also organize related AQs into MAQ Clusters for easier auditing.",
+                        "Why this comes before Subjects: Each subject will require one or more AQ codes. The scheduler only assigns teachers who hold the required AQ for a subject. Define your AQs first so they are available when you configure subjects.",
+                        "After adding all AQ codes, proceed to Step 5.",
+                    ],
+                },
+                {
+                    stepNumber: 5,
+                    title: "Step 5 — Subjects: Add Curriculum & Link AQ Requirements",
+                    description:
+                        "Register all courses offered by your institution and specify which academic qualifications are required to teach each one.",
+                    details: [
+                        "Navigate to Subjects from the sidebar.",
+                        "In the 'Subject Management' tab, add each subject with its Course Code, Course Name, Program, Year/Term, Lecture Units, and Lab Units.",
+                        "If a subject has laboratory components, specify Lab Units and select the required Lab Type (must match a Room Type from Step 1).",
+                        "You can bulk-import subjects via Excel template if you have a large curriculum catalog — download the template, fill in the columns, and upload.",
+                        "Switch to the 'Subject AQ' tab and assign the required Academic Qualification(s) to each subject. For example, 'Object-Oriented Programming' might require BSCS or BSIT AQ.",
+                        "This is critical: without AQ requirements assigned, the scheduler cannot determine which teachers are qualified for which subjects.",
+                        "You can also export the subject catalog to Excel for backup or review.",
+                        "After completing all subjects and their AQ mappings, proceed to Step 6.",
+                    ],
+                },
+                {
+                    stepNumber: 6,
+                    title: "Step 6 — Teachers: Register Faculty & Assign Qualifications",
+                    description:
+                        "Add all faculty members, assign their academic qualifications, and manage FCCE records.",
+                    details: [
+                        "Navigate to Teachers from the sidebar.",
+                        "In the Faculty Directory, click '+ Add Teacher' to register each faculty member with their PSCS ID, full name, email, department, and employment type (FT, PTFL, PT, or Proby).",
+                        "You can bulk-import teachers via Excel template — download the template, fill in the columns, and upload.",
+                        "Teacher AQ: Click on each teacher to open their AQ Inspector Panel, then click '+ Add AQ' to assign their academic qualifications (the AQ codes you created in Step 4). Set the status to Approved for verified credentials.",
+                        "The scheduler uses these AQ assignments to determine which teachers can teach which subjects. A teacher without any AQ assigned will not be considered for subject assignments.",
+                        "FCCE: Manage Faculty Class & Course Evaluation records. Create terms, add evaluation records, and track teacher performance evaluations.",
+                        "After all teachers are registered with their AQs, your system is ready for the next phase.",
+                    ],
+                },
+                {
+                    stepNumber: 7,
+                    title: "Step 7 — Optional: Set Teacher Pre-assignments",
+                    description:
+                        "Lock specific teachers to specific subjects and sections before running the automated scheduler.",
+                    details: [
+                        "Navigate to Teacher Pre-assignments from the sidebar or via the Teachers page.",
+                        "Pre-assignments are optional but recommended if you have specific teacher-to-subject preferences that must be honored.",
+                        "Select a teacher, choose the Program, Section, and Subject Code, and click 'Add Assignment' to lock the binding.",
+                        "The automated scheduler will prioritize these pre-assigned bindings during schedule generation.",
+                        "You can also bulk-import pre-assignments via Excel template.",
+                        "If you skip this step, the scheduler will assign teachers freely based on AQ matching and load balancing.",
+                    ],
+                },
+                {
+                    stepNumber: 8,
+                    title: "Step 8 — Generate Your Schedule",
+                    description:
+                        "With all prerequisites configured, run the automated timetable generator to create your class schedule.",
+                    details: [
+                        "Navigate to Schedules from the sidebar.",
+                        "Review your configured data: Courses (with student counts), Subjects (with AQ requirements), Teachers (with AQ assignments), Rooms (with types), and Configurations (load limits, break periods).",
+                        "Click the schedule generation button to start the automated engine. The scheduler will create sections based on student counts, map subjects to qualified teachers, and assign rooms and time slots.",
+                        "After generation, review the Schedule Summary: check for unassigned entries, teacher overloads, and room conflicts.",
+                        "Use the interactive timetable to make manual adjustments — drag and drop entries to fix any issues.",
+                        "Once satisfied, set the schedule as active so it appears on the Dashboard.",
+                        "Export the schedule to Excel for distribution to faculty and students.",
+                    ],
+                },
+                {
+                    stepNumber: 9,
+                    title: "Verification Checklist",
+                    description:
+                        "Before generating your first schedule, verify that all the following are configured.",
+                    details: [
+                        "✓ Configurations: Max students per section, faculty load limits, prep limits, overload parameters, break periods, departments, and room types are all set.",
+                        "✓ Rooms: At least one room of each required type is registered with a floor level.",
+                        "✓ Courses: All SHS strands and/or Tertiary programs are registered with accurate student counts.",
+                        "✓ MAQ: All Academic Qualification codes used by your faculty are registered.",
+                        "✓ Subjects: All courses are registered with lecture/lab units, and each subject has at least one required AQ assigned.",
+                        "✓ Teachers: All faculty are registered with employment type, and each teacher has at least one approved AQ assigned.",
+                        "✓ (Optional) Pre-assignments: Any locked teacher-to-subject bindings are saved in a template.",
+                        "If all items are checked, proceed to Schedules to generate your timetable. If any item is missing, the scheduler may produce incomplete or incorrect results.",
+                    ],
+                },
+            ],
+        },
         {
             id: "dashboard",
             title: "Dashboard & Analytics",
@@ -82,18 +234,20 @@ export default function HelpPage() {
                     title: "Verify Active Master Schedule Banner",
                     description: "Check which schedule configuration is currently set as the active dashboard display.",
                     details: [
-                        "Review the schedule title and generation description at the top banner.",
-                        "If no schedule is displayed yet, click 'Go to Schedules' to select and activate an existing timetable.",
+                        "Review the schedule title and generation description at the top banner — this tells you which timetable is currently published.",
+                        "If no schedule is displayed yet, you will see a prompt to create or activate a schedule. Click 'Go to Schedules' to navigate to the Schedules module.",
+                        "Only one schedule can be set as the active dashboard display at a time — the Academic Head controls this setting from the Schedule Summary page.",
                     ],
                 },
                 {
                     stepNumber: 2,
                     title: "Review Top-Level KPI Cards",
-                    description: "Inspect the four summary counters directly below the header.",
+                    description: "Inspect the four summary counters directly below the header for a quick system health check.",
                     details: [
-                        "Check Total Entries to verify the total scheduled class sessions.",
-                        "Compare Active Teachers and Subjects against expected term offerings.",
-                        "Review Total Units to confirm overall institutional teaching hours assigned.",
+                        "Total Entries: Shows the total number of scheduled class sessions across all sections and days. Compare this against expected curriculum hours.",
+                        "Active Teachers: Displays the count of faculty members who have at least one class assigned in the current schedule.",
+                        "Subjects: Shows the number of unique course codes scheduled in the active timetable.",
+                        "Total Units: Represents the sum of all teaching hours assigned across the entire schedule — use this to verify overall institutional workload.",
                     ],
                 },
                 {
@@ -101,18 +255,110 @@ export default function HelpPage() {
                     title: "Audit Teacher Workload Summary",
                     description: "Monitor department-wide teaching load health in the blue summary panel.",
                     details: [
-                        "Check the Overloaded counter to see if any faculty exceed their standard employment unit limit.",
-                        "Review Avg Utilization percentage to evaluate balanced load distribution across instructors.",
+                        "The Active count shows how many teachers currently have assigned units in the schedule.",
+                        "The Overloaded counter highlights faculty who exceed their standard employment unit limit — investigate these cases to rebalance assignments.",
+                        "Avg Utilization displays the mean percentage of teaching capacity used across all faculty — a healthy range is typically 70–90%.",
+                        "If Overloaded is high, consider redistributing subjects or adjusting Faculty Load limits in Configurations.",
                     ],
                 },
                 {
                     stepNumber: 4,
                     title: "Inspect Individual Teacher Cards & Timetable",
-                    description: "Drill down into specific faculty assignments or open the full timetable.",
+                    description: "Drill down into specific faculty assignments or open the full timetable grid.",
                     details: [
-                        "Click any Teacher Card to view their assigned subjects, current units, remaining available units, and prep limit.",
-                        "Click 'View All Teachers' at the end of the grid to inspect the complete faculty roster.",
-                        "Click 'Edit Timetable' (or 'View Timetable' depending on role permissions) in the top-right header to open the full schedule grid.",
+                        "Each Teacher Card shows the instructor's name, assigned subjects, current units, remaining available units, and subject prep limit.",
+                        "The capacity badge on each card is color-coded: green (Available), blue (Moderate), yellow (Near Capacity), orange (At Max), red (Overloaded).",
+                        "Click any Teacher Card to expand and view their detailed workload breakdown.",
+                        "Click 'View All Teachers' at the end of the grid to open the complete faculty roster with sortable columns.",
+                        "Click 'Edit Timetable' (or 'View Timetable' depending on your role permissions) in the top-right header to open the full interactive schedule grid where you can drag-and-drop class entries.",
+                    ],
+                },
+                {
+                    stepNumber: 5,
+                    title: "Navigate from Dashboard to Related Modules",
+                    description: "Use the Dashboard as a launchpad to access other system modules for deeper inspection.",
+                    details: [
+                        "Click 'Go to Schedules' to manage schedule generation, activation, and export.",
+                        "Click 'View All Teachers' to access the Teachers module for faculty directory and AQ management.",
+                        "Use the left sidebar to navigate directly to any module — the Dashboard provides a high-level overview, while individual modules offer detailed CRUD operations.",
+                        "If you notice discrepancies in KPI numbers, check the corresponding module (e.g., Subjects for course count issues, Teachers for faculty count issues).",
+                    ],
+                },
+            ],
+        },
+        {
+            id: "personal_info",
+            title: "Personal Info & Schedule",
+            route: "/user",
+            icon: HiUserGroup,
+            description:
+                "View your personal teaching schedule, monitor your unit load and workload capacity, and configure your scheduling preferences for rooms, times, years, and subjects.",
+            roles: ["Faculty", "Academic Head"],
+            features: [
+                "Personal schedule overview showing all assigned class entries from the active master schedule",
+                "Real-time units analysis with current units, max units, remaining capacity, and load status badge",
+                "Preparation utilization tracking showing unique subjects taught against your prep limit",
+                "Teacher preferences management for preferred rooms, times, year levels, and subjects",
+                "Preference collision detection to prevent scheduling conflicts with existing class entries",
+                "Direct link to the full timetable view for broader schedule inspection",
+            ],
+            steps: [
+                {
+                    stepNumber: 1,
+                    title: "Open Your Personal Info Page",
+                    description: "Access your individual teaching dashboard from the sidebar.",
+                    details: [
+                        "Click 'Personal Info' in the left navigation sidebar.",
+                        "The page loads your profile data, current schedule entries, and workload metrics automatically based on your logged-in account.",
+                        "If no active schedule is set, you will see a notice prompting you to contact the Academic Head to activate a master schedule.",
+                    ],
+                },
+                {
+                    stepNumber: 2,
+                    title: "Review Your Personal Schedule Entries",
+                    description: "Inspect your assigned classes organized by day of the week.",
+                    details: [
+                        "The schedule table displays each class entry with the Day, Subject Name, Start Time, End Time, Room, Section, Units, and Course Code.",
+                        "Times are displayed in 12-hour format (e.g., 7:00 AM – 8:30 AM) for easy reading.",
+                        "Each row represents one scheduled class session from the active master timetable.",
+                        "Click the 'View Timetable' link to open the full interactive timetable grid for a visual calendar view of your schedule.",
+                    ],
+                },
+                {
+                    stepNumber: 3,
+                    title: "Monitor Your Units & Workload Analysis",
+                    description: "Track your teaching load against your employment-type limits.",
+                    details: [
+                        "The Units Analysis card shows your Current Units (total hours currently assigned), Max Units (standard limit for your employment type), and Remaining Units (capacity left).",
+                        "The Absolute Max field includes any approved overload units above your standard limit.",
+                        "Your Load Status badge indicates whether you are Available, Moderate, Near Capacity, At Max, or Overloaded — color-coded for quick assessment.",
+                        "Unique Subjects shows how many different courses you are teaching, and Prep Utilization displays the percentage of your subject preparation limit that is used.",
+                        "Utilization Rate shows the overall percentage of your teaching capacity that is currently assigned.",
+                    ],
+                },
+                {
+                    stepNumber: 4,
+                    title: "Set Your Scheduling Preferences",
+                    description: "Configure your preferred rooms, time slots, year levels, and subjects to guide the automated scheduler.",
+                    details: [
+                        "Click 'Set Preferences' to open the Preferences modal with four tabs: Rooms, Times, Years, and Subjects.",
+                        "In the Rooms tab, search for and add your preferred classroom or laboratory names — these rooms will be prioritized during schedule generation.",
+                        "In the Times tab, select a Day of the Week, Start Time, and End Time to define preferred teaching windows. The system checks for collisions with your existing schedule entries and prevents overlapping time ranges.",
+                        "In the Years tab, toggle your preferred year levels (e.g., 1st Year, 2nd Year, Grade 11) — the scheduler will favor assigning you to sections in these tiers.",
+                        "In the Subjects tab, search for and add your preferred course names — the scheduler will prioritize these subject assignments.",
+                        "Click 'Save Preferences' to commit your changes. A success message confirms the update.",
+                    ],
+                },
+                {
+                    stepNumber: 5,
+                    title: "Remove or Modify Preferences",
+                    description: "Update your scheduling preferences as your availability or teaching focus changes.",
+                    details: [
+                        "Reopen the Preferences modal and navigate to the relevant tab.",
+                        "Click the red 'X' or remove button next to any preference tag to delete it.",
+                        "For preferred times, remove individual time ranges to free up your availability window.",
+                        "For preferred years, toggle the year off to remove it from your preferences.",
+                        "After making changes, click 'Save Preferences' to update your profile.",
                     ],
                 },
             ],
@@ -511,6 +757,8 @@ export default function HelpPage() {
                         "Open 'Rooms' from the navigation sidebar.",
                         "Type a room name or number into 'Search rooms...' to filter results in real time.",
                         "Click 'Room Name', 'Room Type', or 'Floor Level' column headers to sort ascending or descending.",
+                        "The room list is paginated — use the pagination controls at the bottom to navigate through all rooms.",
+                        "Each row shows the Room Name, Room Type (e.g., Lecture Room, Computer Lab), and Floor Level.",
                     ],
                 },
                 {
@@ -519,9 +767,10 @@ export default function HelpPage() {
                     description: "Register a classroom or laboratory facility into the database.",
                     details: [
                         "Click '+ Add Room' in the upper-right toolbar.",
-                        "Enter the Room Name (up to 50 characters, e.g., Lab 301).",
-                        "Select the Room Type from the dropdown list (configured under Configurations > Room Types).",
-                        "Select the Floor Level (Floor 1 to Floor 10) and click 'Create Room'.",
+                        "Enter the Room Name (up to 50 characters, e.g., 'Lab 301', 'Room A-101').",
+                        "Select the Room Type from the dropdown — available types are configured under Configurations > Room Types (e.g., Lecture Room, Computer Lab, Multimedia Lab).",
+                        "Select the Floor Level from Floor 1 to Floor 10. Floor level affects transit-aware scheduling — rooms on the same floor are preferred for back-to-back classes.",
+                        "Click 'Create Room' to save. A duplicate room name will be rejected.",
                     ],
                 },
                 {
@@ -529,8 +778,10 @@ export default function HelpPage() {
                     title: "Edit Room Details or Floor Level",
                     description: "Update an existing room's name, facility type, or floor assignment.",
                     details: [
-                        "Click 'Edit' on the right side of any room row.",
-                        "Modify the Room Name, Room Type, or Floor Level (Floor 1 to Floor 15) and click 'Save Changes'.",
+                        "Click 'Edit' on the right side of any room row to open the Edit Room modal.",
+                        "Modify the Room Name, Room Type, or Floor Level (Floor 1 to Floor 15 on edit).",
+                        "Click 'Save Changes' to commit the update.",
+                        "Changing a room's type affects which subjects can be assigned to it during schedule generation — lab subjects require matching lab room types.",
                     ],
                 },
                 {
@@ -540,6 +791,18 @@ export default function HelpPage() {
                     details: [
                         "Open the Edit Room modal for the target facility and click the red trash icon in the bottom-left footer.",
                         "Confirm by clicking 'Yes, I'm sure' in the deletion prompt.",
+                        "Warning: Deleting a room that is currently assigned in an active schedule will leave those class entries without a room — reassign them manually in the timetable editor.",
+                    ],
+                },
+                {
+                    stepNumber: 5,
+                    title: "Configure Room Types in Configurations",
+                    description: "Manage the room type categories that determine which subjects can use which rooms.",
+                    details: [
+                        "Navigate to Configurations > Room Types to view all configured facility classifications.",
+                        "Add new room types (e.g., 'Language Lab', 'Music Room') so they appear in the Room Type dropdown when creating rooms.",
+                        "When adding a Subject with Lab Units, select the required Lab Type — the scheduler will only assign rooms of that type to the class.",
+                        "Ensure room types in Configurations match the lab requirements defined in your Subject catalog for accurate automated scheduling.",
                     ],
                 },
             ],
@@ -564,28 +827,55 @@ export default function HelpPage() {
                     title: "Open or Create a Pre-assignment Template",
                     description: "Select a pre-assignment template workspace from the Teachers or Pre-assignments view.",
                     details: [
-                        "Navigate to the target Teacher Pre-assignment template page.",
+                        "Navigate to the Teacher Pre-assignments module from the Teachers page or directly via the template URL.",
+                        "Each template represents a separate pre-assignment scenario — you can maintain multiple templates for different terms or what-if scenarios.",
                         "Review the faculty metrics list showing each instructor's current pre-assigned units against their employment load limit.",
+                        "The metrics panel displays Current Units, Max Units, Remaining Units, and Load Status for each teacher.",
                     ],
                 },
                 {
                     stepNumber: 2,
                     title: "Assign Subjects & Sections to a Teacher",
-                    description: "Manually bind specific courses and sections to an instructor.",
+                    description: "Manually bind specific courses and sections to an instructor before schedule generation.",
                     details: [
-                        "Select an instructor from the template list to inspect or add pre-assignments.",
-                        "Choose the target Program, Section, and Subject Code.",
-                        "Verify that the instructor holds the required Academic Qualification (AQ) and remains within allowed unit and prep limits.",
+                        "Select an instructor from the template list to open their pre-assignment panel.",
+                        "Choose the target Program, Section, and Subject Code from the dropdown selectors.",
+                        "The system validates that the instructor holds the required Academic Qualification (AQ) for the selected subject — if not, an AQ mismatch warning appears.",
+                        "Verify the instructor remains within their allowed unit limit and subject prep limit after the assignment.",
+                        "Click 'Add Assignment' to lock the pre-assignment. The teacher's unit counters update immediately.",
                     ],
                 },
                 {
                     stepNumber: 3,
-                    title: "Bulk Import or Export Pre-assignments via Excel",
-                    description: "Manage large-scale faculty load pre-assignments using Excel.",
+                    title: "Remove or Modify Pre-assignments",
+                    description: "Adjust existing pre-assignments when curriculum or faculty availability changes.",
                     details: [
-                        "Download the Pre-assignment Excel template if preparing loads offline.",
-                        "Enter Teacher PSCS IDs, Section Codes, and Course Codes in the designated columns, then upload the .xlsx file.",
-                        "Review validation feedback to ensure no unit overloads or AQ mismatches occurred, or click Export to download the active template.",
+                        "Open a teacher's pre-assignment panel and locate the assignment you want to modify.",
+                        "Click the remove or delete control next to the assignment to free the teacher from that binding.",
+                        "To reassign a different section or subject, remove the old assignment and create a new one.",
+                        "Pre-assignments are enforced during automated schedule generation — removing them allows the engine to reassign freely.",
+                    ],
+                },
+                {
+                    stepNumber: 4,
+                    title: "Bulk Import or Export Pre-assignments via Excel",
+                    description: "Manage large-scale faculty load pre-assignments using Excel spreadsheets.",
+                    details: [
+                        "Click the Excel / Import button to download the Pre-assignment Excel template with the correct column headers.",
+                        "Enter Teacher PSCS IDs, Section Codes, and Course Codes in the designated columns — do not rename or reorder headers.",
+                        "Upload the completed .xlsx file and review the row-by-row validation summary for any missing fields, duplicate assignments, unit overloads, or AQ mismatches.",
+                        "Click 'Import' to commit all valid rows, or click 'Export' to download the current template as an Excel workbook for backup or distribution.",
+                    ],
+                },
+                {
+                    stepNumber: 5,
+                    title: "Use Pre-assignments in Schedule Generation",
+                    description: "Ensure pre-assignments are respected when running the automated timetable generator.",
+                    details: [
+                        "Before generating a schedule, verify that all desired pre-assignments are saved in the active template.",
+                        "The automated scheduler prioritizes pre-assigned teacher-to-subject bindings during Stage 2 (Subject Mapping).",
+                        "If a pre-assigned teacher is unavailable for a required slot, the engine may still place the class as unassigned — review and resolve manually.",
+                        "After schedule generation, compare the final timetable against your pre-assignments to confirm all locked bindings were honored.",
                     ],
                 },
             ],
@@ -645,7 +935,7 @@ export default function HelpPage() {
                     tabId: "schedule-summary",
                     tabName: "Schedule Summary & Excel Export",
                     summary:
-                        "Audit generated schedule quality, set the active dashboard schedule, open the timetable grid, or export to Excel.",
+                        "Audit generated schedule quality, set the active dashboard schedule, open the interactive timetable grid for manual adjustments, or export to Excel.",
                     steps: [
                         {
                             stepNumber: 1,
@@ -654,25 +944,53 @@ export default function HelpPage() {
                             details: [
                                 "Click on any schedule from the Schedules list to open its Summary Display page.",
                                 "Review the four top KPI cards: Total Entries, Active Teachers, Subjects, and Total Units.",
+                                "The schedule banner shows the schedule name, generation date, and term (Term 1 or Term 2).",
                             ],
                         },
                         {
                             stepNumber: 2,
                             title: "Audit Resource Utilization & Unassigned Metrics",
-                            description: "Check for entries lacking a teacher or room assignment.",
+                            description: "Check for entries lacking a teacher or room assignment and assess overall schedule quality.",
                             details: [
-                                "Inspect the Teacher and Room utilization progress bars and Active Sections count.",
-                                "Check 'Entries Lacking Teacher' and 'Entries Lacking Room' under Performance & Unassigned Metrics to spot items needing manual attention.",
+                                "Inspect the Teacher utilization progress bar to see what percentage of faculty are actively assigned.",
+                                "Inspect the Room utilization progress bar to evaluate facility usage across the schedule.",
+                                "Check 'Entries Lacking Teacher' — these classes need manual teacher assignment in the timetable editor.",
+                                "Check 'Entries Lacking Room' — these classes need a room assigned manually or the room pool needs expansion.",
+                                "Review Active Sections count to confirm all expected sections are represented in the schedule.",
                             ],
                         },
                         {
                             stepNumber: 3,
-                            title: "Export Schedule to Excel & Set Dashboard Display",
-                            description: "Download spreadsheets or publish the schedule to the main dashboard.",
+                            title: "Open & Edit the Interactive Timetable",
+                            description: "Use the visual timetable grid to inspect and manually adjust class entries.",
                             details: [
-                                "Click 'Export' in the top-right action bar to download the schedule data in Excel format for offline distribution or printing.",
-                                "Click 'Open Timetable' in the schedule banner to view or manually adjust class blocks on the calendar grid.",
-                                "Click 'Set as Display on Dashboard' to make this schedule the active institutional view on the main Dashboard.",
+                                "Click 'Open Timetable' in the schedule banner to launch the full timetable grid view.",
+                                "The timetable displays Monday through Saturday (7:00 AM – 9:00 PM) in 30-minute slots with rooms as columns and time as rows.",
+                                "Click any class block to view its details: subject, section, teacher, room, and time range.",
+                                "Drag and drop class blocks to reassign them to different time slots or rooms — the system checks for conflicts in real time.",
+                                "Use the filter controls to view the timetable by specific room, teacher, or section.",
+                                "Click 'Save' after making manual adjustments to persist changes to the schedule.",
+                            ],
+                        },
+                        {
+                            stepNumber: 4,
+                            title: "Export Schedule to Excel & Set Dashboard Display",
+                            description: "Download spreadsheets for offline distribution or publish the schedule to the main Dashboard.",
+                            details: [
+                                "Click 'Export' in the top-right action bar to download the complete schedule data in Excel (.xlsx) format.",
+                                "The exported file includes all class entries with day, time, subject, section, teacher, and room information.",
+                                "Click 'Set as Display on Dashboard' to make this schedule the active institutional view — it will appear on the Dashboard for all users.",
+                                "Only one schedule can be the active dashboard display at a time — setting a new one replaces the previous active schedule.",
+                            ],
+                        },
+                        {
+                            stepNumber: 5,
+                            title: "Delete a Generated Schedule",
+                            description: "Remove a schedule that is no longer needed.",
+                            details: [
+                                "From the Schedules list, click the delete control on the schedule you want to remove.",
+                                "Confirm deletion in the dialog — this permanently removes all class entries and associated data for that schedule.",
+                                "Warning: If the schedule is currently set as the active dashboard display, the Dashboard will show no active schedule until you activate another one.",
                             ],
                         },
                     ],
@@ -685,30 +1003,144 @@ export default function HelpPage() {
             route: "/fcce",
             icon: HiDocumentReport,
             description:
-                "Manage Faculty Class & Course Evaluation records, review faculty evaluation metrics, and import/export evaluation sheets with detailed audit trails.",
+                "Manage Faculty Class & Course Evaluation (FCCE) records across academic terms, including term creation, record management, Excel bulk operations, unmatched record tracking, and archiving workflows.",
             roles: ["Academic Head"],
             features: [
-                "Centralized faculty evaluation tracking and summary reporting",
-                "Excel spreadsheet import/export support for evaluation records with strict column schema validation",
-                "Search and filtering across instructors, evaluation scores, and academic terms",
+                "Two dedicated workspace tabs: FCCE Term Management and FCCE Management",
+                "Academic Year / Semester CRUD with auto-generated AY-Semester codes (e.g., 202425T1)",
+                "FCCE record creation with teacher PSCS ID lookup, course name suggestions, and pass/fail status",
+                "Excel bulk import with drag-and-drop, template download, and strict 4-column header validation",
+                "Unmatched records view to isolate records with invalid PSCS IDs or missing teacher data",
+                "Archive and unarchive workflows for historical FCCE term records",
+                "Search, sort, and paginate across all FCCE records with archive status filtering",
             ],
-            steps: [
+            tabs: [
                 {
-                    stepNumber: 1,
-                    title: "Access the FCCE Module",
-                    description: "Open the Faculty Class & Course Evaluation workspace.",
-                    details: [
-                        "Select 'FCCE' from the left navigation sidebar.",
-                        "Use the search and filter controls to locate specific faculty evaluation records.",
+                    tabId: "fcce-term-management",
+                    tabName: "FCCE Term Management Tab",
+                    summary:
+                        "Create and manage Academic Year / Semester terms, add individual FCCE records, and link evaluations to specific academic periods.",
+                    steps: [
+                        {
+                            stepNumber: 1,
+                            title: "Browse Existing Academic Years",
+                            description: "View all configured academic year and semester combinations.",
+                            details: [
+                                "Open the FCCE module from the left sidebar — it defaults to the 'FCCE Term Management' tab.",
+                                "The table lists all Academic Year / Semester codes (e.g., 202425T1) sorted by most recent.",
+                                "Use the search bar to filter by AY-Semester code, or click column headers to sort ascending or descending.",
+                                "Each row shows the AY-Semester code and a 'View Records' button to navigate to that term's FCCE detail page.",
+                            ],
+                        },
+                        {
+                            stepNumber: 2,
+                            title: "Create a New Academic Year / Semester",
+                            description: "Register a new academic term for FCCE record tracking.",
+                            details: [
+                                "Click '+ Add Academic Year' at the top-right of the table.",
+                                "Select the Start Year from the dropdown (spans a 21-year range centered on the current year).",
+                                "Select the Term: 'T1' for First Semester or 'T2' for Second Semester.",
+                                "The system auto-generates the AY-Semester code (e.g., selecting 2024 + T1 produces '202425T1').",
+                                "Click 'Save' to create the term. Duplicate AY-Semester codes will be rejected with an error.",
+                            ],
+                        },
+                        {
+                            stepNumber: 3,
+                            title: "Add an Individual FCCE Record",
+                            description: "Manually add a faculty evaluation record to the selected academic term.",
+                            details: [
+                                "Click '+ Add FCCE Record' to open the record creation modal.",
+                                "Enter or search the Teacher's PSCS ID — the system validates against the registered teacher roster.",
+                                "Enter the Course Name — use the autocomplete suggestions to match existing course names from the catalog.",
+                                "Select the Academic Year / Semester from the dropdown of available terms.",
+                                "Set the Status toggle to 'Pass' (default) or switch to 'Fail' as appropriate.",
+                                "Click 'Save' to commit the record. The system will flag any invalid PSCS ID or missing required fields.",
+                            ],
+                        },
+                        {
+                            stepNumber: 4,
+                            title: "View FCCE Records for a Specific Term",
+                            description: "Navigate to a term's detail page to manage its FCCE records.",
+                            details: [
+                                "Click the 'View Records' button on any Academic Year row to open the term detail page.",
+                                "The detail page shows all FCCE records for that term with search, sort, and pagination controls.",
+                                "From here you can add, edit, or delete individual records, or use Excel import/export for bulk operations.",
+                                "Click the back arrow to return to the Term Management overview.",
+                            ],
+                        },
                     ],
                 },
                 {
-                    stepNumber: 2,
-                    title: "Upload or Export FCCE Excel Records",
-                    description: "Process evaluation data using standardized Excel workbooks.",
-                    details: [
-                        "Use the Excel import tool to upload compiled FCCE evaluation results matching the required column headers.",
-                        "Verify parsed scores and instructor matches before saving, or use Export to generate an Excel summary report.",
+                    tabId: "fcce-management",
+                    tabName: "FCCE Management Tab",
+                    summary:
+                        "Central FCCE record workspace with all-records view, unmatched records isolation, Excel bulk import/export, and archive management.",
+                    steps: [
+                        {
+                            stepNumber: 1,
+                            title: "Switch Between All Records and Unmatched Views",
+                            description: "Toggle between the complete FCCE record set and records with data issues.",
+                            details: [
+                                "Open the 'FCCE Management' tab to access the central FCCE workspace.",
+                                "Use the view mode toggle buttons at the top: 'ALL' shows every FCCE record, 'UNMATCHED' isolates records where the PSCS ID does not match any registered teacher.",
+                                "The Unmatched count badge shows how many records currently have unresolved teacher data.",
+                            ],
+                        },
+                        {
+                            stepNumber: 2,
+                            title: "Search, Filter, and Sort FCCE Records",
+                            description: "Locate specific evaluation records across all academic terms.",
+                            details: [
+                                "Type a PSCS ID, Course Name, or AY-Semester code into the search bar to filter records in real time.",
+                                "Use the Archive Filter dropdown to show only Active records, Archived records, or All records.",
+                                "Click column headers (PSCS ID, Course Name, AY-Semester, Status) to sort ascending or descending.",
+                                "Navigate through paginated results using the pagination controls at the bottom.",
+                            ],
+                        },
+                        {
+                            stepNumber: 3,
+                            title: "Edit or Delete an FCCE Record",
+                            description: "Update evaluation details or remove obsolete records.",
+                            details: [
+                                "Click 'Edit' on any FCCE record row to open the edit modal.",
+                                "Modify the PSCS ID, Course Name, AY-Semester, or Pass/Fail Status as needed.",
+                                "Click 'Save Changes' to commit the update, or click the red trash icon to permanently delete the record.",
+                                "Confirm deletion in the popup dialog to remove the record from the database.",
+                            ],
+                        },
+                        {
+                            stepNumber: 4,
+                            title: "Bulk Import FCCE Records via Excel",
+                            description: "Upload a large batch of evaluation records using a formatted Excel spreadsheet.",
+                            details: [
+                                "Click the Excel / Import button on the toolbar to open the Excel operations modal.",
+                                "Select the 'Import' tab, then drag and drop or browse for an .xlsx file.",
+                                "The file must contain exactly 4 columns: 'PSCS ID', 'Course Name', 'Academic Year / Semester', and 'Status' (Pass/Fail).",
+                                "The system validates headers and row data before importing — review any format errors in the log panel.",
+                                "Click 'Import' to commit all valid rows. Invalid rows are logged but skipped.",
+                            ],
+                        },
+                        {
+                            stepNumber: 5,
+                            title: "Export FCCE Records or Download Template",
+                            description: "Download current FCCE data or a blank template for offline preparation.",
+                            details: [
+                                "In the Excel operations modal, switch to the 'Export' tab to download all currently displayed FCCE records as an .xlsx file.",
+                                "Switch to the 'Template' tab to download a blank Excel template with the correct column headers and data validation rules.",
+                                "The exported file includes all visible columns and respects the current search and archive filter.",
+                            ],
+                        },
+                        {
+                            stepNumber: 6,
+                            title: "Archive and Unarchive FCCE Records",
+                            description: "Move historical FCCE records to archived status to keep the active view clean.",
+                            details: [
+                                "Click the 'Archive All Active FCCE' button in the toolbar to bulk-archive all currently active records.",
+                                "Confirm the archive action in the dialog — archived records remain searchable but are hidden from the default Active filter.",
+                                "Switch the Archive Filter to 'Archived' or 'All' to inspect or restore archived records.",
+                                "Individual records can also be archived or unarchived from their edit modal.",
+                            ],
+                        },
                     ],
                 },
             ],
@@ -716,33 +1148,75 @@ export default function HelpPage() {
         {
             id: "booking",
             title: "Room Reservation & Facility Bookings",
-            route: "/booking",
+            route: "/room_reservation",
             icon: HiBookmark,
             description:
-                "Manage special room reservations, makeup class bookings, and facility scheduling outside regular automated timetables.",
+                "Reserve classrooms and laboratories for special events, makeup classes, examinations, and other activities that fall outside the regular automated timetable schedule.",
             roles: ["Academic Assistant", "Academic Head"],
             features: [
-                "Facility availability lookup across classrooms and laboratories",
-                "Conflict checking against active class schedules and break periods",
-                "Reservation status tracking and management",
+                "Real-time facility availability lookup across all registered classrooms and laboratories",
+                "Automatic conflict detection against active class schedules and configured break periods",
+                "Reservation creation with room, date, time range, purpose, and requesting faculty",
+                "Reservation status tracking (Pending, Confirmed, Cancelled) with full history",
+                "Visual calendar view to inspect existing reservations and identify open slots",
             ],
             steps: [
                 {
                     stepNumber: 1,
-                    title: "Open Room Reservation",
-                    description: "Navigate to the facility booking workspace.",
+                    title: "Open the Room Reservation Module",
+                    description: "Access the facility booking workspace from the main navigation.",
                     details: [
-                        "Select 'Room Reservation' in the left navigation sidebar.",
-                        "Check available rooms, dates, and time windows before creating a reservation.",
+                        "Click 'Room Reservation' in the left navigation sidebar.",
+                        "The module displays a summary of upcoming reservations and quick-access buttons for creating new bookings.",
+                        "If you do not see the Room Reservation link, confirm with your administrator that your role has the 'Booking' permission enabled.",
                     ],
                 },
                 {
                     stepNumber: 2,
-                    title: "Create & Manage Room Reservations",
-                    description: "Book a room for an event, exam, or makeup session.",
+                    title: "Check Room Availability",
+                    description: "Verify which rooms are free for your desired date and time window before booking.",
                     details: [
-                        "Specify the target Room, Date, Start/End Time, and Reservation Purpose.",
-                        "Submit the booking once verified conflict-free, or update/cancel existing reservations as needed.",
+                        "Select the target date using the date picker at the top of the reservation page.",
+                        "The system displays all rooms and their scheduled class entries for the selected date.",
+                        "Rooms with no overlapping class schedule entries during your desired time window are available for reservation.",
+                        "Cross-reference with configured Break Periods (under Configurations) to avoid scheduling during institutional breaks.",
+                    ],
+                },
+                {
+                    stepNumber: 3,
+                    title: "Create a New Room Reservation",
+                    description: "Book a specific room for a defined date and time range.",
+                    details: [
+                        "Click '+ New Reservation' or 'Create Booking' to open the reservation form.",
+                        "Select the Room from the dropdown — only rooms matching the required type (if applicable) will appear.",
+                        "Set the Date using the calendar picker.",
+                        "Specify the Start Time and End Time — the system validates that the range does not overlap with existing class schedules or other reservations.",
+                        "Enter the Reservation Purpose (e.g., 'Makeup Class', 'Department Meeting', 'Final Examination').",
+                        "Select the Requesting Faculty member if booking on behalf of another instructor.",
+                        "Click 'Submit Reservation' to create the booking. A conflict error will appear if the slot is already occupied.",
+                    ],
+                },
+                {
+                    stepNumber: 4,
+                    title: "View and Manage Existing Reservations",
+                    description: "Inspect, modify, or cancel reservations that have already been created.",
+                    details: [
+                        "The reservations table lists all bookings with columns for Room, Date, Time Range, Purpose, Status, and Requesting Faculty.",
+                        "Use the search bar to filter by room name, purpose, or faculty name.",
+                        "Filter by status (Pending, Confirmed, Cancelled) to focus on specific reservation types.",
+                        "Click 'Edit' on any reservation to update its time range, purpose, or assigned room.",
+                        "Click 'Cancel' to mark a reservation as cancelled — this frees the room slot for other bookings.",
+                    ],
+                },
+                {
+                    stepNumber: 5,
+                    title: "Resolve Reservation Conflicts",
+                    description: "Handle situations where a new reservation overlaps with an existing class or booking.",
+                    details: [
+                        "If the system reports a conflict, review the conflicting entry shown in the error message.",
+                        "Adjust the Start Time or End Time to avoid the overlap, or select a different room.",
+                        "If the conflict is with a regular class schedule, consider scheduling the reservation on a different day or during a break period.",
+                        "Contact the Academic Head if you need to override a conflict for a high-priority event.",
                     ],
                 },
             ],
@@ -894,30 +1368,71 @@ export default function HelpPage() {
             route: "/help",
             icon: HiBookOpen,
             description:
-                "Interactive system user manual providing searchable, module-by-module and tab-by-tab operational instructions for AceHub.",
+                "Interactive system user manual providing searchable, module-by-module and tab-by-tab operational instructions for every AceHub feature — from Dashboard analytics to Configuration management.",
             roles: ["Academic Head", "School Registrar", "Academic Assistant", "Faculty"],
             features: [
-                "Instant keyword search across modules, sub-tabs, features, and step details",
-                "Sub-tab switching for multi-tab modules (Courses, Subjects, Teachers, MAQ, Schedules, Configurations)",
-                "Role badges and clear, numbered operational walkthroughs",
+                "Instant keyword search across all modules, sub-tabs, features, and step-by-step details",
+                "Left-side module navigation panel with 12 system modules and live filter count",
+                "Sub-tab switching for multi-tab modules (Courses, Subjects, Teachers, MAQ, Schedules, FCCE, Configurations)",
+                "Authorized role badges showing which user roles can access each module",
+                "Key features and capabilities summary for every module",
+                "Numbered step-by-step operational walkthroughs with granular action details",
+                "Route badges showing the exact URL path for each module",
             ],
             steps: [
                 {
                     stepNumber: 1,
-                    title: "Search Across Manuals & Tasks",
-                    description: "Filter system guides instantly using keywords.",
+                    title: "Navigate the Help Page Layout",
+                    description: "Understand the two-column layout and how to move between modules.",
                     details: [
-                        "Type any keyword (such as 'Excel', 'MAQ', 'Overload', 'Break', or 'Schedule') into the search bar at the top right.",
-                        "The left module navigation list filters automatically to matching guides.",
+                        "The Help page uses a split layout: the left column lists all System Modules, and the right column displays the detailed guide for the selected module.",
+                        "The top banner contains the page title and a live search bar for filtering modules by keyword.",
+                        "Click any module in the left panel to load its guide in the right panel — the active module is highlighted in blue.",
+                        "The module count badge at the top of the left panel shows how many modules match your current search filter.",
                     ],
                 },
                 {
                     stepNumber: 2,
-                    title: "Switch Modules & Sub-Tabs",
-                    description: "Explore detailed instructions for specific pages and tabs.",
+                    title: "Search Across All Modules & Tasks",
+                    description: "Instantly locate relevant instructions using keyword search.",
                     details: [
-                        "Select any module from the left System Modules panel.",
-                        "If a module contains multiple tabs (such as Subjects, MAQ, or Configurations), use the sub-tab pills below the module header to view instructions for each tab.",
+                        "Type any keyword into the search bar at the top right — for example: 'Excel', 'MAQ', 'Overload', 'Break', 'Schedule', 'Import', 'Preference', or 'Archive'.",
+                        "The left module navigation list filters in real time to show only modules whose title, description, features, steps, or sub-tab content matches your keyword.",
+                        "Click the 'X' button inside the search bar to clear the filter and restore all modules.",
+                        "If no modules match your search, a 'No matching modules found' message appears in the left panel.",
+                    ],
+                },
+                {
+                    stepNumber: 3,
+                    title: "Read Module Guides & Sub-Tabs",
+                    description: "Explore detailed instructions for specific pages and their internal tabs.",
+                    details: [
+                        "Select any module from the left System Modules panel to view its guide.",
+                        "Each module guide shows the Route badge (exact URL), Module Tabs count (if applicable), Authorized User Roles, and Key Features.",
+                        "Modules with multiple internal tabs (Courses, Subjects, Teachers, MAQ, Schedules, FCCE, Configurations) display sub-tab buttons below the features section — click a sub-tab to see its dedicated step-by-step guide.",
+                        "Single-tab modules display their steps directly without sub-tab buttons.",
+                    ],
+                },
+                {
+                    stepNumber: 4,
+                    title: "Follow Step-by-Step Operation Guides",
+                    description: "Execute tasks by following the numbered instructions for each module or sub-tab.",
+                    details: [
+                        "Each step is numbered sequentially and includes a title, a one-sentence description, and a bulleted list of detailed actions.",
+                        "Follow the steps in order — earlier steps often set up context required by later steps (e.g., creating a subject before assigning it in a schedule).",
+                        "The detail bullets describe exact button labels, field names, and expected system behavior so you can replicate the actions in the live application.",
+                        "If a step references another module (e.g., 'configured under Configurations > Room Types'), navigate to that module's guide for additional context.",
+                    ],
+                },
+                {
+                    stepNumber: 5,
+                    title: "Cross-Reference Related Modules",
+                    description: "Use the Help page to understand how modules interconnect and depend on each other.",
+                    details: [
+                        "Many modules depend on data from other modules — for example, Schedules requires Courses, Subjects, Teachers, Rooms, and MAQ to be configured first.",
+                        "Use the left navigation to quickly jump between related modules and review their setup steps.",
+                        "The Configurations module guide documents system-wide settings (faculty load limits, break periods, room types) that affect multiple other modules.",
+                        "The Teacher Pre-assignments module bridges Teachers, Subjects, and Schedules by locking instructor-to-course assignments before schedule generation.",
                     ],
                 },
             ],

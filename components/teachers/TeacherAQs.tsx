@@ -10,7 +10,6 @@ import {
   ModalFooter,
   ModalHeader,
   Pagination,
-  Progress,
   Select,
   Spinner,
   Table,
@@ -21,10 +20,22 @@ import {
   TableRow,
   TextInput,
   Toast,
+  ToastToggle,
   Tooltip,
+  FileInput,
+  Progress,
 } from "flowbite-react";
 import { useEffect, useRef, useState } from "react";
-import { FaGraduationCap, FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
+import {
+  FaGraduationCap,
+  FaPlus,
+  FaSortDown,
+  FaSortUp,
+  FaFileExcel,
+  FaFileImport,
+  FaFileExport,
+  FaDownload,
+} from "react-icons/fa6";
 import {
   HiCheck,
   HiExclamation,
@@ -51,12 +62,37 @@ import {
   updateTeacherAQ,
   JSONValue,
 } from "@/app/actions/system";
+import ExcelJS from "exceljs";
 
 interface SuggestionItem {
   name: string;
   type: "maq" | "cluster";
   entries: MaqClusterEntryItem[];
 }
+
+interface DataValidationRule {
+  type: string;
+  operator?: string;
+  allowBlank: boolean;
+  formulae: (string | number)[];
+  showErrorMessage?: boolean;
+  errorTitle?: string;
+  error?: string;
+}
+
+interface WorksheetWithValidation extends ExcelJS.Worksheet {
+  dataValidations: {
+    add: (range: string, validation: DataValidationRule) => void;
+  };
+}
+
+const REQUIRED_AQ_HEADERS = [
+  "Teacher Code",
+  "Academic Qualification",
+  "Status",
+  "Add Cluster",
+  "Add Individual AQ",
+];
 
 export default function TeacherAQs() {
   const [isLoading, setLoading] = useState(true);
@@ -109,6 +145,22 @@ export default function TeacherAQs() {
   const [toastMessage, setToastMessage] = useState("");
   const [progress, setProgress] = useState(0);
 
+  // --- Excel Operations States --- //
+  const [openExcelModal, setOpenExcelModal] = useState(false);
+  const [activeExcelTab, setActiveExcelTab] = useState<"import" | "export" | "template">("import");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const [importLogs, setImportLogs] = useState<string[]>([]);
+  const [formatError, setFormatError] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- All MAQ & Clusters for Excel Dropdowns --- //
+  const [allMaqNames, setAllMaqNames] = useState<string[]>([]);
+  const [allClusterNames, setAllClusterNames] = useState<string[]>([]);
+  const [allClustersData, setAllClustersData] = useState<MaqClusterWithEntriesRecord[]>([]);
+  const [isLoadingAqDropdowns, setIsLoadingAqDropdowns] = useState(false);
+
   const triggerToast = (type: "success" | "error", message: string) => {
     setToastType(type);
     setToastMessage(message);
@@ -132,6 +184,33 @@ export default function TeacherAQs() {
     }
     return () => clearInterval(timer);
   }, [showToast]);
+
+  // Load all MAQ names and cluster names for Excel dropdowns
+  useEffect(() => {
+    const loadAqDropdownData = async () => {
+      setIsLoadingAqDropdowns(true);
+      try {
+        const [maqRes, clusterRes] = await Promise.all([
+          fetchMaq(null, "aq", "ASC", 0),
+          fetchMaqClustersWithEntries(null, "cluster_name", "ASC", 1000, 1),
+        ]);
+        if (maqRes?.success && maqRes.data) {
+          setAllMaqNames(maqRes.data.map((m: MaqRecord) => m.aq).filter(Boolean));
+        }
+        if (clusterRes?.success && clusterRes.data) {
+          setAllClusterNames(
+            clusterRes.data.map((c: MaqClusterWithEntriesRecord) => c.cluster_name).filter(Boolean),
+          );
+          setAllClustersData(clusterRes.data);
+        }
+      } catch (err) {
+        console.error("Failed to load AQ dropdown data:", err);
+      } finally {
+        setIsLoadingAqDropdowns(false);
+      }
+    };
+    void loadAqDropdownData();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -533,6 +612,605 @@ export default function TeacherAQs() {
     setIsAQLocked(false);
   }
 
+  // --- Excel Helper Functions --- //
+
+  const downloadWorkbook = (buffer: ArrayBuffer, filename: string) => {
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Helper to count AQ statuses from a list of AQRecord objects (standalone, not using component state)
+  const getAQStatusCountsFromRecords = (records: AQRecord[]) => {
+    let approved = 0,
+      pending = 0,
+      failed = 0,
+      denied = 0;
+    records.forEach((rec) => {
+      const status = (rec.approved || "").toLowerCase();
+      if (status === "approved") approved++;
+      else if (status === "pending") pending++;
+      else if (status === "denied") denied++;
+      else if (status === "failed") failed++;
+      else failed++;
+    });
+    return { approved, pending, failed, denied };
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      // Fetch all teachers for the template
+      const teacherRes = await fetchTeachers(
+        null,
+        "All Active & On Leave",
+        "All Departments",
+        "surname",
+        "ASC",
+        10000,
+        1,
+      );
+      const templateTeachers =
+        teacherRes?.success && Array.isArray(teacherRes.data) ? teacherRes.data : [];
+
+      // Fetch all AQ records for pre-filling existing AQ data
+      const aqRes = await fetchTeacherAQRecords(
+        undefined,
+        undefined,
+        undefined,
+        "created_at",
+        "DESC",
+        10000,
+        1,
+      );
+      const templateAqs = aqRes?.success && Array.isArray(aqRes.data) ? aqRes.data : [];
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("AQ Template") as WorksheetWithValidation;
+
+      // Define columns: read-only teacher info + Total AQ + editable Add Cluster + Add Individual AQ
+      worksheet.columns = [
+        { header: "Teacher Code", key: "teacher_code", width: 20 },
+        { header: "Teacher Name", key: "teacher_name", width: 35 },
+        { header: "Department", key: "department", width: 28 },
+        { header: "Employment", key: "employment", width: 22 },
+        { header: "Total AQ", key: "total_aq", width: 14 },
+        { header: "Add Cluster", key: "add_cluster", width: 35 },
+        { header: "Add Individual AQ", key: "add_individual_aq", width: 35 },
+      ];
+
+      // Build a map of pscs_id to AQ records
+      const aqMap = new Map<string, AQRecord[]>();
+      templateAqs.forEach((aq: AQRecord) => {
+        if (!aqMap.has(aq.pscs_id)) aqMap.set(aq.pscs_id, []);
+        aqMap.get(aq.pscs_id)!.push(aq);
+      });
+
+      // Header styling
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF4A90D9" },
+      };
+      headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+
+      // Read-only columns (A-E) styling
+      const readOnlyHeaderRow = worksheet.getRow(1);
+      for (let col = 1; col <= 5; col++) {
+        const cell = readOnlyHeaderRow.getCell(col);
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFD1D5DB" },
+        };
+        cell.font = { bold: true, color: { argb: "FF374151" } };
+      }
+      // Editable columns (F-G) styling
+      for (let col = 6; col <= 7; col++) {
+        const editableHeader = readOnlyHeaderRow.getCell(col);
+        editableHeader.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF4A90D9" },
+        };
+        editableHeader.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      }
+
+      // Pre-fill all teachers
+      templateTeachers.forEach((teacher: TeacherRecord) => {
+        const teacherAqs = aqMap.get(teacher.pscs_id || "") || [];
+        const counts = getAQStatusCountsFromRecords(teacherAqs);
+        const totalAq = counts.approved + counts.pending + counts.failed + counts.denied;
+
+        const row = worksheet.addRow({
+          teacher_code: teacher.teacher_code || "",
+          teacher_name: teacher.full_name || "",
+          department: teacher.department || "",
+          employment: teacher.employment_type || "",
+          total_aq: totalAq,
+          add_cluster: "",
+          add_individual_aq: "",
+        });
+
+        // Lock read-only columns (A-E) with gray background
+        for (let col = 1; col <= 5; col++) {
+          const cell = row.getCell(col);
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF3F4F6" },
+          };
+          cell.font = { color: { argb: "FF6B7280" } };
+        }
+        // Editable columns (F-G) with light blue background hint
+        for (let col = 6; col <= 7; col++) {
+          const cell = row.getCell(col);
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFEFF6FF" },
+          };
+        }
+      });
+
+      // Lock read-only columns (A-E) — data validation to prevent editing
+      const totalRows = templateTeachers.length;
+      for (let col = 1; col <= 5; col++) {
+        const colLetter = String.fromCharCode(64 + col); // A, B, C, D, E
+        worksheet.dataValidations.add(`${colLetter}2:${colLetter}${totalRows + 1}`, {
+          type: "custom",
+          allowBlank: true,
+          formulae: ["FALSE"],
+          showErrorMessage: true,
+          errorTitle: "Read-Only Column",
+          error: "This column is read-only and cannot be edited.",
+        });
+      }
+
+      // Add Cluster dropdown - cluster names only
+      if (allClusterNames.length > 0) {
+        worksheet.dataValidations.add(`F2:F${totalRows + 1}`, {
+          type: "list",
+          allowBlank: true,
+          formulae: [`"${allClusterNames.join(",")}"`],
+          showErrorMessage: true,
+          errorTitle: "Invalid Cluster",
+          error: "Please select a valid cluster from the dropdown.",
+        });
+      }
+
+      // Add Individual AQ dropdown - individual MAQ names only
+      if (allMaqNames.length > 0) {
+        worksheet.dataValidations.add(`G2:G${totalRows + 1}`, {
+          type: "list",
+          allowBlank: true,
+          formulae: [`"${allMaqNames.join(",")}"`],
+          showErrorMessage: true,
+          errorTitle: "Invalid Academic Qualification",
+          error: "Please select a valid individual academic qualification from the dropdown.",
+        });
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      downloadWorkbook(buffer, "Teacher_AQ_Template.xlsx");
+      triggerToast("success", "Excel template downloaded with all teachers pre-filled!");
+    } catch (err) {
+      console.error("Failed to generate template:", err);
+      triggerToast("error", "Failed to generate Excel template.");
+    }
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      // Fetch all teachers and AQ records for export
+      const [teacherRes, aqRes] = await Promise.all([
+        fetchTeachers(null, "All Active & On Leave", "All Departments", "surname", "ASC", 10000, 1),
+        fetchTeacherAQRecords(undefined, undefined, undefined, "created_at", "DESC", 10000, 1),
+      ]);
+
+      const exportTeachers =
+        teacherRes?.success && Array.isArray(teacherRes.data) ? teacherRes.data : [];
+      const exportAqs = aqRes?.success && Array.isArray(aqRes.data) ? aqRes.data : [];
+
+      if (exportTeachers.length === 0) {
+        triggerToast("error", "No teachers available to export.");
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("AQ Export") as WorksheetWithValidation;
+
+      // Same columns as template: read-only teacher info + Total AQ + existing AQs
+      worksheet.columns = [
+        { header: "Teacher Code", key: "teacher_code", width: 20 },
+        { header: "Teacher Name", key: "teacher_name", width: 35 },
+        { header: "Department", key: "department", width: 28 },
+        { header: "Employment", key: "employment", width: 22 },
+        { header: "Total AQ", key: "total_aq", width: 14 },
+        { header: "Existing AQs", key: "existing_aqs", width: 50 },
+      ];
+
+      // Build a map of pscs_id to AQ records
+      const aqMap = new Map<string, AQRecord[]>();
+      exportAqs.forEach((aq: AQRecord) => {
+        if (!aqMap.has(aq.pscs_id)) aqMap.set(aq.pscs_id, []);
+        aqMap.get(aq.pscs_id)!.push(aq);
+      });
+
+      // Header styling
+      const headerRow = worksheet.getRow(1);
+      for (let col = 1; col <= 6; col++) {
+        const cell = headerRow.getCell(col);
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF4A90D9" },
+        };
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      }
+
+      // Pre-fill all teachers with their AQ data
+      exportTeachers.forEach((teacher: TeacherRecord) => {
+        const teacherAqs = aqMap.get(teacher.pscs_id || "") || [];
+        const counts = getAQStatusCountsFromRecords(teacherAqs);
+        const totalAq = counts.approved + counts.pending + counts.failed + counts.denied;
+
+        const existingAqs = teacherAqs
+          .map((aq) => `${aq.aq} (${aq.approved || "Pending"})`)
+          .join(" | ");
+
+        const row = worksheet.addRow({
+          teacher_code: teacher.teacher_code || "",
+          teacher_name: teacher.full_name || "",
+          department: teacher.department || "",
+          employment: teacher.employment_type || "",
+          total_aq: totalAq,
+          existing_aqs: existingAqs || "None",
+        });
+
+        // Gray background for all cells (read-only export)
+        for (let col = 1; col <= 6; col++) {
+          const cell = row.getCell(col);
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF3F4F6" },
+          };
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      downloadWorkbook(
+        buffer,
+        `Teacher_AQ_Export_${new Date().toISOString().split("T")[0]}.xlsx`,
+      );
+      triggerToast("success", "AQ records exported to Excel successfully");
+    } catch (err) {
+      console.error(err);
+      triggerToast("error", "Failed to export AQ records to Excel");
+    }
+  };
+
+  const validateAndSelectFile = (file: File | null) => {
+    setFormatError("");
+    setImportLogs([]);
+    if (!file) return;
+
+    const validExtensions = [".xlsx", ".xls", ".csv"];
+    const fileName = file.name.toLowerCase();
+    const isValid = validExtensions.some((ext) => fileName.endsWith(ext));
+
+    if (!isValid) {
+      setFormatError("Invalid file type. Strictly accepts Excel files (.xlsx, .xls) or .csv.");
+      setImportFile(null);
+      return;
+    }
+    setImportFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      validateAndSelectFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleImportSubmit = async () => {
+    if (!importFile) return;
+
+    setIsImporting(true);
+    setFormatError("");
+    setImportLogs(["Reading Excel workbook with ExcelJS..."]);
+
+    try {
+      const buffer = await importFile.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet || worksheet.rowCount === 0) {
+        setFormatError("The uploaded Excel file contains no worksheets or data.");
+        setIsImporting(false);
+        return;
+      }
+
+      const headerRow = worksheet.getRow(1);
+      const uploadedHeaders: string[] = [];
+      headerRow.eachCell((cell) => {
+        if (cell.value) uploadedHeaders.push(String(cell.value).trim());
+      });
+
+      // Detect template format: new format has "Add AQ", old format has "Academic Qualification"
+      const hasAddCluster = uploadedHeaders.some(
+        (h) => h.toLowerCase() === "add cluster",
+      );
+      const hasAddIndividualAq = uploadedHeaders.some(
+        (h) => h.toLowerCase() === "add individual aq",
+      );
+      const hasAcademicQualification = uploadedHeaders.some(
+        (h) => h.toLowerCase() === "academic qualification",
+      );
+
+      if (hasAddCluster && hasAddIndividualAq) {
+        // New template format: requires "Teacher Code", "Add Cluster", "Add Individual AQ"
+        const hasTeacherCode = uploadedHeaders.some(
+          (h) => h.toLowerCase() === "teacher code",
+        );
+        if (!hasTeacherCode) {
+          setFormatError(
+            `Strict Format Violation: Template format requires headers: [Teacher Code, Add Cluster, Add Individual AQ]`,
+          );
+          setIsImporting(false);
+          return;
+        }
+      } else if (hasAcademicQualification) {
+        // Old format: requires "Teacher Code", "Academic Qualification", "Status"
+        const isHeaderValid = REQUIRED_AQ_HEADERS.slice(0, 3).every((reqHeader) =>
+          uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase()),
+        );
+        if (!isHeaderValid) {
+          setFormatError(
+            `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_AQ_HEADERS.slice(0, 3).join(", ")}]`,
+          );
+          setIsImporting(false);
+          return;
+        }
+      } else {
+        setFormatError(
+          `Strict Format Violation: Unrecognized format. Your file must include either [Teacher Code, Add Cluster, Add Individual AQ] or [Teacher Code, Academic Qualification, Status].`,
+        );
+        setIsImporting(false);
+        return;
+      }
+
+      setImportLogs((prev) => [
+        ...prev,
+        `Headers verified. Format: ${hasAddCluster && hasAddIndividualAq ? "Template (Add Cluster + Add Individual AQ)" : "Standard"}. Validating rows...`,
+      ]);
+
+      let successCount = 0;
+      let failCount = 0;
+      const logs: string[] = [];
+
+      const headerIndexMap: Record<string, number> = {};
+      headerRow.eachCell((cell, colNumber) => {
+        if (cell.value) {
+          headerIndexMap[String(cell.value).trim().toLowerCase()] = colNumber;
+        }
+      });
+
+      const codeCol = headerIndexMap["teacher code"] || 1;
+      const addClusterCol = headerIndexMap["add cluster"];
+      const addIndividualAqCol = headerIndexMap["add individual aq"];
+      const aqCol = headerIndexMap["academic qualification"] || 2;
+      const statusCol = headerIndexMap["status"] || 3;
+
+      // Build teacher code to pscs_id map
+      const teacherCodeMap = new Map<string, string>();
+      teachersList.forEach((t) => {
+        if (t.teacher_code && t.pscs_id) {
+          teacherCodeMap.set(t.teacher_code, t.pscs_id);
+        }
+      });
+
+      // Also fetch all teachers to ensure we have the complete list
+      const allTeachersRes = await fetchTeachers(
+        null,
+        "All Active & On Leave",
+        "All Departments",
+        "surname",
+        "ASC",
+        10000,
+        1,
+      );
+      if (allTeachersRes?.success && allTeachersRes.data) {
+        allTeachersRes.data.forEach((t: TeacherRecord) => {
+          if (t.teacher_code && t.pscs_id) {
+            teacherCodeMap.set(t.teacher_code, t.pscs_id);
+          }
+        });
+      }
+
+      // Build sets of valid names
+      const validClusterSet = new Set<string>();
+      allClusterNames.forEach((c) => validClusterSet.add(c));
+      const validMaqSet = new Set<string>();
+      allMaqNames.forEach((m) => validMaqSet.add(m));
+
+      // Build cluster name to entries map for expansion
+      const clusterEntriesMap = new Map<string, string[]>();
+      allClustersData.forEach((cluster) => {
+        const entryNames = (cluster.entries || [])
+          .map((entry: MaqClusterEntryItem) => (typeof entry === "string" ? entry : entry.aq))
+          .filter(Boolean);
+        if (cluster.cluster_name && entryNames.length > 0) {
+          clusterEntriesMap.set(cluster.cluster_name, entryNames);
+        }
+      });
+
+      // Collect rows to process first
+      const rowsToProcess: Array<{
+        rowNumber: number;
+        teacherCode: string;
+        pscsId: string;
+        aqName: string;
+        status: string;
+      }> = [];
+
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+
+        const teacherCode = String(row.getCell(codeCol).value || "").trim().toUpperCase();
+
+        if ((hasAddCluster && hasAddIndividualAq) && addClusterCol && addIndividualAqCol) {
+          // New template format: read from "Add Cluster" and "Add Individual AQ" columns
+          const clusterName = String(row.getCell(addClusterCol).value || "").trim();
+          const individualAqName = String(row.getCell(addIndividualAqCol).value || "").trim();
+          const status = "Approved"; // Default status for template imports
+
+          if (!teacherCode) {
+            logs.push(`Row ${rowNumber}: Skipped. Teacher Code is required.`);
+            failCount++;
+            return;
+          }
+
+          // Validate teacher code
+          const pscsId = teacherCodeMap.get(teacherCode);
+          if (!pscsId) {
+            logs.push(
+              `Row ${rowNumber} (${teacherCode}): Skipped. Teacher code not found in system.`,
+            );
+            failCount++;
+            return;
+          }
+
+          // Process cluster if provided
+          if (clusterName) {
+            if (!validClusterSet.has(clusterName)) {
+              logs.push(
+                `Row ${rowNumber} (${teacherCode}): Skipped. "${clusterName}" is not a valid cluster.`,
+              );
+              failCount++;
+              return;
+            }
+            // Expand cluster into its entry AQs
+            const entryAqs = clusterEntriesMap.get(clusterName) || [];
+            if (entryAqs.length === 0) {
+              logs.push(
+                `Row ${rowNumber} (${teacherCode}): Skipped. Cluster "${clusterName}" has no entries.`,
+              );
+              failCount++;
+              return;
+            }
+            entryAqs.forEach((entryAq) => {
+              rowsToProcess.push({ rowNumber, teacherCode, pscsId, aqName: entryAq, status });
+            });
+          }
+
+          // Process individual AQ if provided
+          if (individualAqName) {
+            if (!validMaqSet.has(individualAqName)) {
+              logs.push(
+                `Row ${rowNumber} (${teacherCode}): Skipped. "${individualAqName}" is not a valid individual Academic Qualification.`,
+              );
+              failCount++;
+              return;
+            }
+            rowsToProcess.push({ rowNumber, teacherCode, pscsId, aqName: individualAqName, status });
+          }
+
+          // Skip rows where both columns are empty (no new AQ to add)
+          if (!clusterName && !individualAqName) {
+            return;
+          }
+        } else {
+          // Old format: read from "Academic Qualification" and "Status" columns
+          const aqName = String(row.getCell(aqCol).value || "").trim();
+          let status = String(row.getCell(statusCol).value || "Approved").trim();
+
+          if (!teacherCode || !aqName) {
+            logs.push(
+              `Row ${rowNumber}: Skipped. Teacher Code and Academic Qualification are required.`,
+            );
+            failCount++;
+            return;
+          }
+
+          // Validate teacher code
+          const pscsId = teacherCodeMap.get(teacherCode);
+          if (!pscsId) {
+            logs.push(
+              `Row ${rowNumber} (${teacherCode}): Skipped. Teacher code not found in system.`,
+            );
+            failCount++;
+            return;
+          }
+
+          // Normalize status
+          const validStatuses = ["Approved", "Pending", "Denied", "Failed"];
+          if (!validStatuses.includes(status)) {
+            status = "Approved";
+          }
+
+          rowsToProcess.push({ rowNumber, teacherCode, pscsId, aqName, status });
+        }
+      });
+
+      // Process each row asynchronously
+      for (const item of rowsToProcess) {
+        const customAqCode = `AQ-${Date.now()}-${item.rowNumber}`;
+        const aqContents: Record<string, JSONValue> = {
+          custom_aq_id: customAqCode,
+        };
+
+        const res = await createTeacherAQ(item.pscsId, item.aqName, aqContents, item.status);
+        if (res?.success) {
+          successCount++;
+        } else {
+          logs.push(
+            `Row ${item.rowNumber} (${item.teacherCode}, ${item.aqName}): ${res?.error || "Creation failed."}`,
+          );
+          failCount++;
+        }
+      }
+
+      setImportLogs((prev) => [
+        ...prev,
+        `Import Completed: ${successCount} successful, ${failCount} failed.`,
+        ...logs,
+      ]);
+
+      if (successCount > 0) {
+        triggerToast("success", `Imported ${successCount} AQ records successfully.`);
+        // Reload data
+        await loadData(currentPage, employmentFilter);
+      }
+    } catch (err) {
+      console.error(err);
+      setFormatError("Error: Unable to parse Excel workbook format using ExcelJS.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {showToast && (
@@ -586,9 +1264,20 @@ export default function TeacherAQs() {
           </p>
 
           <div className={"mt-2"}>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex w-full flex-wrap items-center gap-3">
-                <div className="w-full shrink-0 sm:w-56">
+            <div className="flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+              <div className="relative mr-4 mb-2 w-full md:w-64">
+                <TextInput
+                  id="searchTeacher"
+                  type="text"
+                  placeholder="Search teachers..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  icon={HiSearch}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="w-full sm:w-48">
                   <Select
                     id="employment-filter"
                     value={employmentFilter}
@@ -611,16 +1300,14 @@ export default function TeacherAQs() {
                   </Select>
                 </div>
 
-                <div className="relative w-full sm:w-64">
-                  <TextInput
-                    id="searchTeacher"
-                    type="text"
-                    placeholder="Search teachers..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    icon={HiSearch}
-                  />
-                </div>
+                <Button
+                  color="gray"
+                  className="whitespace-nowrap"
+                  onClick={() => setOpenExcelModal(true)}
+                >
+                  <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
+                  Excel Operations
+                </Button>
               </div>
             </div>
 
@@ -687,7 +1374,7 @@ export default function TeacherAQs() {
                         onClick={() => handleSorting("aq_count")}
                       >
                         <div className="flex items-center gap-1">
-                          <span>AQ Breakdown</span>
+                          <span>Total AQ</span>
                           {sortBy === "aq_count" &&
                             (sortDir === "ASC" ? (
                               <FaSortUp className="h-4 w-4" />
@@ -741,61 +1428,12 @@ export default function TeacherAQs() {
                               {teacher.employment_type || "—"}
                             </TableCell>
 
+                            {/* Total AQ Cell */}
                             <TableCell>
-                              <div className="flex items-center space-x-1.5 text-sm font-semibold">
-                                <Tooltip
-                                  content={
-                                    <span className="font-bold text-green-400">
-                                      AQ Approved: {approved}
-                                    </span>
-                                  }
-                                >
-                                  <span className="cursor-pointer text-green-500 hover:underline dark:text-green-400">
-                                    {approved}
-                                  </span>
-                                </Tooltip>
-                                <span className="text-gray-400 dark:text-gray-500">
-                                  |
+                              <div className="flex items-center justify-center">
+                                <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-sm font-bold text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+                                  {approved + pending + failed + denied}
                                 </span>
-                                <Tooltip
-                                  content={
-                                    <span className="font-bold text-yellow-400">
-                                      AQ Pending: {pending}
-                                    </span>
-                                  }
-                                >
-                                  <span className="cursor-pointer text-yellow-500 hover:underline dark:text-yellow-400">
-                                    {pending}
-                                  </span>
-                                </Tooltip>
-                                <span className="text-gray-400 dark:text-gray-500">
-                                  |
-                                </span>
-                                <Tooltip
-                                  content={
-                                    <span className="font-bold text-gray-300">
-                                      AQ Failed: {failed}
-                                    </span>
-                                  }
-                                >
-                                  <span className="cursor-pointer text-gray-500 hover:underline dark:text-gray-300">
-                                    {failed}
-                                  </span>
-                                </Tooltip>
-                                <span className="text-gray-400 dark:text-gray-500">
-                                  |
-                                </span>
-                                <Tooltip
-                                  content={
-                                    <span className="font-bold text-red-400">
-                                      AQ Denied: {denied}
-                                    </span>
-                                  }
-                                >
-                                  <span className="cursor-pointer text-red-500 hover:underline dark:text-red-400">
-                                    {denied}
-                                  </span>
-                                </Tooltip>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1181,6 +1819,196 @@ export default function TeacherAQs() {
             </div>
           </div>
         </ModalBody>
+      </Modal>
+
+      {/* --- MODAL: EXCEL OPERATIONS --- */}
+      <Modal show={openExcelModal} onClose={() => setOpenExcelModal(false)} size="lg">
+        <ModalHeader>
+          <div className="flex items-center gap-2">
+            <FaFileExcel className="text-green-600 h-5 w-5" />
+            <span>Excel Operations & Teacher AQ Management</span>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveExcelTab("import");
+                  setFormatError("");
+                  setImportLogs([]);
+                  setImportFile(null);
+                }}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "import"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaFileImport className="mb-1.5 h-6 w-6 text-blue-600" />
+                <span className="text-xs font-semibold">Import Excel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveExcelTab("export")}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "export"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaFileExport className="mb-1.5 h-6 w-6 text-green-600" />
+                <span className="text-xs font-semibold">Export AQs</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveExcelTab("template")}
+                className={`flex flex-col items-center justify-center rounded-xl border p-3.5 text-center transition-all ${
+                  activeExcelTab === "template"
+                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                <FaDownload className="mb-1.5 h-6 w-6 text-emerald-600" />
+                <span className="text-xs font-semibold">Blank Template</span>
+              </button>
+            </div>
+
+            {activeExcelTab === "import" && (
+              <div className="space-y-4">
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+                    isDragging
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
+                      : "border-gray-300 bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  <FileInput
+                    id="excel-file-input"
+                    ref={fileInputRef}
+                    accept=".xlsx, .xls, .csv"
+                    onChange={(e) =>
+                      validateAndSelectFile(e.target.files ? e.target.files[0] : null)
+                    }
+                    className="hidden"
+                  />
+                  <FaFileImport className="mx-auto mb-2 h-8 w-8 text-blue-500" />
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {importFile ? importFile.name : "Drag & drop your Excel file here or browse"}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {importFile
+                      ? `${(importFile.size / 1024).toFixed(1)} KB`
+                      : "Strictly accepts .xlsx, .xls, or .csv files"}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+                  <span className="font-semibold uppercase tracking-wide">Validation Rule:</span> Template format: Columns A–E (Teacher Code, Name, Department, Employment, Total AQ) are read-only. Column F ("Add Cluster") is editable — select a cluster to add all its entry AQs. Column G ("Add Individual AQ") is editable — select an individual Academic Qualification. Status defaults to <b className="font-mono">Approved</b>.
+                </div>
+
+                {formatError && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+                    <HiExclamation className="h-4 w-4 shrink-0 text-red-500" />
+                    <div>{formatError}</div>
+                  </div>
+                )}
+
+                {importLogs.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
+                    {importLogs.map((log, index) => (
+                      <div
+                        key={index}
+                        className={
+                          log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
+                            ? "text-red-400"
+                            : log.includes("Completed") || log.includes("Found")
+                              ? "font-bold text-green-400"
+                              : "text-gray-300"
+                        }
+                      >
+                        {log}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleImportSubmit}
+                  disabled={!importFile || isImporting}
+                  className="w-full"
+                >
+                  {isImporting ? (
+                    <>
+                      <Spinner size="sm" className="mr-2" />
+                      Processing & Importing...
+                    </>
+                  ) : (
+                    "Execute Excel Import"
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {activeExcelTab === "export" && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Export All Teacher AQ Data
+                  </h4>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Generates a read-only Excel spreadsheet with all teachers, their total AQ count, and existing AQ records.
+                  </p>
+                </div>
+                <Button onClick={handleExportExcel} className="w-full" color="green">
+                  <FaFileExport className="mr-2 h-4 w-4" /> Export All Teacher AQ Data
+                </Button>
+              </div>
+            )}
+
+            {activeExcelTab === "template" && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Download Pre-Filled Excel Template
+                  </h4>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Pre-filled with all teachers &amp; their AQ data. Columns A–E are read-only (Teacher Code, Name, Department, Employment, Total AQ). Column F ("Add Cluster") has a dropdown of clusters — selecting one adds all its entry AQs. Column G ("Add Individual AQ") has a dropdown of individual Academic Qualifications.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleDownloadTemplate}
+                  className="w-full"
+                  color="blue"
+                  disabled={isLoadingAqDropdowns}
+                >
+                  {isLoadingAqDropdowns ? (
+                    <>
+                      <Spinner size="sm" className="mr-2" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <FaDownload className="mr-2 h-4 w-4" /> Download Pre-Filled Template
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter className="flex justify-end">
+          <Button color="alternative" onClick={() => setOpenExcelModal(false)}>
+            Close Window
+          </Button>
+        </ModalFooter>
       </Modal>
     </div>
   );
