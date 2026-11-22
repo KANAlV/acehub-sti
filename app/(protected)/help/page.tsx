@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { fetchUserRole } from "@/app/actions/user";
+import { Spinner } from "flowbite-react";
 import {
     HiBookOpen,
     HiUserGroup,
@@ -47,12 +49,62 @@ interface ModuleGuide {
     steps?: DetailedStep[];
 }
 
+interface UserPermissions {
+    booking: boolean;
+    personal_schedule: boolean;
+    academic_qualification: boolean;
+    schedules: boolean;
+    courses: boolean;
+    rooms: boolean;
+    subjects: boolean;
+    teachers: boolean;
+    maq: boolean;
+    fcce: boolean;
+    help: boolean;
+    config: boolean;
+    superuser: boolean;
+}
+
 export default function HelpPage() {
-    const [activeModuleId, setActiveModuleId] = useState<string>("getting_started");
+    const [activeModuleId, setActiveModuleId] = useState<string>("");
     const [activeSubTabId, setActiveSubTabId] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState<string>("");
     const [debouncedSearch, setDebouncedSearch] = useState<string>("");
     const contentScrollRef = useRef<HTMLDivElement>(null);
+    const [permissions, setPermissions] = useState<UserPermissions | null>(null);
+    const [roleName, setRoleName] = useState<string>("");
+    const [isLoading, setLoading] = useState(true);
+
+    useEffect(() => {
+        async function fetchRole() {
+            const res = await fetchUserRole("");
+            if (res.success && res.data) {
+                const perms = {
+                    booking: Boolean(res.data.booking),
+                    personal_schedule: Boolean(res.data.personal_schedule),
+                    academic_qualification: Boolean(res.data.academic_qualification),
+                    schedules: Boolean(res.data.schedules),
+                    courses: Boolean(res.data.courses),
+                    rooms: Boolean(res.data.rooms),
+                    subjects: Boolean(res.data.subjects),
+                    teachers: Boolean(res.data.teachers),
+                    maq: Boolean(res.data.maq),
+                    fcce: Boolean(res.data.fcce),
+                    help: Boolean(res.data.help),
+                    config: Boolean(res.data.config),
+                    superuser: Boolean(res.data.superuser),
+                };
+                setPermissions(perms);
+                const rawRole = (res.data as { role_name?: string }).role_name ?? "";
+                setRoleName(rawRole);
+                // Determine default module based on role
+                const defaultModule = getDefaultModuleForRole(perms, rawRole);
+                setActiveModuleId(defaultModule);
+            }
+            setLoading(false);
+        }
+        void fetchRole();
+    }, []);
 
     useEffect(() => {
         const handler = setTimeout(() => {
@@ -61,6 +113,90 @@ export default function HelpPage() {
         return () => clearTimeout(handler);
     }, [searchQuery]);
 
+    // Map each permission key to the module IDs that require it
+    const permissionToModules: Record<keyof UserPermissions, string[]> = {
+        booking: ["room_reservation"],
+        personal_schedule: ["personal_info"],
+        academic_qualification: ["teachers"],
+        schedules: ["schedules", "teacher_pre-assignments"],
+        courses: ["courses"],
+        rooms: ["rooms"],
+        subjects: ["subjects"],
+        teachers: ["teachers"],
+        maq: ["maq"],
+        fcce: ["fcce"],
+        help: ["help"],
+        config: ["configurations"],
+        superuser: ["configurations"],
+    };
+
+    // Determine which modules the current user can access based on permissions
+    function getAccessibleModuleIds(perms: UserPermissions): string[] {
+        const accessible = new Set<string>();
+        // Always show Getting Started for users with config access
+        if (perms.config || perms.superuser) {
+            accessible.add("getting_started");
+        }
+        // Dashboard is shown to users with schedules or personal_schedule
+        if (perms.schedules || perms.personal_schedule) {
+            accessible.add("dashboard");
+        }
+        // Map permissions to modules
+        for (const [perm, moduleIds] of Object.entries(permissionToModules)) {
+            if (perms[perm as keyof UserPermissions]) {
+                moduleIds.forEach((id) => accessible.add(id));
+            }
+        }
+        return [...accessible];
+    }
+
+    // Get the default module for a role based on permissions
+    function getDefaultModuleForRole(perms: UserPermissions, rawRole: string): string {
+        const accessible = getAccessibleModuleIds(perms);
+        const roleLower = rawRole.toLowerCase();
+
+        // Academic Head / Superuser — start with Getting Started
+        if ((roleLower.includes("academic") || roleLower.includes("super")) && perms.config) {
+            return "getting_started";
+        }
+        // Teacher with personal_schedule — start with their personal schedule
+        if (perms.personal_schedule && accessible.includes("personal_info")) {
+            return "personal_info";
+        }
+        // School Registrar — start with Courses
+        if (roleLower.includes("registrar") && perms.courses) {
+            return "courses";
+        }
+        // Academic Assistant — start with Room Reservation if available
+        if (roleLower.includes("assistant") && perms.booking) {
+            return "room_reservation";
+        }
+        // Fallback: first accessible module
+        if (accessible.length > 0) {
+            return accessible[0];
+        }
+        return "help";
+    }
+
+    // Build role description for the welcome banner
+    function getRoleDescription(perms: UserPermissions, rawRole: string): string {
+        const roleLower = rawRole.toLowerCase();
+        if (roleLower.includes("academic") || roleLower.includes("super")) {
+            return "You have full access to all system modules — configure settings, manage faculty, generate schedules, and monitor evaluations.";
+        }
+        if (roleLower.includes("registrar")) {
+            return "You can manage courses and programs, view the dashboard, and access help documentation.";
+        }
+        if (roleLower.includes("assistant")) {
+            return "You can reserve rooms for special events and access help documentation.";
+        }
+        if (perms.personal_schedule) {
+            return "You can view your personal teaching schedule, manage your availability and preferences, and access help documentation.";
+        }
+        return "Browse the available modules below to learn how to use AceHub.";
+    }
+
+    const accessibleModuleIds = permissions ? getAccessibleModuleIds(permissions) : [];
     const modules: ModuleGuide[] = [
         {
             id: "getting_started",
@@ -221,7 +357,7 @@ export default function HelpPage() {
             icon: HiChartPie,
             description:
                 "Central overview of the active master schedule, displaying entry counts, active teachers, subject totals, and individual faculty workload capacities.",
-            roles: ["Academic Head", "Faculty"],
+            roles: ["Academic Head", "Teacher"],
             features: [
                 "Live KPI stat cards for Total Entries, Active Teachers, Subjects, and Total Units",
                 "Teacher Workload Summary bar tracking Active, Overloaded, and Average Utilization",
@@ -293,7 +429,7 @@ export default function HelpPage() {
             icon: HiUserGroup,
             description:
                 "View your personal teaching schedule, monitor your unit load and workload capacity, and configure your scheduling preferences for rooms, times, years, and subjects.",
-            roles: ["Faculty", "Academic Head"],
+            roles: ["Teacher", "Academic Head"],
             features: [
                 "Personal schedule overview showing all assigned class entries from the active master schedule",
                 "Real-time units analysis with current units, max units, remaining capacity, and load status badge",
@@ -1369,7 +1505,7 @@ export default function HelpPage() {
             icon: HiBookOpen,
             description:
                 "Interactive system user manual providing searchable, module-by-module and tab-by-tab operational instructions for every AceHub feature — from Dashboard analytics to Configuration management.",
-            roles: ["Academic Head", "School Registrar", "Academic Assistant", "Faculty"],
+            roles: ["Academic Head", "School Registrar", "Academic Assistant", "Teacher"],
             features: [
                 "Instant keyword search across all modules, sub-tabs, features, and step-by-step details",
                 "Left-side module navigation panel with 12 system modules and live filter count",
@@ -1440,6 +1576,10 @@ export default function HelpPage() {
     ];
 
     const filteredModules = modules.filter((mod) => {
+        // Only show modules the user has permission to access
+        if (accessibleModuleIds.length > 0 && !accessibleModuleIds.includes(mod.id)) {
+            return false;
+        }
         const q = debouncedSearch.toLowerCase();
         if (!q) return true;
         return (
@@ -1496,6 +1636,15 @@ export default function HelpPage() {
 
     return (
         <div className="flex h-full flex-col overflow-hidden bg-gray-50 p-4 sm:p-6 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+            {isLoading ? (
+                <div className="flex h-full items-center justify-center">
+                    <div className="text-center space-y-6">
+                        <Spinner />
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Loading Help Guide...</div>
+                    </div>
+                </div>
+            ) : (
+                <>
             {/* Fixed Top Header Banner */}
             <div className="mb-5 shrink-0 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-800 p-5 sm:p-6 text-white shadow-lg">
                 <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
@@ -1506,6 +1655,17 @@ export default function HelpPage() {
                                 AceHub Help Guide
                             </h1>
                         </div>
+                        {roleName && (
+                            <div className="flex flex-col gap-1 mb-2">
+                                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-semibold backdrop-blur-sm">
+                                    <HiShieldCheck className="h-4 w-4" />
+                                    {roleName}
+                                </span>
+                                <p className="text-blue-100 text-xs sm:text-sm max-w-2xl">
+                                    {permissions ? getRoleDescription(permissions, roleName) : "Browse the available modules below to learn how to use AceHub."}
+                                </p>
+                            </div>
+                        )}
                         <p className="text-blue-100 text-xs sm:text-sm max-w-2xl">
                             Select any system module to view authorized roles, tab functions, Excel workflows, and step-by-step instructions.
                         </p>
@@ -1550,7 +1710,7 @@ export default function HelpPage() {
 
                     <nav
                         aria-label="System Modules"
-                        className="flex-1 space-y-1.5 overflow-y-auto p-3"
+                        className="flex-1 space-y-1.5 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent dark:scrollbar-thumb-gray-600"
                     >
                         {filteredModules.length === 0 ? (
                             <p className="py-6 text-center text-xs text-gray-500 dark:text-gray-400">
@@ -1598,7 +1758,7 @@ export default function HelpPage() {
                 {/* Right Column: Instruction Guide Panel */}
                 <section
                     ref={contentScrollRef}
-                    className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 sm:p-7 shadow-sm dark:border-gray-700 dark:bg-gray-800 space-y-6"
+                    className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 sm:p-7 shadow-sm dark:border-gray-700 dark:bg-gray-800 space-y-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent dark:scrollbar-thumb-gray-600"
                 >
                     {/* Title & Route Badge */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1631,14 +1791,24 @@ export default function HelpPage() {
                             Authorized User Roles
                         </h3>
                         <div className="flex flex-wrap gap-2">
-                            {currentModule.roles.map((role, idx) => (
-                                <span
-                                    key={idx}
-                                    className="px-3 py-1 bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/70 rounded-full text-xs font-medium"
-                                >
-                                    {role}
-                                </span>
-                            ))}
+                            {currentModule.roles.map((role, idx) => {
+                                const isCurrentUser = roleName.toLowerCase() === role.toLowerCase()
+                                    || (roleName.toLowerCase().includes("academic") && role.toLowerCase().includes("academic"))
+                                    || (roleName.toLowerCase().includes("super") && role.toLowerCase().includes("academic"));
+                                return (
+                                    <span
+                                        key={idx}
+                                        className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                            isCurrentUser
+                                                ? "bg-green-100 dark:bg-green-950/60 text-green-800 dark:text-green-300 border-green-300 dark:border-green-700 shadow-sm"
+                                                : "bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/70"
+                                        }`}
+                                    >
+                                        {role}
+                                        {isCurrentUser && " (You)"}
+                                    </span>
+                                );
+                            })}
                         </div>
                     </div>
 
@@ -1647,7 +1817,7 @@ export default function HelpPage() {
                         <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2.5">
                             Key Features & Capabilities
                         </h3>
-                        <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <ul className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                             {currentModule.features.map((feature, idx) => (
                                 <li
                                     key={idx}
@@ -1728,11 +1898,11 @@ export default function HelpPage() {
                                         </h4>
                                     </div>
 
-                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 pl-11 leading-relaxed">
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 pl-9 sm:pl-11 leading-relaxed">
                                         {step.description}
                                     </p>
 
-                                    <ul className="pl-11 space-y-2.5 pt-0.5">
+                                    <ul className="pl-9 sm:pl-11 space-y-2.5 pt-0.5">
                                         {step.details.map((detail, dIdx) => (
                                             <li
                                                 key={dIdx}
@@ -1749,6 +1919,8 @@ export default function HelpPage() {
                     </div>
                 </section>
             </div>
+                </>
+            )}
         </div>
     );
 }
