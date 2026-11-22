@@ -369,6 +369,15 @@ export default function TeachersManagement() {
       status: "Active",
     });
 
+    worksheet.dataValidations.add("H2:H1000", {
+      type: "list",
+      allowBlank: true,
+      formulae: [allDepartments.join(",")],
+      showErrorMessage: true,
+      errorTitle: "Invalid Department",
+      error: "Please select a valid department from the dropdown.",
+    });
+
     worksheet.dataValidations.add("I2:I1000", {
       type: "list",
       allowBlank: false,
@@ -376,6 +385,15 @@ export default function TeachersManagement() {
       showErrorMessage: true,
       errorTitle: "Invalid Employment Type",
       error: "Please select a valid employment type from the dropdown.",
+    });
+
+    worksheet.dataValidations.add("J2:J1000", {
+      type: "list",
+      allowBlank: true,
+      formulae: ['"Active,On Leave,Inactive"'],
+      showErrorMessage: true,
+      errorTitle: "Invalid Status",
+      error: "Please select a valid status from the dropdown. Leave blank for Active.",
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -437,10 +455,22 @@ export default function TeachersManagement() {
         });
       });
 
+      worksheet.dataValidations.add("H2:H1000", {
+        type: "list",
+        allowBlank: true,
+        formulae: [allDepartments.join(",")],
+      });
+
       worksheet.dataValidations.add("I2:I1000", {
         type: "list",
         allowBlank: false,
         formulae: ['"Full-Time,Part-Time Full Load,Part-Time"'],
+      });
+
+      worksheet.dataValidations.add("J2:J1000", {
+        type: "list",
+        allowBlank: true,
+        formulae: ['"Active,On Leave,Inactive"'],
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
@@ -454,7 +484,7 @@ export default function TeachersManagement() {
       setToastType("error");
       setShowToast(true);
     }
-  }, [searchTerm, statusFilter, departmentFilter, sortTeachersBy, sortTeachersDir, downloadWorkbook]);
+  }, [searchTerm, statusFilter, departmentFilter, sortTeachersBy, sortTeachersDir, allDepartments, downloadWorkbook]);
 
   const validateAndSelectFile = useCallback((file: File | null) => {
     setFormatError("");
