@@ -552,7 +552,8 @@ export default function ScheduleTimetableClient({
   const [teacherAssignModalData, setTeacherAssignModalData] = useState<{
     show: boolean;
     entry: LocalTimetableEntry | null;
-  }>({ show: false, entry: null });
+    subjectEntries: LocalTimetableEntry[];
+  }>({ show: false, entry: null, subjectEntries: [] });
 
   // --- Split Modal State & Duplicate Scanning --- //
   const [splitModalData, setSplitModalData] = useState<{
@@ -2458,9 +2459,16 @@ export default function ScheduleTimetableClient({
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             setActiveMenuEntryId(null);
+                                            // Fetch all entries for the clicked subject regardless of section
+                                            const subjectEntries = changedSchedules.filter(
+                                              (entry) =>
+                                                entry.subject_id === subj.subject_id ||
+                                                entry.course_code === subj.course_code,
+                                            );
                                             setTeacherAssignModalData({
                                               show: true,
                                               entry: subj,
+                                              subjectEntries,
                                             });
                                           }}
                                           className="flex w-full items-center px-3 py-1.5 text-left text-[11px] font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
@@ -2521,9 +2529,10 @@ export default function ScheduleTimetableClient({
       {/* --- TEACHER ASSIGNMENT MODAL COMPONENT --- */}
       <TeacherAssignmentModal
         show={teacherAssignModalData.show}
-        onClose={() => setTeacherAssignModalData({ show: false, entry: null })}
+        onClose={() => setTeacherAssignModalData({ show: false, entry: null, subjectEntries: [] })}
         entry={teacherAssignModalData.entry}
         changedSchedules={changedSchedules}
+        subjectEntries={teacherAssignModalData.subjectEntries}
         onAssignTeacher={(selectedTeacher, applyToAllSections) => {
           const currentEntry = teacherAssignModalData.entry;
           if (!currentEntry) return;
@@ -2549,7 +2558,7 @@ export default function ScheduleTimetableClient({
             }),
           );
 
-          setTeacherAssignModalData({ show: false, entry: null });
+          setTeacherAssignModalData({ show: false, entry: null, subjectEntries: [] });
         }}
       />
 

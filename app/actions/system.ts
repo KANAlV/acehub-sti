@@ -588,7 +588,7 @@ export async function getTeachersWithAqAndFcce(params: {
 
 
 /** --- POST GENERATED SCHEDULE --- **/
-
+2
 export async function saveGeneratedSchedule(payload: {
   scheduleName: string;
   generationConfig: { description: string };

@@ -52,6 +52,7 @@ interface TeacherAssignmentModalProps {
     applyToAllSections: boolean,
   ) => void;
   changedSchedules: LocalTimetableEntry[];
+  subjectEntries: LocalTimetableEntry[]; // all entries for the clicked subject (all sections)
 }
 
 export default function TeacherAssignmentModal({
@@ -60,6 +61,7 @@ export default function TeacherAssignmentModal({
   entry,
   onAssignTeacher,
   changedSchedules,
+  subjectEntries,
 }: TeacherAssignmentModalProps) {
   const [subjectRequirement, setSubjectRequirement] =
     useState<SubjectRequirementRecord | null>(null);
@@ -224,6 +226,16 @@ export default function TeacherAssignmentModal({
 
   const isFullyMatched = hasAllAqsMatch && hasFcceRecord;
 
+  // Check if the selected teacher is already assigned to this subject
+  const isTeacherAlreadyAssigned = selectedTeacher
+    ? changedSchedules.some(
+        (e) =>
+          e.teacher_id === selectedTeacher.teacher_id &&
+          e.day &&
+          (e.subject_id === entry?.subject_id || e.course_code === entry?.course_code),
+      )
+    : false;
+
   // Dynamic Calculation of Proj Load & Prep from local state
   const teacherEntries = selectedTeacher
     ? changedSchedules.filter(
@@ -233,10 +245,13 @@ export default function TeacherAssignmentModal({
       )
     : [];
 
+  // Calculate load from actual time slot durations instead of lecture_units/lab_units
+  // because the database stores the full subject units on every time slot entry,
+  // which would cause double-counting when summing multiple slots for the same subject.
+  // Each entry's units = (end_time - start_time) / 60, representing the actual hours taught.
   const existingLoad = teacherEntries.reduce((sum, item) => {
-    const lec = Number(item.lecture_units || 0);
-    const lab = Number(item.lab_units || 0);
-    return sum + lec + lab;
+    const duration = (Number(item.end_time) || 0) - (Number(item.start_time) || 0);
+    return sum + (duration > 0 ? duration / 60 : 0);
   }, 0);
 
   // Determine the target subject ID or course code to match against
@@ -244,38 +259,54 @@ export default function TeacherAssignmentModal({
   const targetCourseCode =
     subjectRequirement?.course_code || entry?.course_code;
 
-  // Find all blocks/entries in the timetable belonging to this subject
+  // Find all blocks/entries in the timetable belonging to this subject.
+  // Match by subject_id OR course_code to ensure all sections are found,
+  // even if different sections have different subject_id values for the same course.
   const subjectEntriesInSchedule = changedSchedules.filter((e) => {
-    if (targetSubjectId) {
-      return e.subject_id === targetSubjectId;
+    if (targetSubjectId && e.subject_id === targetSubjectId) {
+      return true;
     }
-    return e.course_code === targetCourseCode;
+    if (targetCourseCode && e.course_code === targetCourseCode) {
+      return true;
+    }
+    return false;
   });
 
-  // Determine sections to add based on the toggle state
+  // Determine sections to add based on the toggle state.
+  // subjectEntries contains all entries for the clicked subject (all sections).
+  // If "this section only" is selected, filter to only the clicked section.
+  // If "all sections" is selected, use all entries.
   const targetEntriesToAdd = applyToAllSections
-    ? subjectEntriesInSchedule
-    : subjectEntriesInSchedule.filter((e) => e.section === entry?.section);
+    ? subjectEntries
+    : subjectEntries.filter((e) => e.section === entry?.section);
 
   // Avoid double-counting units if the selected teacher is ALREADY assigned to some of these blocks
   const unassignedTargetEntries = targetEntriesToAdd.filter(
     (e) => e.teacher_id !== selectedTeacher?.teacher_id,
   );
 
-  const additionalUnits = unassignedTargetEntries.reduce((sum, item) => {
-    const lec = Number(item.lecture_units || 0);
-    const lab = Number(item.lab_units || 0);
-    return sum + lec + lab;
-  }, 0);
+  // Calculate additional units by grouping unassigned entries by section.
+  // For each section, take the units from the first entry only, because the database
+  // stores the full subject units on every time slot entry (lecture and lab both have
+  // the same full units), so summing all blocks would double-count.
+  const sectionUnitsMap = new Map<string, number>();
+  unassignedTargetEntries.forEach((item) => {
+    const section = item.section || "unknown";
+    if (!sectionUnitsMap.has(section)) {
+      const units = Number(item.lecture_units || 0) + Number(item.lab_units || 0);
+      sectionUnitsMap.set(section, units);
+    }
+  });
+  const additionalUnits = Array.from(sectionUnitsMap.values()).reduce(
+    (sum, units) => sum + units,
+    0,
+  );
 
-  // Fallback if no schedule entries exist yet for this subject in the palette
-  const fallbackUnits =
-    Number(subjectRequirement?.lecture_units || entry?.lecture_units || 0) +
-    Number(subjectRequirement?.lab_units || entry?.lab_units || 0);
-
-  const totalAddedUnits = additionalUnits > 0 ? additionalUnits : fallbackUnits;
-
-  const projectedLoad = Number(existingLoad) + Number(totalAddedUnits);
+  // When the teacher is already assigned to this subject, the existingLoad already
+  // includes these units, so we must not add them again to avoid double-counting.
+  const projectedLoad = isTeacherAlreadyAssigned
+    ? Number(existingLoad)
+    : Number(existingLoad) + Number(additionalUnits);
 
   // Projected Preps Calculation
   const existingPreps = new Set(
@@ -526,8 +557,22 @@ export default function TeacherAssignmentModal({
               </div>
             )}
 
+            {/* Already Assigned Notice */}
+            {selectedTeacher && isTeacherAlreadyAssigned && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-700/50 dark:bg-emerald-950/80">
+                <div className="text-center">
+                  <div className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                    ✓ Teacher Already Assigned
+                  </div>
+                  <div className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                    {selectedTeacher.full_name} is already assigned to this subject.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Scope Toggle: Section vs Entire Subject */}
-            {selectedTeacher && (
+            {selectedTeacher && !isTeacherAlreadyAssigned && (
               <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
                 <span className="font-semibold text-gray-700 dark:text-gray-300">
                   Assignment Scope:
@@ -550,7 +595,7 @@ export default function TeacherAssignmentModal({
             )}
 
             {/* Dynamic Workload & Preparation Stats Widget */}
-            {selectedTeacher && (
+            {selectedTeacher && !isTeacherAlreadyAssigned && (
               <div className="flex items-center justify-around rounded-xl border border-gray-200 bg-white p-3 text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
                 <div className="text-center">
                   <div className="text-[10px] font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
@@ -563,7 +608,7 @@ export default function TeacherAssignmentModal({
                         : "text-emerald-600 dark:text-emerald-400"
                     }`}
                   >
-                    {projectedPreps} / {prepLimit}
+                    {existingPreps.size - 1} → {projectedPreps} / {prepLimit}
                   </div>
                 </div>
                 <div className="h-8 w-px bg-gray-200 dark:bg-gray-700" />
@@ -578,14 +623,14 @@ export default function TeacherAssignmentModal({
                         : "text-cyan-600 dark:text-cyan-400"
                     }`}
                   >
-                    {Number(projectedLoad).toFixed(1)} / {facultyLoadLimit}
+                    {Number(existingLoad).toFixed(1)} → {Number(projectedLoad).toFixed(1)} / {facultyLoadLimit}
                   </div>
                 </div>
               </div>
             )}
 
             {/* Academic Qualifications (AQ) Status Alert Box */}
-            {selectedTeacher && (
+            {selectedTeacher && !isTeacherAlreadyAssigned && (
               <div
                 className={`rounded-lg border p-3 shadow-xs ${
                   hasAllAqsMatch
@@ -619,7 +664,7 @@ export default function TeacherAssignmentModal({
             )}
 
             {/* FCCE Status Alert Box */}
-            {selectedTeacher && (
+            {selectedTeacher && !isTeacherAlreadyAssigned && (
               <div
                 className={`rounded-lg border p-3 shadow-xs ${
                   hasFcceRecord
@@ -666,9 +711,9 @@ export default function TeacherAssignmentModal({
                 color="cyan"
                 size="sm"
                 onClick={handleConfirmClick}
-                disabled={!selectedTeacher}
+                disabled={!selectedTeacher || isTeacherAlreadyAssigned}
                 className={`cursor-pointer bg-cyan-600 text-white hover:bg-cyan-700 ${
-                  !selectedTeacher ? "cursor-not-allowed opacity-50" : ""
+                  !selectedTeacher || isTeacherAlreadyAssigned ? "cursor-not-allowed opacity-50" : ""
                 }`}
               >
                 Confirm Assignment

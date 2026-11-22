@@ -69,7 +69,7 @@ import {
 import Image from "next/image";
 
 // For Debugging Only (Developer-controlled code flag)
-const testMode = true;
+const testMode = false;
 
 // --- Types matching database statement schema --- //
 export interface ScheduleRecord {
@@ -179,6 +179,8 @@ export default function ScheduleManagement() {
   const [openTeacherDetailModal, setOpenTeacherDetailModal] = useState(false);
   const [selectedTeacherForDetail, setSelectedTeacherForDetail] = useState<TeacherRecord | null>(null);
   const [teacherTab, setTeacherTab] = useState<"All" | "Full-Time" | "Part-Time Full Load" | "Part-Time">("All");
+  const [teacherSearchQuery, setTeacherSearchQuery] = useState("");
+  const [teacherSearchDebounced, setTeacherSearchDebounced] = useState("");
   const [teacherPreferenceTab, setTeacherPreferenceTab] = useState<"overview" | "preferred_rooms" | "preferred_times" | "preferred_year" | "preferred_subjects">("overview");
   const [teacherList, setTeacherList] = useState<TeacherRecord[]>([]);
   const [isTeacherListLoading, setIsTeacherListLoading] = useState(false);
@@ -493,7 +495,7 @@ export default function ScheduleManagement() {
     let errorMessage = "";
     let entriesPayload: SaveScheduleEntryPayload[] = [];
 
-    if (autoAssignRoom) {
+    if (autoAssignRoom && creationMode === "auto") {
       setGenerationStatusText(
         `Generated ${sectionRes.sections.length} sections. Running room allocation and timetable generation...`,
       );
@@ -532,6 +534,55 @@ export default function ScheduleManagement() {
           start_time: timeToMinutes(entry.startTime),
           end_time: timeToMinutes(entry.endTime),
           type: entry.type || entry.componentType.toLowerCase(), // Maps type correctly
+        }));
+
+        startTransition(() => {
+          setScheduleEntriesResult(roomScheduleRes.scheduleEntries);
+          setSelectedTimetableSection("ALL");
+          const rooms = Array.from(
+            new Set(roomScheduleRes.scheduleEntries.map((e) => e.roomName)),
+          );
+          setSelectedTimetableRoom(rooms.length > 0 ? rooms[0] : "ALL");
+        });
+      }
+    } else if (autoAssignRoom && creationMode === "semi-auto") {
+      setGenerationStatusText(
+        `Generated ${sectionRes.sections.length} sections. Running room allocation and timetable generation...`,
+      );
+
+      const roomScheduleRes = await generateRoomAndClassSchedules(
+        scheduleName,
+        curriculumIds,
+        tertiaryTerm,
+        sectionRes.sections,
+        allSubjects,
+        shsTerm,
+      );
+      console.log("=== ROOM & CLASS SCHEDULE ENTRIES (NO TEACHERS) ===", roomScheduleRes);
+
+      isSuccess = roomScheduleRes.success;
+      errorMessage = roomScheduleRes.error || "";
+
+      if (isSuccess && roomScheduleRes.scheduleEntries.length > 0) {
+        setGenerationStatusText(
+          `Scheduled ${roomScheduleRes.scheduleEntries.length} entries (teachers not assigned).`,
+        );
+        setGenerationProgress(80);
+
+        function timeToMinutes(timeStr: string): number {
+          const [hours, minutes] = timeStr.split(":").map(Number);
+          return hours * 60 + minutes;
+        }
+
+        entriesPayload = roomScheduleRes.scheduleEntries.map((entry) => ({
+          subject_id: entry.subjectId || null,
+          teacher_id: null,
+          room_id: entry.roomId || null,
+          section: entry.sectionCode,
+          day: entry.day,
+          start_time: timeToMinutes(entry.startTime),
+          end_time: timeToMinutes(entry.endTime),
+          type: entry.type || entry.componentType.toLowerCase(),
         }));
 
         startTransition(() => {
@@ -891,12 +942,35 @@ export default function ScheduleManagement() {
     }
   }
 
-  const filteredTeachers = teacherList.filter((t) => {
-    // Only active teachers
-    if (t.status && t.status.toLowerCase() === "inactive") return false;
-    if (teacherTab === "All") return true;
-    return getEmploymentCategory(t.employment_type) === teacherTab;
-  });
+  // Debounce teacher search query (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTeacherSearchDebounced(teacherSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [teacherSearchQuery]);
+
+  const filteredTeachers = teacherList
+    .filter((t) => {
+      // Only active teachers
+      if (t.status && t.status.toLowerCase() === "inactive") return false;
+      // Filter by employment type tab
+      if (teacherTab !== "All" && getEmploymentCategory(t.employment_type) !== teacherTab) return false;
+      // Filter by search query (name or code)
+      if (teacherSearchDebounced.trim()) {
+        const query = teacherSearchDebounced.toLowerCase();
+        const name = (t.full_name || "").toLowerCase();
+        const code = (t.teacher_code || "").toLowerCase();
+        if (!name.includes(query) && !code.includes(query)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      // Sort alphabetically by full name A-Z
+      const nameA = (a.full_name || "").toLowerCase();
+      const nameB = (b.full_name || "").toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
 
   // Part-time teachers are auto-approved by default
   function isTeacherAutoApproved(teacher: TeacherRecord): boolean {
@@ -1043,6 +1117,9 @@ export default function ScheduleManagement() {
   function handleNextToTeachers() {
     if (isAutoFormInvalid) return;
     setAutoStep("teachers");
+    setTeacherTab("All");
+    setTeacherSearchQuery("");
+    setTeacherSearchDebounced("");
     loadTeachers();
   }
 
@@ -1342,7 +1419,7 @@ export default function ScheduleManagement() {
             </div>
           ) : creationMode === "auto" && autoStep === "teachers" ? (
             <div className="space-y-4">
-              <p className="text-sm">
+              <p className="text-sm text-gray-600 dark:text-gray-300">
                 Review and approve teachers for schedule generation. Click on a teacher to view and manage their preferences.
                 Part-time teachers are approved by default.
               </p>
@@ -1356,7 +1433,7 @@ export default function ScheduleManagement() {
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                       teacherTab === tab
                         ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                        : "border-transparent text-gray-500 hover:text-gray-700"
+                        : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                     }`}
                   >
                     {tab}
@@ -1364,16 +1441,36 @@ export default function ScheduleManagement() {
                 ))}
               </div>
 
+              {/* Search input */}
+              <div className="relative">
+                <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                <input
+                  type="text"
+                  placeholder="Search by name or code..."
+                  value={teacherSearchQuery}
+                  onChange={(e) => setTeacherSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                {teacherSearchQuery && (
+                  <button
+                    onClick={() => setTeacherSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    <HiX className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
               {/* Teacher list */}
               {isTeacherListLoading ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-sm">
                   <Spinner size="sm" />
-                  <span>Loading teachers...</span>
+                  <span className="text-gray-600 dark:text-gray-300">Loading teachers...</span>
                 </div>
               ) : (
                 <div className="max-h-96 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-700">
                   {filteredTeachers.length === 0 ? (
-                    <div className="p-6 text-center text-sm">
+                    <div className="p-6 text-center text-sm text-gray-600 dark:text-gray-300">
                       No teachers found in this category.
                     </div>
                   ) : (
@@ -1403,10 +1500,10 @@ export default function ScheduleManagement() {
 
                           {/* Teacher info */}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold truncate">
+                            <div className="text-sm font-semibold truncate text-gray-900 dark:text-white">
                               {teacher.full_name}
                             </div>
-                            <div className="text-xs">
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
                               {teacher.teacher_code} • {teacher.department || "General"}
                             </div>
                           </div>
@@ -1424,7 +1521,7 @@ export default function ScheduleManagement() {
                             {category}
                           </span>
 
-                          <HiChevronRight className="w-4 h-4 flex-shrink-0" />
+                          <HiChevronRight className="w-4 h-4 flex-shrink-0 text-gray-400 dark:text-gray-500" />
                         </button>
                       );
                     })
@@ -1433,11 +1530,11 @@ export default function ScheduleManagement() {
               )}
 
               {/* Summary */}
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
                 <span>
                   {approvedTeachers.size} of {teacherList.length} teachers approved
                 </span>
-                <span className="text-xs">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   Click a teacher to manage preferences
                 </span>
               </div>
@@ -2037,10 +2134,10 @@ export default function ScheduleManagement() {
                                   <div className="w-3 h-0.5 bg-amber-500 rounded" />
                                 )}
                               </div>
-                              <span className="text-sm font-semibold">{pref.label}</span>
-                              <span className="text-xs">({items.length})</span>
+                              <span className="text-sm font-semibold text-gray-900 dark:text-white">{pref.label}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">({items.length})</span>
                             </div>
-                            <span className="text-xs">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
                               {state === "checked" ? "All approved" : state === "partial" ? "Partial" : "None approved"}
                             </span>
                           </div>
@@ -2053,12 +2150,12 @@ export default function ScheduleManagement() {
                                     key={idx}
                                     className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                                       pref.color === "blue"
-                                        ? "bg-blue-100 dark:bg-blue-900/50"
+                                        ? "bg-blue-100 dark:bg-blue-900/50 dark:text-white"
                                         : pref.color === "green"
-                                        ? "bg-green-100 dark:bg-green-900/50"
+                                        ? "bg-green-100 dark:bg-green-900/50 dark:text-white"
                                         : pref.color === "purple"
-                                        ? "bg-purple-100 dark:bg-purple-900/50"
-                                        : "bg-amber-100 dark:bg-amber-900/50"
+                                        ? "bg-purple-100 dark:bg-purple-900/50 dark:text-white"
+                                        : "bg-amber-100 dark:bg-amber-900/50 dark:text-white"
                                     }`}
                                   >
                                     {itemStr}
@@ -2067,7 +2164,7 @@ export default function ScheduleManagement() {
                               })}
                             </div>
                           ) : (
-                            <div className="text-xs ml-7 italic">No {pref.label.toLowerCase()} set</div>
+                            <div className="text-xs ml-7 italic text-gray-500 dark:text-gray-400">No {pref.label.toLowerCase()} set</div>
                           )}
                         </div>
                       );
@@ -2098,10 +2195,10 @@ export default function ScheduleManagement() {
                                 <div className="w-3 h-0.5 bg-amber-500 rounded" />
                               )}
                             </div>
-                            <span className="text-sm font-semibold">
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">
                               All {prefKey.replace("preferred_", "").replace("_s", "").replace("_", " ")}
                             </span>
-                            <span className="text-xs ml-auto">
+                            <span className="text-xs ml-auto text-gray-500 dark:text-gray-400">
                               {state === "checked" ? "All approved" : state === "partial" ? "Partially approved" : "None approved"}
                             </span>
                           </div>
