@@ -204,12 +204,12 @@ export default function HelpPage() {
             route: "/configurations",
             icon: HiCog,
             description:
-                "Follow this step-by-step guide to configure AceHub for the first time. The system must be set up in the correct order — each step builds on the previous one so the automated scheduler has all the data it needs.",
+                "Follow this step-by-step guide to configure AceHub for the first time. The system must be set up in the correct order — each step builds on the previous one so the scheduler has all the data it needs.",
             roles: ["Academic Head"],
             features: [
-                "Ordered configuration workflow: Config → Rooms → Courses → MAQ → Subjects → Teachers",
+                "Ordered configuration workflow: Config → Rooms → Courses → MAQ (Matrix of Academic Qualifications) → Subjects → Teachers",
                 "Each step links to its corresponding module guide for detailed instructions",
-                "Prerequisites explained so you understand why the order matters",
+                "Requirements explained so you understand why the order matters",
                 "Quick checklist to verify your system is ready for schedule generation",
             ],
             steps: [
@@ -221,7 +221,7 @@ export default function HelpPage() {
                     details: [
                         "Navigate to Configurations from the sidebar — this is the first and most important setup step.",
                         "Class Settings: Set 'Max Students per Section' (1–50). This determines how many sections the scheduler creates when splitting program cohorts.",
-                        "Faculty Load: Define maximum teaching units for each employment type — Full-Time (FT), Part-Time Full Load (PTFL), and Part-Time (PT). These limits control how many units the scheduler can assign to each teacher.",
+                        "Faculty Load: Define maximum teaching units for each employment type — Full-Time (FT), Part-Time Full Load (PTFL), and Part-Time (PT). These limits control how many units the scheduler can assign to each teacher. Note: FT = Full-Time, PTFL = Part-Time Full Load, PT = Part-Time.",
                         "Prep Limits: Set the maximum number of unique subjects each employment type can teach (1–10). This prevents overloading teachers with too many different courses.",
                         "Overloading Parameters: Set the maximum units above the load limit (0–10) that a teacher can be overloaded. This gives the scheduler flexibility when teacher pool is limited.",
                         "Break Periods: Add lunch breaks, assembly times, or other recurring unavailable time slots by day of the week. The scheduler will avoid placing classes during these windows.",
@@ -260,13 +260,13 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 4,
-                    title: "Step 4 — MAQ: Define Academic Qualifications",
+                    title: "Step 4 — MAQ (Matrix of Academic Qualifications): Define Academic Qualifications",
                     description:
-                        "Create the master list of Academic Qualification codes that will be used to match teachers to subjects.",
+                        "Create the master list of Academic Qualification (AQ) codes that will be used to match teachers to subjects.",
                     details: [
                         "Navigate to MAQ (Matrix of Academic Qualifications) from the sidebar.",
                         "Switch to the 'Matrix of Academic Qualifications' tab.",
-                        "Click '+ Add Qualification' to register each AQ code (e.g., BSCS, BSIT, MIT, BA English). These are the degree or certification codes that qualify teachers to teach specific subjects.",
+                        "Click '+ Add Qualification' to register each AQ (Academic Qualification) code (e.g., BSCS, BSIT, MIT, BA English). These are the degree or certification codes that qualify teachers to teach specific subjects.",
                         "Add all AQ codes that your faculty hold or may hold. You can also organize related AQs into MAQ Clusters for easier auditing.",
                         "Why this comes before Subjects: Each subject will require one or more AQ codes. The scheduler only assigns teachers who hold the required AQ for a subject. Define your AQs first so they are available when you configure subjects.",
                         "After adding all AQ codes, proceed to Step 5.",
@@ -274,7 +274,7 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 5,
-                    title: "Step 5 — Subjects: Add Curriculum & Link AQ Requirements",
+                    title: "Step 5 — Subjects: Add Curriculum & Link AQ (Academic Qualification) Requirements",
                     description:
                         "Register all courses offered by your institution and specify which academic qualifications are required to teach each one.",
                     details: [
@@ -282,7 +282,7 @@ export default function HelpPage() {
                         "In the 'Subject Management' tab, add each subject with its Course Code, Course Name, Program, Year/Term, Lecture Units, and Lab Units.",
                         "If a subject has laboratory components, specify Lab Units and select the required Lab Type (must match a Room Type from Step 1).",
                         "You can bulk-import subjects via Excel template if you have a large curriculum catalog — download the template, fill in the columns, and upload.",
-                        "Switch to the 'Subject AQ' tab and assign the required Academic Qualification(s) to each subject. For example, 'Object-Oriented Programming' might require BSCS or BSIT AQ.",
+                        "Switch to the 'Subject AQ' tab and assign the required Academic Qualification (AQ) codes to each subject. For example, 'Object-Oriented Programming' might require BSCS or BSIT AQ.",
                         "This is critical: without AQ requirements assigned, the scheduler cannot determine which teachers are qualified for which subjects.",
                         "You can also export the subject catalog to Excel for backup or review.",
                         "After completing all subjects and their AQ mappings, proceed to Step 6.",
@@ -292,14 +292,14 @@ export default function HelpPage() {
                     stepNumber: 6,
                     title: "Step 6 — Teachers: Register Faculty & Assign Qualifications",
                     description:
-                        "Add all faculty members, assign their academic qualifications, and manage FCCE records.",
+                        "Add all faculty members, assign their academic qualifications, and manage FCCE (Faculty Class & Course Evaluation) records.",
                     details: [
                         "Navigate to Teachers from the sidebar.",
-                        "In the Faculty Directory, click '+ Add Teacher' to register each faculty member with their PSCS ID, full name, email, department, and employment type (FT, PTFL, PT, or Proby).",
+                        "In the Faculty Directory, click '+ Add Teacher' to register each faculty member with their PSCS (Personal Standard Classification System) ID, full name, email, department, and employment type (FT, PTFL, PT, or Proby).",
                         "You can bulk-import teachers via Excel template — download the template, fill in the columns, and upload.",
-                        "Teacher AQ: Click on each teacher to open their AQ Inspector Panel, then click '+ Add AQ' to assign their academic qualifications (the AQ codes you created in Step 4). Set the status to Approved for verified credentials.",
+                        "Teacher AQ: Click on each teacher to open their AQ (Academic Qualification) Inspector Panel, then click '+ Add AQ' to assign their academic qualifications (the AQ codes you created in Step 4). Set the status to Approved for verified credentials.",
                         "The scheduler uses these AQ assignments to determine which teachers can teach which subjects. A teacher without any AQ assigned will not be considered for subject assignments.",
-                        "FCCE: Manage Faculty Class & Course Evaluation records. Create terms, add evaluation records, and track teacher performance evaluations.",
+                        "FCCE: Manage Faculty Class & Course Evaluation (FCCE) records. Create terms, add evaluation records, and track teacher performance evaluations.",
                         "After all teachers are registered with their AQs, your system is ready for the next phase.",
                     ],
                 },
@@ -307,12 +307,12 @@ export default function HelpPage() {
                     stepNumber: 7,
                     title: "Step 7 — Optional: Set Teacher Pre-assignments",
                     description:
-                        "Lock specific teachers to specific subjects and sections before running the automated scheduler.",
+                        "Lock specific teachers to specific subjects and sections before running the scheduler.",
                     details: [
                         "Navigate to Teacher Pre-assignments from the sidebar or via the Teachers page.",
                         "Pre-assignments are optional but recommended if you have specific teacher-to-subject preferences that must be honored.",
                         "Select a teacher, choose the Program, Section, and Subject Code, and click 'Add Assignment' to lock the binding.",
-                        "The automated scheduler will prioritize these pre-assigned bindings during schedule generation.",
+                        "The scheduler will prioritize these pre-assigned bindings during schedule generation.",
                         "You can also bulk-import pre-assignments via Excel template.",
                         "If you skip this step, the scheduler will assign teachers freely based on AQ matching and load balancing.",
                     ],
@@ -321,11 +321,11 @@ export default function HelpPage() {
                     stepNumber: 8,
                     title: "Step 8 — Generate Your Schedule",
                     description:
-                        "With all prerequisites configured, run the automated timetable generator to create your class schedule.",
+                        "With all requirements set up, run the timetable generator to create your class schedule.",
                     details: [
                         "Navigate to Schedules from the sidebar.",
                         "Review your configured data: Courses (with student counts), Subjects (with AQ requirements), Teachers (with AQ assignments), Rooms (with types), and Configurations (load limits, break periods).",
-                        "Click the schedule generation button to start the automated engine. The scheduler will create sections based on student counts, map subjects to qualified teachers, and assign rooms and time slots.",
+                        "Click the schedule generation button to start the engine. The scheduler will create sections based on student counts, map subjects to qualified teachers, and assign rooms and time slots.",
                         "After generation, review the Schedule Summary: check for unassigned entries, teacher overloads, and room conflicts.",
                         "Use the interactive timetable to make manual adjustments — drag and drop entries to fix any issues.",
                         "Once satisfied, set the schedule as active so it appears on the Dashboard.",
@@ -341,8 +341,8 @@ export default function HelpPage() {
                         "✓ Configurations: Max students per section, faculty load limits, prep limits, overload parameters, break periods, departments, and room types are all set.",
                         "✓ Rooms: At least one room of each required type is registered with a floor level.",
                         "✓ Courses: All SHS strands and/or Tertiary programs are registered with accurate student counts.",
-                        "✓ MAQ: All Academic Qualification codes used by your faculty are registered.",
-                        "✓ Subjects: All courses are registered with lecture/lab units, and each subject has at least one required AQ assigned.",
+                        "✓ MAQ (Matrix of Academic Qualifications): All Academic Qualification codes used by your faculty are registered.",
+                        "✓ Subjects: All courses are registered with lecture/lab units, and each subject has at least one required AQ (Academic Qualification) assigned.",
                         "✓ Teachers: All faculty are registered with employment type, and each teacher has at least one approved AQ assigned.",
                         "✓ (Optional) Pre-assignments: Any locked teacher-to-subject bindings are saved in a template.",
                         "If all items are checked, proceed to Schedules to generate your timetable. If any item is missing, the scheduler may produce incomplete or incorrect results.",
@@ -359,8 +359,8 @@ export default function HelpPage() {
                 "Central overview of the active master schedule, displaying entry counts, active teachers, subject totals, and individual faculty workload capacities.",
             roles: ["Academic Head", "Teacher"],
             features: [
-                "Live KPI stat cards for Total Entries, Active Teachers, Subjects, and Total Units",
-                "Teacher Workload Summary bar tracking Active, Overloaded, and Average Utilization",
+                "KPI (Key Performance Indicator) stat cards for Total Entries, Active Teachers, Subjects, and Total Units",
+                "Teacher Workload Summary bar tracking Active, Overloaded, and Average Usage",
                 "Color-coded teacher capacity badges (Available, Moderate, Near Capacity, At Max, Overloaded)",
                 "Quick navigation to Edit Timetable or inspect individual teacher load profiles",
             ],
@@ -377,7 +377,7 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 2,
-                    title: "Review Top-Level KPI Cards",
+                    title: "Review Top-Level KPI (Key Performance Indicator) Cards",
                     description: "Inspect the four summary counters directly below the header for a quick system health check.",
                     details: [
                         "Total Entries: Shows the total number of scheduled class sessions across all sections and days. Compare this against expected curriculum hours.",
@@ -393,7 +393,7 @@ export default function HelpPage() {
                     details: [
                         "The Active count shows how many teachers currently have assigned units in the schedule.",
                         "The Overloaded counter highlights faculty who exceed their standard employment unit limit — investigate these cases to rebalance assignments.",
-                        "Avg Utilization displays the mean percentage of teaching capacity used across all faculty — a healthy range is typically 70–90%.",
+                        "Avg Usage displays the average percentage of teaching capacity used across all faculty — a healthy range is typically 70–90%.",
                         "If Overloaded is high, consider redistributing subjects or adjusting Faculty Load limits in Configurations.",
                     ],
                 },
@@ -415,9 +415,9 @@ export default function HelpPage() {
                     description: "Use the Dashboard as a launchpad to access other system modules for deeper inspection.",
                     details: [
                         "Click 'Go to Schedules' to manage schedule generation, activation, and export.",
-                        "Click 'View All Teachers' to access the Teachers module for faculty directory and AQ management.",
-                        "Use the left sidebar to navigate directly to any module — the Dashboard provides a high-level overview, while individual modules offer detailed CRUD operations.",
-                        "If you notice discrepancies in KPI numbers, check the corresponding module (e.g., Subjects for course count issues, Teachers for faculty count issues).",
+                        "Click 'View All Teachers' to access the Teachers module for faculty directory and AQ (Academic Qualification) management.",
+                        "Use the left sidebar to navigate directly to any module — the Dashboard provides a high-level overview, while individual modules offer detailed CRUD (Create, Read, Update, Delete) operations.",
+                        "If you notice differences in KPI (Key Performance Indicator) numbers, check the corresponding module (e.g., Subjects for course count issues, Teachers for faculty count issues).",
                     ],
                 },
             ],
@@ -432,8 +432,8 @@ export default function HelpPage() {
             roles: ["Teacher", "Academic Head"],
             features: [
                 "Personal schedule overview showing all assigned class entries from the active master schedule",
-                "Real-time units analysis with current units, max units, remaining capacity, and load status badge",
-                "Preparation utilization tracking showing unique subjects taught against your prep limit",
+                "Units analysis with current units, max units, remaining capacity, and load status badge",
+                "Preparation usage tracking showing unique subjects taught against your prep limit",
                 "Teacher preferences management for preferred rooms, times, year levels, and subjects",
                 "Preference collision detection to prevent scheduling conflicts with existing class entries",
                 "Direct link to the full timetable view for broader schedule inspection",
@@ -445,7 +445,7 @@ export default function HelpPage() {
                     description: "Access your individual teaching dashboard from the sidebar.",
                     details: [
                         "Click 'Personal Info' in the left navigation sidebar.",
-                        "The page loads your profile data, current schedule entries, and workload metrics automatically based on your logged-in account.",
+                        "The page loads your profile data, current schedule entries, and workload metrics based on your logged-in account.",
                         "If no active schedule is set, you will see a notice prompting you to contact the Academic Head to activate a master schedule.",
                     ],
                 },
@@ -468,14 +468,14 @@ export default function HelpPage() {
                         "The Units Analysis card shows your Current Units (total hours currently assigned), Max Units (standard limit for your employment type), and Remaining Units (capacity left).",
                         "The Absolute Max field includes any approved overload units above your standard limit.",
                         "Your Load Status badge indicates whether you are Available, Moderate, Near Capacity, At Max, or Overloaded — color-coded for quick assessment.",
-                        "Unique Subjects shows how many different courses you are teaching, and Prep Utilization displays the percentage of your subject preparation limit that is used.",
-                        "Utilization Rate shows the overall percentage of your teaching capacity that is currently assigned.",
+                        "Unique Subjects shows how many different courses you are teaching, and Prep Usage displays the percentage of your subject preparation limit that is used.",
+                        "Usage Rate shows the overall percentage of your teaching capacity that is currently assigned.",
                     ],
                 },
                 {
                     stepNumber: 4,
                     title: "Set Your Scheduling Preferences",
-                    description: "Configure your preferred rooms, time slots, year levels, and subjects to guide the automated scheduler.",
+                    description: "Configure your preferred rooms, time slots, year levels, and subjects to guide the scheduler.",
                     details: [
                         "Click 'Set Preferences' to open the Preferences modal with four tabs: Rooms, Times, Years, and Subjects.",
                         "In the Rooms tab, search for and add your preferred classroom or laboratory names — these rooms will be prioritized during schedule generation.",
@@ -511,18 +511,18 @@ export default function HelpPage() {
                 "Dedicated sub-modules for SHS Strands (/courses/shs) and Tertiary Programs (/courses/tertiary)",
                 "Per-level student headcount input (up to 1,000 students per grade/year level)",
                 "Automatic total student calculation and searchable, sortable program tables",
-                "Direct input feeds into the automated section generator during schedule creation",
+                "Direct input feeds into the section generator during schedule creation",
             ],
             tabs: [
                 {
                     tabId: "courses-shs",
-                    tabName: "SHS Strands (/courses/shs)",
+                    tabName: "SHS (Senior High School) Strands (/courses/shs)",
                     summary:
-                        "Configure Senior High School academic strands (e.g., STEM, ABM, HUMSS) and input student enrollment counts for Grade 11 and Grade 12.",
+                        "Configure Senior High School (SHS) academic strands (e.g., STEM, ABM, HUMSS) and input student enrollment counts for Grade 11 and Grade 12.",
                     steps: [
                         {
                             stepNumber: 1,
-                            title: "Open SHS Strands Management",
+                            title: "Open SHS (Senior High School) Strands Management",
                             description: "Access the Senior High School strand registry from the Courses menu.",
                             details: [
                                 "Expand 'Courses' in the left navigation sidebar and select 'SHS Courses'.",
@@ -531,7 +531,7 @@ export default function HelpPage() {
                         },
                         {
                             stepNumber: 2,
-                            title: "Add a New SHS Strand",
+                            title: "Add a New SHS (Senior High School) Strand",
                             description: "Register a new strand code, full name, and batch headcounts.",
                             details: [
                                 "Click '+ Add Strand' at the top-right corner of the page.",
@@ -601,10 +601,11 @@ export default function HelpPage() {
                 "Manage institutional course catalogs, lecture/laboratory unit allocations, required room types, Excel bulk operations, and Subject Academic Qualifications.",
             roles: ["Academic Head"],
             features: [
-                "Two dedicated workspace tabs: Subject Management and Subject AQ",
+                "Two dedicated workspace tabs: Subject Management and Subject AQ (Academic Qualification)",
                 "Lecture and Laboratory unit breakdowns with required Lab Room Type mapping",
                 "Excel (.xlsx / .csv) template download, bulk subject import, and catalog export",
                 "Subject-to-AQ mapping to enforce qualified teacher assignments during scheduling",
+                "Note: AQ = Academic Qualification",
             ],
             tabs: [
                 {
@@ -657,9 +658,9 @@ export default function HelpPage() {
                 },
                 {
                     tabId: "subject-aq",
-                    tabName: "Subject AQ Tab",
+                    tabName: "Subject AQ (Academic Qualification) Tab",
                     summary:
-                        "Link Minimum Academic Qualification (MAQ) codes to specific subjects so the scheduler only assigns qualified instructors.",
+                        "Link Minimum Academic Qualification (MAQ) codes to specific subjects so the scheduler only assigns qualified instructors. Note: MAQ = Matrix of Academic Qualifications, AQ = Academic Qualification.",
                     steps: [
                         {
                             stepNumber: 1,
@@ -667,7 +668,7 @@ export default function HelpPage() {
                             description: "Open the subject qualification requirement mapping interface.",
                             details: [
                                 "Click the 'Subject AQ' tab next to 'Subject Management'.",
-                                "Search for a subject by Course Code or Course Name to inspect its current required AQs.",
+                                "Search for a subject by Course Code or Course Name to inspect its current required AQs (Academic Qualifications).",
                             ],
                         },
                         {
@@ -676,16 +677,16 @@ export default function HelpPage() {
                             description: "Specify which academic credentials qualify a teacher to handle the course.",
                             details: [
                                 "Select a subject row to open its qualification assignment panel or modal.",
-                                "Choose one or more valid Academic Qualification (AQ) codes from the available MAQ list.",
-                                "Save the mapping so the automated schedule generator and pre-assignment validator recognize these requirements.",
+                                "Choose one or more valid Academic Qualification (AQ) codes from the available MAQ (Matrix of Academic Qualifications) list.",
+                                "Save the mapping so the schedule generator and pre-assignment validator recognize these requirements.",
                             ],
                         },
                         {
                             stepNumber: 3,
-                            title: "Remove Outdated AQ Requirements",
+                            title: "Remove Outdated AQ (Academic Qualification) Requirements",
                             description: "Update qualification rules when curriculum standards change.",
                             details: [
-                                "Open the target subject's assigned AQs and remove any qualification tag that is no longer required.",
+                                "Open the target subject's assigned AQs (Academic Qualifications) and remove any qualification tag that is no longer required.",
                                 "Confirm the update to immediately reflect the revised eligibility criteria.",
                             ],
                         },
@@ -702,10 +703,11 @@ export default function HelpPage() {
                 "Maintain the faculty directory, manage employment classifications, import teacher rosters via Excel, and review or approve Teacher Academic Qualifications (AQs) with fully detailed verification workflows.",
             roles: ["Academic Head"],
             features: [
-                "Comprehensive faculty directory with search, sorting, and Employment Status filtering (FT, PTFL, PT, Proby)",
+                "Faculty directory with search, sorting, and Employment Status filtering (FT, PTFL, PT, Proby)",
                 "Excel (.xlsx) bulk teacher import and roster export workflows with strict PSCS ID validation",
                 "Teacher AQ Inspector Panel with Approved, Pending/Requested, and Denied approval workflows",
-                "Real-time credential verification and direct links to Teacher Pre-assignments templates",
+                "Credential verification and direct links to Teacher Pre-assignments templates",
+                "Note: FT = Full-Time, PTFL = Part-Time Full Load, PT = Part-Time, PSCS = Personal Standard Classification System, AQ = Academic Qualification",
             ],
             tabs: [
                 {
@@ -720,7 +722,7 @@ export default function HelpPage() {
                             description: "Locate instructors across departments and employment classifications.",
                             details: [
                                 "Open the Teachers module from the sidebar.",
-                                "Type a Name, Teacher Code / PSCS ID, or Email into the search input.",
+                                "Type a Name, Teacher Code / PSCS (Personal Standard Classification System) ID, or Email into the search input.",
                                 "Filter by Employment Status (Full-Time, Part-Time Full Load, Part-Time, or Probationary) and click column headers to sort.",
                             ],
                         },
@@ -739,7 +741,7 @@ export default function HelpPage() {
                             description: "Onboard or update multiple instructors simultaneously using formatted Excel spreadsheets.",
                             details: [
                                 "Click the Import / Excel button and download the standard Faculty Excel Template.",
-                                "Populate columns for PSCS ID, First Name, Middle Initial, Last Name, Email, Department, and Employment Type using valid system codes.",
+                                "Populate columns for PSCS (Personal Standard Classification System) ID, First Name, Middle Initial, Last Name, Email, Department, and Employment Type using valid system codes.",
                                 "Upload the completed .xlsx file, inspect the validation summary for any missing fields or duplicate IDs, and confirm import.",
                                 "Use the Export button at any time to download the current faculty directory as an Excel workbook.",
                             ],
@@ -748,16 +750,16 @@ export default function HelpPage() {
                 },
                 {
                     tabId: "teacher-aqs",
-                    tabName: "Teacher AQ Approvals & Inspector",
+                    tabName: "Teacher AQ (Academic Qualification) Approvals & Inspector",
                     summary:
-                        "Assign Academic Qualifications to instructors and manage Pending, Approved, and Denied qualification verification statuses.",
+                        "Assign Academic Qualifications (AQ) to instructors and manage Pending, Approved, and Denied qualification verification statuses.",
                     steps: [
                         {
                             stepNumber: 1,
-                            title: "Open the Teacher AQ Inspector Panel",
+                            title: "Open the Teacher AQ (Academic Qualification) Inspector Panel",
                             description: "View all qualifications linked to a specific faculty member.",
                             details: [
-                                "Click on any teacher row in the directory table to open their dedicated AQ Inspector Panel.",
+                                "Click on any teacher row in the directory table to open their dedicated AQ (Academic Qualification) Inspector Panel.",
                                 "Review existing qualification badges and their current verification statuses.",
                             ],
                         },
@@ -766,13 +768,13 @@ export default function HelpPage() {
                             title: "Assign a New Academic Qualification (+ Add AQ)",
                             description: "Link a degree or certification code to the selected teacher.",
                             details: [
-                                "Click '+ Add AQ' inside the teacher's inspector panel.",
+                                "Click '+ Add AQ (Academic Qualification)' inside the teacher's inspector panel.",
                                 "Search for the matching qualification code, lock in your selection, set the initial status, and submit.",
                             ],
                         },
                         {
                             stepNumber: 3,
-                            title: "Process Pending & Denied AQ Workflows",
+                            title: "Process Pending & Denied AQ (Academic Qualification) Workflows",
                             description: "Approve, deny, or request resubmission for faculty credentials.",
                             details: [
                                 "For Pending / Requested items, click the green 'Approve' action to verify the credential or the red 'Deny' action to reject it.",
@@ -789,27 +791,28 @@ export default function HelpPage() {
             route: "/maq",
             icon: HiShieldCheck,
             description:
-                "Define master Academic Qualification (AQ) codes and organize them into MAQ Clusters to standardize faculty-subject eligibility rules across all academic departments.",
+                "Define master Academic Qualification (AQ) codes and organize them into MAQ (Matrix of Academic Qualifications) Clusters to standardize faculty-subject eligibility rules across all academic departments.",
             roles: ["Academic Head"],
             features: [
                 "Two structured tabs: MAQ Clusters and Matrix of Academic Qualifications",
                 "Master AQ code creation and deletion with strict uniqueness validation",
                 "Cluster grouping to bundle related qualifications across programs for streamlined auditing",
+                "Note: MAQ = Matrix of Academic Qualifications, AQ = Academic Qualification",
             ],
             tabs: [
                 {
                     tabId: "maq-clusters",
-                    tabName: "MAQ Clusters Tab",
+                    tabName: "MAQ (Matrix of Academic Qualifications) Clusters Tab",
                     summary:
                         "Group related Academic Qualifications into logical clusters for streamlined curriculum and faculty competency mapping.",
                     steps: [
                         {
                             stepNumber: 1,
-                            title: "View Existing MAQ Clusters",
+                            title: "View Existing MAQ (Matrix of Academic Qualifications) Clusters",
                             description: "Inspect grouped qualification clusters in the default MAQ view.",
                             details: [
-                                "Open the MAQ module from the sidebar (defaults to the 'MAQ Clusters' tab).",
-                                "Use the search input to filter clusters by cluster name or included AQ codes.",
+                                "Open the MAQ (Matrix of Academic Qualifications) module from the sidebar (defaults to the 'MAQ Clusters' tab').",
+                                "Use the search input to filter clusters by cluster name or included AQ (Academic Qualification) codes.",
                             ],
                         },
                         {
@@ -818,7 +821,7 @@ export default function HelpPage() {
                             description: "Bundle multiple AQ codes under a unified specialization cluster.",
                             details: [
                                 "Click the Add Cluster button to open the cluster creation dialog.",
-                                "Provide a descriptive Cluster Name and select the Academic Qualifications that belong to the group.",
+                                "Provide a descriptive Cluster Name and select the Academic Qualifications (AQ) that belong to the group.",
                                 "Save the cluster to make it available for qualification audits and assignments.",
                             ],
                         },
@@ -827,7 +830,7 @@ export default function HelpPage() {
                             title: "Edit or Delete Clusters",
                             description: "Maintain cluster definitions as academic offerings evolve.",
                             details: [
-                                "Select an existing cluster to add or remove AQ tags, or use the delete control to remove obsolete clusters.",
+                                "Select an existing cluster to add or remove AQ (Academic Qualification) tags, or use the delete control to remove obsolete clusters.",
                             ],
                         },
                     ],
@@ -836,12 +839,12 @@ export default function HelpPage() {
                     tabId: "maq-master-list",
                     tabName: "Matrix of Academic Qualifications Tab",
                     summary:
-                        "Manage the master registry of valid Academic Qualification (AQ) codes (e.g., BSCS, BSIT, MIT) used across Subjects and Teachers.",
+                        "Manage the master registry of valid Academic Qualification (AQ) codes (e.g., BSCS, BSIT, MIT) used across Subjects and Teachers. Note: MAQ = Matrix of Academic Qualifications, AQ = Academic Qualification.",
                     steps: [
                         {
                             stepNumber: 1,
                             title: "Switch to Matrix of Academic Qualifications",
-                            description: "Access the master list of AQ codes.",
+                            description: "Access the master list of AQ (Academic Qualification) codes.",
                             details: [
                                 "Click the 'Matrix of Academic Qualifications' tab on the MAQ page.",
                                 "Search for specific qualifications using the 'Search qualification...' box or click the column header to sort alphabetically.",
@@ -853,14 +856,14 @@ export default function HelpPage() {
                             description: "Register a new AQ code in the master table.",
                             details: [
                                 "Click '+ Add Qualification' at the upper right.",
-                                "Enter the Academic Qualification code (letters and underscores only, e.g., BSCS).",
+                                "Enter the Academic Qualification (AQ) code (letters and underscores only, e.g., BSCS).",
                                 "Click 'Save Qualification' to add it to the system registry.",
                             ],
                         },
                         {
                             stepNumber: 3,
                             title: "Delete an Academic Qualification",
-                            description: "Remove an unused AQ code from the master registry.",
+                            description: "Remove an unused AQ (Academic Qualification) code from the master registry.",
                             details: [
                                 "Click the red trash icon on the right side of the target qualification row.",
                                 "Click 'Yes, I'm sure' in the confirmation popup to permanently remove the record.",
@@ -891,7 +894,7 @@ export default function HelpPage() {
                     description: "Locate classrooms and laboratories across building floors.",
                     details: [
                         "Open 'Rooms' from the navigation sidebar.",
-                        "Type a room name or number into 'Search rooms...' to filter results in real time.",
+                        "Type a room name or number into 'Search rooms...' to filter results as you type.",
                         "Click 'Room Name', 'Room Type', or 'Floor Level' column headers to sort ascending or descending.",
                         "The room list is paginated — use the pagination controls at the bottom to navigate through all rooms.",
                         "Each row shows the Room Name, Room Type (e.g., Lecture Room, Computer Lab), and Floor Level.",
@@ -938,7 +941,7 @@ export default function HelpPage() {
                         "Navigate to Configurations > Room Types to view all configured facility classifications.",
                         "Add new room types (e.g., 'Language Lab', 'Music Room') so they appear in the Room Type dropdown when creating rooms.",
                         "When adding a Subject with Lab Units, select the required Lab Type — the scheduler will only assign rooms of that type to the class.",
-                        "Ensure room types in Configurations match the lab requirements defined in your Subject catalog for accurate automated scheduling.",
+                        "Ensure room types in Configurations match the lab requirements defined in your Subject catalog for accurate scheduling.",
                     ],
                 },
             ],
@@ -949,13 +952,13 @@ export default function HelpPage() {
             route: "/teacher_pre-assignments",
             icon: HiClipboardList,
             description:
-                "Create pre-assignment templates to lock specific teachers to subjects and sections before running automated schedule generation.",
+                "Create pre-assignment templates to lock specific teachers to subjects and sections before running schedule generation.",
             roles: ["Academic Head"],
             features: [
                 "Template-based pre-assignment management (/teacher_pre-assignments/[template])",
-                "Real-time tracking of pre-assigned units, subject prep counts, and load limits",
+                "Tracking of pre-assigned units, subject prep counts, and load limits",
                 "Excel template import/export for bulk pre-assignment distribution",
-                "Priority enforcement during automated schedule generation",
+                "Priority enforcement during schedule generation",
             ],
             steps: [
                 {
@@ -976,7 +979,7 @@ export default function HelpPage() {
                     details: [
                         "Select an instructor from the template list to open their pre-assignment panel.",
                         "Choose the target Program, Section, and Subject Code from the dropdown selectors.",
-                        "The system validates that the instructor holds the required Academic Qualification (AQ) for the selected subject — if not, an AQ mismatch warning appears.",
+                        "The system validates that the instructor holds the required Academic Qualification (AQ) for the selected subject — if not, an AQ mismatch warning appears. Note: AQ = Academic Qualification.",
                         "Verify the instructor remains within their allowed unit limit and subject prep limit after the assignment.",
                         "Click 'Add Assignment' to lock the pre-assignment. The teacher's unit counters update immediately.",
                     ],
@@ -989,7 +992,7 @@ export default function HelpPage() {
                         "Open a teacher's pre-assignment panel and locate the assignment you want to modify.",
                         "Click the remove or delete control next to the assignment to free the teacher from that binding.",
                         "To reassign a different section or subject, remove the old assignment and create a new one.",
-                        "Pre-assignments are enforced during automated schedule generation — removing them allows the engine to reassign freely.",
+                        "Pre-assignments are enforced during schedule generation — removing them allows the engine to reassign freely.",
                     ],
                 },
                 {
@@ -998,18 +1001,18 @@ export default function HelpPage() {
                     description: "Manage large-scale faculty load pre-assignments using Excel spreadsheets.",
                     details: [
                         "Click the Excel / Import button to download the Pre-assignment Excel template with the correct column headers.",
-                        "Enter Teacher PSCS IDs, Section Codes, and Course Codes in the designated columns — do not rename or reorder headers.",
-                        "Upload the completed .xlsx file and review the row-by-row validation summary for any missing fields, duplicate assignments, unit overloads, or AQ mismatches.",
+                        "Enter Teacher PSCS (Personal Standard Classification System) IDs, Section Codes, and Course Codes in the designated columns — do not rename or reorder headers.",
+                        "Upload the completed .xlsx file and review the row-by-row validation summary for any missing fields, duplicate assignments, unit overloads, or AQ (Academic Qualification) mismatches.",
                         "Click 'Import' to commit all valid rows, or click 'Export' to download the current template as an Excel workbook for backup or distribution.",
                     ],
                 },
                 {
                     stepNumber: 5,
                     title: "Use Pre-assignments in Schedule Generation",
-                    description: "Ensure pre-assignments are respected when running the automated timetable generator.",
+                    description: "Ensure pre-assignments are respected when running the timetable generator.",
                     details: [
                         "Before generating a schedule, verify that all desired pre-assignments are saved in the active template.",
-                        "The automated scheduler prioritizes pre-assigned teacher-to-subject bindings during Stage 2 (Subject Mapping).",
+                        "The scheduler prioritizes pre-assigned teacher-to-subject bindings during Stage 2 (Subject Mapping).",
                         "If a pre-assigned teacher is unavailable for a required slot, the engine may still place the class as unassigned — review and resolve manually.",
                         "After schedule generation, compare the final timetable against your pre-assignments to confirm all locked bindings were honored.",
                     ],
@@ -1018,24 +1021,24 @@ export default function HelpPage() {
         },
         {
             id: "schedules",
-            title: "Schedules & Automated Timetable Generator",
+            title: "Schedules & Timetable Generator",
             route: "/schedules",
             icon: HiCalendar,
             description:
-                "Generate, inspect, export, and activate master class timetables using the 3-stage automated scheduling engine and interactive timetable editor.",
+                "Generate, inspect, export, and activate master class timetables using the 3-stage scheduling engine and interactive timetable editor.",
             roles: ["Academic Head"],
             features: [
-                "3-stage automated generator: Section Generation, Subject Mapping, and 30-min Slot/Room Allocation",
-                "Automated Lecture/Lab merging rules (up to 5 hrs) and preferred vacant day balancing per year tier",
-                "Schedule Summary Dashboard (/schedules/[schedule_name]) with resource utilization and unassigned alerts",
+                "3-stage generator: Section Generation, Subject Mapping, and 30-min Slot/Room Allocation",
+                "Lecture/Lab merging rules (up to 5 hrs) and preferred vacant day balancing per year tier",
+                "Schedule Summary Dashboard (/schedules/[schedule_name]) with resource usage and unassigned alerts",
                 "Excel (.xlsx) master timetable export and Dashboard Display activation",
             ],
             tabs: [
                 {
                     tabId: "schedule-generation",
-                    tabName: "Automated Generation Pipeline",
+                    tabName: "Generation Pipeline",
                     summary:
-                        "Run the automated engine to convert student headcounts into sections, map curriculum subjects, and allocate conflict-free rooms and time slots.",
+                        "Run the engine to convert student headcounts into sections, map curriculum subjects, and allocate conflict-free rooms and time slots.",
                     steps: [
                         {
                             stepNumber: 1,
@@ -1048,7 +1051,7 @@ export default function HelpPage() {
                         },
                         {
                             stepNumber: 2,
-                            title: "Automated Section & Subject Resolution",
+                            title: "Section & Subject Resolution",
                             description: "Understand how the engine builds sections and binds subjects.",
                             details: [
                                 "Stage 1 (generateProgramSections): Divides student headcounts by the configured Max Students per Section (default 40–50) to generate section codes (e.g., BSIT111, STEM111).",
@@ -1061,7 +1064,7 @@ export default function HelpPage() {
                             description: "Execute conflict-free scheduling across Monday–Saturday (7:00 AM – 9:00 PM).",
                             details: [
                                 "Stage 3 (generateRoomAndClassSchedules): Allocates 30-minute time blocks while enforcing zero room, section, or course collisions.",
-                                "Combined Lecture + Lab subjects (<= 5 hours total) are automatically evaluated for single-session lab room merging, and each section tier is assigned a preferred vacant day.",
+                                "Combined Lecture + Lab subjects (<= 5 hours total) are evaluated for single-session lab room merging, and each section tier is assigned a preferred vacant day.",
                                 "If no matching room is free for a slot, the engine places the class as 'Unassigned Room' so it can be resolved manually.",
                             ],
                         },
@@ -1079,17 +1082,17 @@ export default function HelpPage() {
                             description: "Inspect analytics and assignment health for a generated schedule.",
                             details: [
                                 "Click on any schedule from the Schedules list to open its Summary Display page.",
-                                "Review the four top KPI cards: Total Entries, Active Teachers, Subjects, and Total Units.",
+                                "Review the four top KPI (Key Performance Indicator) cards: Total Entries, Active Teachers, Subjects, and Total Units.",
                                 "The schedule banner shows the schedule name, generation date, and term (Term 1 or Term 2).",
                             ],
                         },
                         {
                             stepNumber: 2,
-                            title: "Audit Resource Utilization & Unassigned Metrics",
+                            title: "Audit Resource Usage & Unassigned Metrics",
                             description: "Check for entries lacking a teacher or room assignment and assess overall schedule quality.",
                             details: [
-                                "Inspect the Teacher utilization progress bar to see what percentage of faculty are actively assigned.",
-                                "Inspect the Room utilization progress bar to evaluate facility usage across the schedule.",
+                                "Inspect the Teacher usage progress bar to see what percentage of faculty are actively assigned.",
+                                "Inspect the Room usage progress bar to evaluate facility usage across the schedule.",
                                 "Check 'Entries Lacking Teacher' — these classes need manual teacher assignment in the timetable editor.",
                                 "Check 'Entries Lacking Room' — these classes need a room assigned manually or the room pool needs expansion.",
                                 "Review Active Sections count to confirm all expected sections are represented in the schedule.",
@@ -1103,7 +1106,7 @@ export default function HelpPage() {
                                 "Click 'Open Timetable' in the schedule banner to launch the full timetable grid view.",
                                 "The timetable displays Monday through Saturday (7:00 AM – 9:00 PM) in 30-minute slots with rooms as columns and time as rows.",
                                 "Click any class block to view its details: subject, section, teacher, room, and time range.",
-                                "Drag and drop class blocks to reassign them to different time slots or rooms — the system checks for conflicts in real time.",
+                                "Drag and drop class blocks to reassign them to different time slots or rooms — the system checks for conflicts as you move them.",
                                 "Use the filter controls to view the timetable by specific room, teacher, or section.",
                                 "Click 'Save' after making manual adjustments to persist changes to the schedule.",
                             ],
@@ -1143,12 +1146,13 @@ export default function HelpPage() {
             roles: ["Academic Head"],
             features: [
                 "Two dedicated workspace tabs: FCCE Term Management and FCCE Management",
-                "Academic Year / Semester CRUD with auto-generated AY-Semester codes (e.g., 202425T1)",
+                "Academic Year / Semester CRUD (Create, Read, Update, Delete) with auto-generated AY-Semester codes (e.g., 202425T1)",
                 "FCCE record creation with teacher PSCS ID lookup, course name suggestions, and pass/fail status",
                 "Excel bulk import with drag-and-drop, template download, and strict 4-column header validation",
                 "Unmatched records view to isolate records with invalid PSCS IDs or missing teacher data",
                 "Archive and unarchive workflows for historical FCCE term records",
                 "Search, sort, and paginate across all FCCE records with archive status filtering",
+                "Note: FCCE = Faculty Class & Course Evaluation, PSCS = Personal Standard Classification System, AY = Academic Year, CRUD = Create, Read, Update, Delete",
             ],
             tabs: [
                 {
@@ -1162,7 +1166,7 @@ export default function HelpPage() {
                             title: "Browse Existing Academic Years",
                             description: "View all configured academic year and semester combinations.",
                             details: [
-                                "Open the FCCE module from the left sidebar — it defaults to the 'FCCE Term Management' tab.",
+                                "Open the FCCE (Faculty Class & Course Evaluation) module from the left sidebar — it defaults to the 'FCCE Term Management' tab.",
                                 "The table lists all Academic Year / Semester codes (e.g., 202425T1) sorted by most recent.",
                                 "Use the search bar to filter by AY-Semester code, or click column headers to sort ascending or descending.",
                                 "Each row shows the AY-Semester code and a 'View Records' button to navigate to that term's FCCE detail page.",
@@ -1176,7 +1180,7 @@ export default function HelpPage() {
                                 "Click '+ Add Academic Year' at the top-right of the table.",
                                 "Select the Start Year from the dropdown (spans a 21-year range centered on the current year).",
                                 "Select the Term: 'T1' for First Semester or 'T2' for Second Semester.",
-                                "The system auto-generates the AY-Semester code (e.g., selecting 2024 + T1 produces '202425T1').",
+                                "The system auto-generates the AY-Semester code (e.g., selecting 2024 + T1 produces '202425T1'). Note: AY = Academic Year.",
                                 "Click 'Save' to create the term. Duplicate AY-Semester codes will be rejected with an error.",
                             ],
                         },
@@ -1186,7 +1190,7 @@ export default function HelpPage() {
                             description: "Manually add a faculty evaluation record to the selected academic term.",
                             details: [
                                 "Click '+ Add FCCE Record' to open the record creation modal.",
-                                "Enter or search the Teacher's PSCS ID — the system validates against the registered teacher roster.",
+                                "Enter or search the Teacher's PSCS (Personal Standard Classification System) ID — the system validates against the registered teacher roster.",
                                 "Enter the Course Name — use the autocomplete suggestions to match existing course names from the catalog.",
                                 "Select the Academic Year / Semester from the dropdown of available terms.",
                                 "Set the Status toggle to 'Pass' (default) or switch to 'Fail' as appropriate.",
@@ -1199,7 +1203,7 @@ export default function HelpPage() {
                             description: "Navigate to a term's detail page to manage its FCCE records.",
                             details: [
                                 "Click the 'View Records' button on any Academic Year row to open the term detail page.",
-                                "The detail page shows all FCCE records for that term with search, sort, and pagination controls.",
+                                "The detail page shows all FCCE (Faculty Class & Course Evaluation) records for that term with search, sort, and pagination controls.",
                                 "From here you can add, edit, or delete individual records, or use Excel import/export for bulk operations.",
                                 "Click the back arrow to return to the Term Management overview.",
                             ],
@@ -1219,6 +1223,7 @@ export default function HelpPage() {
                             details: [
                                 "Open the 'FCCE Management' tab to access the central FCCE workspace.",
                                 "Use the view mode toggle buttons at the top: 'ALL' shows every FCCE record, 'UNMATCHED' isolates records where the PSCS ID does not match any registered teacher.",
+                                "Note: FCCE = Faculty Class & Course Evaluation, PSCS = Personal Standard Classification System.",
                                 "The Unmatched count badge shows how many records currently have unresolved teacher data.",
                             ],
                         },
@@ -1227,7 +1232,7 @@ export default function HelpPage() {
                             title: "Search, Filter, and Sort FCCE Records",
                             description: "Locate specific evaluation records across all academic terms.",
                             details: [
-                                "Type a PSCS ID, Course Name, or AY-Semester code into the search bar to filter records in real time.",
+                                "Type a PSCS ID, Course Name, or AY-Semester code into the search bar to filter records as you type.",
                                 "Use the Archive Filter dropdown to show only Active records, Archived records, or All records.",
                                 "Click column headers (PSCS ID, Course Name, AY-Semester, Status) to sort ascending or descending.",
                                 "Navigate through paginated results using the pagination controls at the bottom.",
@@ -1287,10 +1292,10 @@ export default function HelpPage() {
             route: "/room_reservation",
             icon: HiBookmark,
             description:
-                "Reserve classrooms and laboratories for special events, makeup classes, examinations, and other activities that fall outside the regular automated timetable schedule.",
+                "Reserve classrooms and laboratories for special events, makeup classes, examinations, and other activities that fall outside the regular timetable schedule.",
             roles: ["Academic Assistant", "Academic Head"],
             features: [
-                "Real-time facility availability lookup across all registered classrooms and laboratories",
+                "Facility availability lookup across all registered classrooms and laboratories",
                 "Automatic conflict detection against active class schedules and configured break periods",
                 "Reservation creation with room, date, time range, purpose, and requesting faculty",
                 "Reservation status tracking (Pending, Confirmed, Cancelled) with full history",
@@ -1363,11 +1368,11 @@ export default function HelpPage() {
             route: "/configurations",
             icon: HiCog,
             description:
-                "Administer institutional scheduling constraints, faculty workload rules, break windows, departments, room types, RBAC roles, user accounts, blacklists, and audit logs.",
+                "Administer institutional scheduling constraints, faculty workload rules, break windows, departments, room types, RBAC (Role-Based Access Control) roles, user accounts, blacklists, and audit logs.",
             roles: ["Academic Head"],
             features: [
                 "9 modular configuration tabs covering academic limits, facility types, security, and auditing",
-                "Real-time input validation and change detection on all system parameters",
+                "Input validation and change detection on all system parameters",
                 "Complete audit logging of every administrative modification",
             ],
             tabs: [
@@ -1393,7 +1398,7 @@ export default function HelpPage() {
                             description: "Define standard maximum teaching units by employment classification.",
                             details: [
                                 "Switch to the 'Faculty Load' tab.",
-                                "In the 'Teaching Load Parameters' card, set max units (1 to 30) for Full-Time (FT), Part-Time Full Load (PTFL), and Part-Time (PT).",
+                                "In the 'Teaching Load Parameters' card, set max units (1 to 30) for Full-Time (FT), Part-Time Full Load (PTFL), and Part-Time (PT). Note: FT = Full-Time, PTFL = Part-Time Full Load, PT = Part-Time.",
                                 "Click 'Save Load Configuration'.",
                             ],
                         },
@@ -1402,7 +1407,7 @@ export default function HelpPage() {
                             title: "Configure Prep Limits & Overloading Parameters",
                             description: "Control unique subject preparations and maximum overload units.",
                             details: [
-                                "In the 'Prep Limits (Number of Subjects)' card, set max subjects (1 to 10) for FT, PTFL, and PT, then click 'Save Prep Configuration'.",
+                                "In the 'Prep Limits (Number of Subjects)' card, set max subjects (1 to 10) for FT, PTFL, and PT, then click 'Save Prep Configuration'. Note: FT = Full-Time, PTFL = Part-Time Full Load, PT = Part-Time.",
                                 "In the 'Overloading Parameters' card, set 'Maximum Units Above Load Limit' (0 to 10) and click 'Save Overload Configuration'.",
                             ],
                         },
@@ -1412,7 +1417,7 @@ export default function HelpPage() {
                     tabId: "config-breaks",
                     tabName: "Break Periods",
                     summary:
-                        "Define recurring daily or weekly break windows that the automated scheduler respects when placing classes.",
+                        "Define recurring daily or weekly break windows that the scheduler respects when placing classes.",
                     steps: [
                         {
                             stepNumber: 1,
@@ -1472,7 +1477,7 @@ export default function HelpPage() {
                             title: "Configure Roles & Users",
                             description: "Manage RBAC permission flags and user role assignments.",
                             details: [
-                                "Open the 'Roles' tab to toggle module permissions per role.",
+                                "Open the 'Roles' tab to toggle module permissions per role. Note: RBAC = Role-Based Access Control.",
                                 "Open the 'Users' tab to inspect synced Microsoft accounts and assign or update their system roles.",
                             ],
                         },
@@ -1508,11 +1513,11 @@ export default function HelpPage() {
             roles: ["Academic Head", "School Registrar", "Academic Assistant", "Teacher"],
             features: [
                 "Instant keyword search across all modules, sub-tabs, features, and step-by-step details",
-                "Left-side module navigation panel with 12 system modules and live filter count",
+                "Left-side module navigation panel with 12 system modules and filter count",
                 "Sub-tab switching for multi-tab modules (Courses, Subjects, Teachers, MAQ, Schedules, FCCE, Configurations)",
                 "Authorized role badges showing which user roles can access each module",
                 "Key features and capabilities summary for every module",
-                "Numbered step-by-step operational walkthroughs with granular action details",
+                "Numbered step-by-step operational walkthroughs with detailed action steps",
                 "Route badges showing the exact URL path for each module",
             ],
             steps: [
@@ -1522,7 +1527,7 @@ export default function HelpPage() {
                     description: "Understand the two-column layout and how to move between modules.",
                     details: [
                         "The Help page uses a split layout: the left column lists all System Modules, and the right column displays the detailed guide for the selected module.",
-                        "The top banner contains the page title and a live search bar for filtering modules by keyword.",
+                        "The top banner contains the page title and a search bar for filtering modules by keyword.",
                         "Click any module in the left panel to load its guide in the right panel — the active module is highlighted in blue.",
                         "The module count badge at the top of the left panel shows how many modules match your current search filter.",
                     ],
@@ -1533,7 +1538,7 @@ export default function HelpPage() {
                     description: "Instantly locate relevant instructions using keyword search.",
                     details: [
                         "Type any keyword into the search bar at the top right — for example: 'Excel', 'MAQ', 'Overload', 'Break', 'Schedule', 'Import', 'Preference', or 'Archive'.",
-                        "The left module navigation list filters in real time to show only modules whose title, description, features, steps, or sub-tab content matches your keyword.",
+                        "The left module navigation list filters as you type to show only modules whose title, description, features, steps, or sub-tab content matches your keyword.",
                         "Click the 'X' button inside the search bar to clear the filter and restore all modules.",
                         "If no modules match your search, a 'No matching modules found' message appears in the left panel.",
                     ],
@@ -1544,7 +1549,7 @@ export default function HelpPage() {
                     description: "Explore detailed instructions for specific pages and their internal tabs.",
                     details: [
                         "Select any module from the left System Modules panel to view its guide.",
-                        "Each module guide shows the Route badge (exact URL), Module Tabs count (if applicable), Authorized User Roles, and Key Features.",
+                        "Each module guide shows the Route badge (exact URL - Uniform Resource Locator), Module Tabs count (if applicable), Authorized User Roles, and Key Features.",
                         "Modules with multiple internal tabs (Courses, Subjects, Teachers, MAQ, Schedules, FCCE, Configurations) display sub-tab buttons below the features section — click a sub-tab to see its dedicated step-by-step guide.",
                         "Single-tab modules display their steps directly without sub-tab buttons.",
                     ],
@@ -1556,7 +1561,7 @@ export default function HelpPage() {
                     details: [
                         "Each step is numbered sequentially and includes a title, a one-sentence description, and a bulleted list of detailed actions.",
                         "Follow the steps in order — earlier steps often set up context required by later steps (e.g., creating a subject before assigning it in a schedule).",
-                        "The detail bullets describe exact button labels, field names, and expected system behavior so you can replicate the actions in the live application.",
+                        "The detail bullets describe exact button labels, field names, and expected system behavior so you can replicate the actions in the application.",
                         "If a step references another module (e.g., 'configured under Configurations > Room Types'), navigate to that module's guide for additional context.",
                     ],
                 },
@@ -1671,7 +1676,7 @@ export default function HelpPage() {
                         </p>
                     </div>
 
-                    {/* Live Search Bar */}
+                    {/* Search Bar */}
                     <div className="relative w-full lg:w-96 shrink-0">
                         <HiSearch className="pointer-events-none absolute left-3.5 top-3 h-5 w-5 text-blue-200" />
                         <input
