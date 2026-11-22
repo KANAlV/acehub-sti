@@ -240,6 +240,188 @@ interface DatabaseScheduleResponse {
   created_at: string;
   entries_inserted: number;
 }
+export interface TeacherAqItem {
+  aq_id: string;
+  aq: string | null;
+  contents: Record<string, unknown> | null;
+  approved: string | null;
+}
+
+export interface TeacherFcceItem {
+  fcce_id: string;
+  course_name: string | null;
+  pass: boolean | null;
+  ay_sem: string | null;
+  archived: boolean | null;
+}
+export interface TeacherWithAqFcceAndPreferences {
+  teacher_id: string;
+  pscs_id: string | null;
+  email: string | null;
+  full_name: string;
+  teacher_code: string | null;
+  department: string | null;
+  employment_type: string | null;
+  status: string | null;
+  preferences: TeacherPreferences;
+  aqs: TeacherAqItem[];
+  fcces: TeacherFcceItem[];
+}
+
+export interface FetchTeachersWithAqFcceAndPreferencesResponse {
+  success: boolean;
+  data: TeacherWithAqFcceAndPreferences[];
+  error?: string;
+}
+
+export async function fetchTeachersWithAqFcceAndPreferences(
+  search: string | null = null
+): Promise<FetchTeachersWithAqFcceAndPreferencesResponse> {
+  try {
+    const cleanSearch = search?.trim() ? search.trim() : null;
+
+    // Fetch without strict type hint so JSONB columns are returned as raw values
+    const rowsRaw = await sql<Record<string, unknown>[]>`
+      SELECT
+        teacher_id,
+        pscs_id,
+        email,
+        full_name,
+        teacher_code,
+        department,
+        employment_type,
+        status,
+        preferences,
+        aqs,
+        fcces
+      FROM teachers_with_aq_fcce_and_preferences_read(
+        ${cleanSearch}
+      );
+    `;
+
+    // Helper: convert numeric-keyed objects (from PostgreSQL JSONB arrays) to proper arrays
+    function normalizeArray(value: unknown): unknown {
+      if (Array.isArray(value)) return value;
+      if (value !== null && typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        const keys = Object.keys(obj);
+        // Check if all keys are numeric indices
+        const isNumericArray = keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
+        if (isNumericArray) {
+          const maxIdx = Math.max(...keys.map((k) => parseInt(k, 10)));
+          const arr: unknown[] = new Array(maxIdx + 1);
+          for (const k of keys) {
+            arr[parseInt(k, 10)] = normalizeArray(obj[k]);
+          }
+          return arr;
+        }
+        // Recursively normalize nested objects
+        const result: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          result[k] = normalizeArray(v);
+        }
+        return result;
+      }
+      return value;
+    }
+
+    // Helper: safely parse JSON string, handling double-quoted strings from PostgreSQL JSONB
+    function safeJsonParse(value: unknown): unknown {
+      if (typeof value === 'string') {
+        // Check if it's a double-quoted string (e.g. "\"{}\"")
+        if (value.startsWith('"') && value.endsWith('"')) {
+          try {
+            // First unquote
+            const unquoted = JSON.parse(value);
+            if (typeof unquoted === 'string') {
+              // Second parse for the inner JSON
+              return JSON.parse(unquoted);
+            }
+            return unquoted;
+          } catch {
+            // If it fails, try parsing the raw string directly
+          }
+        }
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      }
+      return value;
+    }
+
+    // Return raw rows - frontend will handle all JSON parsing for consistency
+    const parsedRows: TeacherWithAqFcceAndPreferences[] = (rowsRaw ?? []).map((row) => {
+      // Return preferences as raw value for frontend to parse
+      const prefsRaw = row.preferences;
+      let prefs: TeacherPreferences = {
+        preferred_rooms: [],
+        preferred_times: [],
+        preferred_year: [],
+        preferred_subjects: [],
+      };
+
+      // Try to parse preferences
+      const parsedPrefs = safeJsonParse(prefsRaw);
+      if (typeof parsedPrefs === 'object' && parsedPrefs !== null && !Array.isArray(parsedPrefs)) {
+        const prefsObj = parsedPrefs as Record<string, unknown>;
+        prefs = {
+          preferred_rooms: (normalizeArray(prefsObj.preferred_rooms) as string[]) || [],
+          preferred_times: (normalizeArray(prefsObj.preferred_times) as TimePreference[]) || [],
+          preferred_year: (normalizeArray(prefsObj.preferred_year) as string[]) || [],
+          preferred_subjects: (normalizeArray(prefsObj.preferred_subjects) as string[]) || [],
+        };
+      }
+
+      // Parse aqs
+      const aqsRaw = row.aqs;
+      let aqs: TeacherAqItem[] = [];
+      const parsedAqs = safeJsonParse(aqsRaw);
+      if (Array.isArray(parsedAqs)) {
+        aqs = parsedAqs as TeacherAqItem[];
+      } else if (typeof parsedAqs === 'object' && parsedAqs !== null) {
+        aqs = normalizeArray(parsedAqs) as TeacherAqItem[] || [];
+      }
+
+      // Parse fcces
+      const fccesRaw = row.fcces;
+      let fcces: TeacherFcceItem[] = [];
+      const parsedFcces = safeJsonParse(fccesRaw);
+      if (Array.isArray(parsedFcces)) {
+        fcces = parsedFcces as TeacherFcceItem[];
+      } else if (typeof parsedFcces === 'object' && parsedFcces !== null) {
+        fcces = normalizeArray(parsedFcces) as TeacherFcceItem[] || [];
+      }
+
+      return {
+        teacher_id: String(row.teacher_id || ''),
+        pscs_id: row.pscs_id ? String(row.pscs_id) : null,
+        email: row.email ? String(row.email) : null,
+        full_name: String(row.full_name || ''),
+        teacher_code: row.teacher_code ? String(row.teacher_code) : null,
+        department: row.department ? String(row.department) : null,
+        employment_type: row.employment_type ? String(row.employment_type) : null,
+        status: row.status ? String(row.status) : null,
+        preferences: prefs,
+        aqs,
+        fcces,
+      };
+    });
+
+    return {
+      success: true,
+      data: parsedRows,
+    };
+  } catch (error) {
+    console.error("Failed to fetch teachers with AQ, FCCE, and preferences:", error);
+    return {
+      success: false,
+      data: [],
+      error: (error as Error).message || "Failed to fetch teachers.",
+    };
+  }
+}
 
 /* READ */
 export async function fetchSchedules(params: {

@@ -122,12 +122,20 @@ export async function fetchUserLogoffStatus(
   }
 }
 
-export async function fetchPscsIdByEmail(): Promise<{ success: boolean; pscs_id?: string; error?: string }> {
+export async function fetchPscsIdByEmail(email?: string): Promise<{ success: boolean; pscs_id?: string; error?: string }> {
   try {
-    const cookieStore = await cookies();
-    const cookie = cookieStore.get("user_email");
+    let Email = email;
 
-    const Email = cookie!.value;
+    // Fallback to cookie if no email parameter provided
+    if (!Email) {
+      const cookieStore = await cookies();
+      const cookie = cookieStore.get("user_email");
+      Email = cookie?.value;
+    }
+
+    if (!Email) {
+      return { success: false, error: "No email provided and no session cookie found." };
+    }
 
     const result = await sql`
       SELECT get_pscs_id_by_email(${Email}) AS pscs_id;

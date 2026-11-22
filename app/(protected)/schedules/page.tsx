@@ -52,6 +52,8 @@ import {
   ProgramRecord,
   saveGeneratedSchedule,
   SubjectRequirementRecord,
+  fetchTeachersWithAqFcceAndPreferences,
+  TimePreference,
 } from "@/app/actions/system";
 import {
   assignSubjectsToSections,
@@ -171,6 +173,38 @@ export default function ScheduleManagement() {
   // Auto Assign / Generation Specific State
   const [selectedTertiaryTerm, setSelectedTertiaryTerm] = useState("Semester 1");
   const [selectedShsTerm, setSelectedShsTerm] = useState("Term 1");
+
+  // --- Teacher Preferences Step State --- //
+  const [autoStep, setAutoStep] = useState<"setup" | "teachers">("setup");
+  const [openTeacherDetailModal, setOpenTeacherDetailModal] = useState(false);
+  const [selectedTeacherForDetail, setSelectedTeacherForDetail] = useState<TeacherRecord | null>(null);
+  const [teacherTab, setTeacherTab] = useState<"All" | "Full-Time" | "Part-Time Full Load" | "Part-Time">("All");
+  const [teacherPreferenceTab, setTeacherPreferenceTab] = useState<"overview" | "preferred_rooms" | "preferred_times" | "preferred_year" | "preferred_subjects">("overview");
+  const [teacherList, setTeacherList] = useState<TeacherRecord[]>([]);
+  const [isTeacherListLoading, setIsTeacherListLoading] = useState(false);
+  const [approvedTeachers, setApprovedTeachers] = useState<Set<string>>(new Set());
+  const [teacherPreferenceOverrides, setTeacherPreferenceOverrides] = useState<
+    Map<string, Map<string, boolean>>
+  >(new Map()); // teacherId -> preferenceKey -> approved
+
+  interface TeacherRecord {
+    teacher_id: string;
+    pscs_id?: string;
+    email?: string;
+    full_name: string;
+    teacher_code: string;
+    department?: string;
+    employment_type?: string;
+    status?: string;
+    aqs?: unknown;
+    fcces?: unknown;
+    preferences?: {
+      preferred_rooms?: string[];
+      preferred_times?: TimePreference[];
+      preferred_year?: string[];
+      preferred_subjects?: string[];
+    };
+  }
 
   // --- Pagination State --- //
   const maxRowSchedule = 10;
@@ -380,12 +414,20 @@ export default function ScheduleManagement() {
       return;
     }
 
-    // If all subjects have AQs, proceed immediately
-    await executeAutoGenerationPipeline(
-      scheduleNameTrimmed,
-      curriculumIds,
-      selectedTertiaryTerm,
-    );
+    // If all subjects have AQs, proceed to teacher selection (Auto mode only)
+    if (creationMode === "auto") {
+      setOpenLoadingModal(false);
+      setIsSubmittingAutoGeneration(false);
+      setAutoStep("teachers");
+      loadTeachers();
+    } else {
+      // Semi-Auto mode: proceed directly to generation
+      await executeAutoGenerationPipeline(
+        scheduleNameTrimmed,
+        curriculumIds,
+        selectedTertiaryTerm,
+      );
+    }
   }
 
   async function executeAutoGenerationPipeline(
@@ -836,6 +878,209 @@ export default function ScheduleManagement() {
     });
   };
 
+  // --- Teacher Preferences Helpers --- //
+
+  function getEmploymentCategory(employmentType?: string): "Full-Time" | "Part-Time Full Load" | "Part-Time" {
+    const normalized = (employmentType || "full_time").toLowerCase();
+    if (normalized.includes("part-time full load") || normalized.includes("part_time_full_load")) {
+      return "Part-Time Full Load";
+    } else if (normalized.includes("part")) {
+      return "Part-Time";
+    } else {
+      return "Full-Time";
+    }
+  }
+
+  const filteredTeachers = teacherList.filter((t) => {
+    // Only active teachers
+    if (t.status && t.status.toLowerCase() === "inactive") return false;
+    if (teacherTab === "All") return true;
+    return getEmploymentCategory(t.employment_type) === teacherTab;
+  });
+
+  // Part-time teachers are auto-approved by default
+  function isTeacherAutoApproved(teacher: TeacherRecord): boolean {
+    const cat = getEmploymentCategory(teacher.employment_type);
+    return cat === "Part-Time" || cat === "Part-Time Full Load";
+  }
+
+  function isTeacherApproved(teacherId: string): boolean {
+    return approvedTeachers.has(teacherId);
+  }
+
+  function toggleTeacherApproval(teacherId: string) {
+    setApprovedTeachers((prev) => {
+      const next = new Set(prev);
+      if (next.has(teacherId)) {
+        next.delete(teacherId);
+      } else {
+        next.add(teacherId);
+      }
+      return next;
+    });
+  }
+
+  // Get preference override for a specific teacher and preference key
+  function getPreferenceOverride(teacherId: string, prefKey: string): boolean | undefined {
+    return teacherPreferenceOverrides.get(teacherId)?.get(prefKey);
+  }
+
+  // Toggle preference override for a specific teacher and preference key
+  function togglePreferenceOverride(teacherId: string, prefKey: string) {
+    setTeacherPreferenceOverrides((prev) => {
+      const next = new Map(prev);
+      const teacherOverrides = next.get(teacherId) || new Map();
+      const updated = new Map(teacherOverrides);
+      const current = updated.get(prefKey);
+      if (current === undefined || current === true) {
+        updated.set(prefKey, false);
+      } else {
+        updated.set(prefKey, true);
+      }
+      next.set(teacherId, updated);
+      return next;
+    });
+  }
+
+  // Convert a preference item to a string for display and keys
+  function getPreferenceItemString(prefKey: string, item: string | TimePreference): string {
+    if (prefKey === "preferred_times" && typeof item === "object" && item !== null) {
+      const tp = item as TimePreference;
+      return `${tp.day} ${tp.start_time}-${tp.end_time}`;
+    }
+    return String(item);
+  }
+
+  // Get 3-state checkbox status for a preference category: "unchecked" | "partial" | "checked"
+  function getPreferenceCategoryState(teacher: TeacherRecord, prefKey: "preferred_rooms" | "preferred_times" | "preferred_year" | "preferred_subjects"): "unchecked" | "partial" | "checked" {
+    const prefs = teacher.preferences;
+    const items = prefs?.[prefKey];
+    if (!items || items.length === 0) return "unchecked";
+
+    const teacherOverrides = teacherPreferenceOverrides.get(teacher.teacher_id);
+    let checkedCount = 0;
+    let uncheckedCount = 0;
+
+    items.forEach((item) => {
+      const itemStr = getPreferenceItemString(prefKey, item as string | TimePreference);
+      const override = teacherOverrides?.get(prefKey + ":" + itemStr);
+      if (override === undefined || override === true) {
+        checkedCount++;
+      } else {
+        uncheckedCount++;
+      }
+    });
+
+    if (uncheckedCount === 0) return "checked";
+    if (checkedCount === 0) return "unchecked";
+    return "partial";
+  }
+
+  // Toggle all items in a preference category
+  function togglePreferenceCategory(teacher: TeacherRecord, prefKey: "preferred_rooms" | "preferred_times" | "preferred_year" | "preferred_subjects") {
+    const prefs = teacher.preferences;
+    const items = prefs?.[prefKey];
+    if (!items || items.length === 0) return;
+
+    const currentState = getPreferenceCategoryState(teacher, prefKey);
+    const newValue = currentState !== "checked";
+
+    setTeacherPreferenceOverrides((prev) => {
+      const next = new Map(prev);
+      const teacherOverrides = next.get(teacher.teacher_id) || new Map();
+      const updated = new Map(teacherOverrides);
+
+      items.forEach((item) => {
+        const itemStr = getPreferenceItemString(prefKey, item as string | TimePreference);
+        updated.set(prefKey + ":" + itemStr, newValue);
+      });
+
+      next.set(teacher.teacher_id, updated);
+      return next;
+    });
+  }
+
+  // Load teachers when teacher modal opens
+  async function loadTeachers() {
+    setIsTeacherListLoading(true);
+    const res = await fetchTeachersWithAqFcceAndPreferences(null);
+    if (res.success && res.data) {
+      // Backend already parses and normalizes preferences; map to TeacherRecord type
+      // Each row's preferences are already correctly associated with that teacher
+      const teachers: TeacherRecord[] = res.data.map((row) => {
+        const prefs = row.preferences || {};
+        return {
+          ...row,
+          preferences: {
+            preferred_rooms: Array.isArray(prefs.preferred_rooms) ? prefs.preferred_rooms : [],
+            preferred_times: Array.isArray(prefs.preferred_times) ? prefs.preferred_times : [],
+            preferred_year: Array.isArray(prefs.preferred_year) ? prefs.preferred_year : [],
+            preferred_subjects: Array.isArray(prefs.preferred_subjects) ? prefs.preferred_subjects : [],
+          },
+        } as TeacherRecord;
+      });
+      setTeacherList(teachers);
+      // Auto-approve part-time teachers
+      const autoApproved = new Set<string>();
+      teachers.forEach((t) => {
+        if (isTeacherAutoApproved(t)) {
+          autoApproved.add(t.teacher_id);
+        }
+      });
+      setApprovedTeachers(autoApproved);
+    }
+    setIsTeacherListLoading(false);
+  }
+
+  // Open teacher detail modal
+  function openTeacherDetail(teacher: TeacherRecord) {
+    setSelectedTeacherForDetail(teacher);
+    setTeacherPreferenceTab("overview");
+    setOpenTeacherDetailModal(true);
+  }
+
+  // Handle Next Step from setup -> teachers
+  function handleNextToTeachers() {
+    if (isAutoFormInvalid) return;
+    setAutoStep("teachers");
+    loadTeachers();
+  }
+
+  // Handle Confirm Teachers -> proceed to generation
+  function handleConfirmTeachers() {
+    setAutoStep("setup");
+    // Proceed with generation using approved teachers
+    handleAutoGenerationSubmitWithTeachers();
+  }
+
+  // Modified generation that includes teacher info
+  async function handleAutoGenerationSubmitWithTeachers() {
+    const scheduleNameTrimmed = addScheduleName.trim();
+    const curriculumIds = curriculumAdd.map((item) => item.curriculum_id);
+
+    setOpenAddModal(false);
+    setOpenLoadingModal(true);
+    setIsSubmittingAutoGeneration(true);
+    setGenerationProgress(10);
+    setGenerationStatusText("Fetching and checking subject requirements...");
+
+    const subjectRes = await fetchSubjectsForGeneration(
+      curriculumIds,
+      selectedTertiaryTerm,
+      selectedShsTerm,
+    );
+    if (!subjectRes.success || !subjectRes.data) {
+      setIsSubmittingAutoGeneration(false);
+      setOpenLoadingModal(false);
+      setToastMessage(subjectRes.error || "Failed to fetch subject requirements.");
+      setToastType("error");
+      setShowToast(true);
+      return;
+    }
+
+    await executeAutoGenerationPipeline(scheduleNameTrimmed, curriculumIds, selectedTertiaryTerm);
+  }
+
   return (
     <>
       {/* Toast Notification */}
@@ -1020,11 +1265,13 @@ export default function ScheduleManagement() {
         <ModalHeader>
           {addStep === "selection"
             ? "Add New Schedule - Choose Mode"
-            : creationMode === "auto"
-              ? "Auto Assign / Generation Setup"
-              : creationMode === "semi-auto"
-                ? "Semi-Auto Setup"
-                : "Use Template Setup"}
+            : creationMode === "auto" && autoStep === "teachers"
+              ? "Teacher Preferences"
+              : creationMode === "auto"
+                ? "Auto Assign / Generation Setup"
+                : creationMode === "semi-auto"
+                  ? "Semi-Auto Setup"
+                  : "Use Template Setup"}
         </ModalHeader>
         <ModalBody className={"scrollbar-thumb-gray-400 scrollbar-track-transparent dark:scrollbar-thumb-gray-600"}>
           {addStep === "selection" ? (
@@ -1091,6 +1338,108 @@ export default function ScheduleManagement() {
                     </span>
                   </Label>
                 </div>
+              </div>
+            </div>
+          ) : creationMode === "auto" && autoStep === "teachers" ? (
+            <div className="space-y-4">
+              <p className="text-sm">
+                Review and approve teachers for schedule generation. Click on a teacher to view and manage their preferences.
+                Part-time teachers are approved by default.
+              </p>
+
+              {/* Tabs for filtering teachers */}
+              <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
+                {(["All", "Full-Time", "Part-Time Full Load", "Part-Time"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setTeacherTab(tab)}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      teacherTab === tab
+                        ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                        : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              {/* Teacher list */}
+              {isTeacherListLoading ? (
+                <div className="flex items-center justify-center gap-2 py-8 text-sm">
+                  <Spinner size="sm" />
+                  <span>Loading teachers...</span>
+                </div>
+              ) : (
+                <div className="max-h-96 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                  {filteredTeachers.length === 0 ? (
+                    <div className="p-6 text-center text-sm">
+                      No teachers found in this category.
+                    </div>
+                  ) : (
+                    filteredTeachers.map((teacher) => {
+                      const approved = isTeacherApproved(teacher.teacher_id);
+                      const category = getEmploymentCategory(teacher.employment_type);
+                      return (
+                        <button
+                          key={teacher.teacher_id}
+                          onClick={() => openTeacherDetail(teacher)}
+                          className={`w-full flex items-center gap-3 p-3 text-left border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
+                            approved ? "bg-emerald-50/50 dark:bg-emerald-900/10" : ""
+                          }`}
+                        >
+                          {/* Checkbox */}
+                          <div
+                            className="flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleTeacherApproval(teacher.teacher_id);
+                            }}
+                          >
+                            {approved && (
+                              <HiCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            )}
+                          </div>
+
+                          {/* Teacher info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold truncate">
+                              {teacher.full_name}
+                            </div>
+                            <div className="text-xs">
+                              {teacher.teacher_code} • {teacher.department || "General"}
+                            </div>
+                          </div>
+
+                          {/* Employment type badge */}
+                          <span
+                            className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${
+                              category === "Full-Time"
+                                ? "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300"
+                                : category === "Part-Time Full Load"
+                                ? "bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300"
+                                : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
+                            }`}
+                          >
+                            {category}
+                          </span>
+
+                          <HiChevronRight className="w-4 h-4 flex-shrink-0" />
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {/* Summary */}
+              <div className="flex items-center justify-between text-sm">
+                <span>
+                  {approvedTeachers.size} of {teacherList.length} teachers approved
+                </span>
+                <span className="text-xs">
+                  Click a teacher to manage preferences
+                </span>
               </div>
             </div>
           ) : creationMode === "auto" || creationMode === "semi-auto" ? (
@@ -1450,7 +1799,48 @@ export default function ScheduleManagement() {
                 Cancel
               </Button>
             </>
-          ) : creationMode === "auto" || creationMode === "semi-auto" ? (
+          ) : creationMode === "auto" && autoStep === "setup" ? (
+            <>
+              <Button
+                color="alternative"
+                onClick={() => setAddStep("selection")}
+                disabled={isSubmittingAutoGeneration}
+              >
+                Back
+              </Button>
+              <Button
+                disabled={isAutoFormInvalid || isSubmittingAutoGeneration}
+                onClick={handleNextToTeachers}
+              >
+                Next Step
+              </Button>
+              <Button
+                color="alternative"
+                onClick={handleCloseModals}
+                disabled={isSubmittingAutoGeneration}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : creationMode === "auto" && autoStep === "teachers" ? (
+            <>
+              <Button
+                color="alternative"
+                onClick={() => setAutoStep("setup")}
+              >
+                Back
+              </Button>
+              <Button onClick={handleConfirmTeachers}>
+                Generate Schedule
+              </Button>
+              <Button
+                color="alternative"
+                onClick={handleCloseModals}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : creationMode === "semi-auto" ? (
             <>
               <Button
                 color="alternative"
@@ -1533,18 +1923,239 @@ export default function ScheduleManagement() {
           </Button>
           <Button
             onClick={() => {
+              setOpenAqWarningModal(false);
               if (pendingAutoPayload) {
-                void executeAutoGenerationPipeline(
-                  pendingAutoPayload.scheduleName,
-                  pendingAutoPayload.curriculumIds,
-                  pendingAutoPayload.tertiaryTerm,
-                );
+                if (creationMode === "auto") {
+                  // Auto mode: proceed to teacher selection
+                  setAutoStep("teachers");
+                  loadTeachers();
+                } else {
+                  // Semi-Auto mode: proceed directly to generation
+                  void executeAutoGenerationPipeline(
+                    pendingAutoPayload.scheduleName,
+                    pendingAutoPayload.curriculumIds,
+                    pendingAutoPayload.tertiaryTerm,
+                  );
+                }
               }
             }}
           >
             Proceed
           </Button>
         </ModalFooter>
+      </Modal>
+
+
+      {/* --- TEACHER DETAIL MODAL --- */}
+      <Modal show={openTeacherDetailModal} onClose={() => setOpenTeacherDetailModal(false)} size="xl">
+        {selectedTeacherForDetail && (
+          <>
+            <ModalHeader className="border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="text-lg font-bold">{selectedTeacherForDetail.full_name}</div>
+                  <div className="text-xs">
+                    {selectedTeacherForDetail.teacher_code} • {selectedTeacherForDetail.department || "General"} •{" "}
+                    {getEmploymentCategory(selectedTeacherForDetail.employment_type)}
+                  </div>
+                </div>
+                {/* Approval toggle */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">Approve</span>
+                  <div
+                    className={`w-10 h-6 rounded-full cursor-pointer transition-colors ${
+                      isTeacherApproved(selectedTeacherForDetail.teacher_id)
+                        ? "bg-emerald-500"
+                        : "bg-gray-300 dark:bg-gray-600"
+                    }`}
+                    onClick={() => toggleTeacherApproval(selectedTeacherForDetail.teacher_id)}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full bg-white mt-1 ml-1 transition-transform ${
+                        isTeacherApproved(selectedTeacherForDetail.teacher_id)
+                          ? "translate-x-4"
+                          : ""
+                      }`}
+                    />
+                  </div>
+                </div>
+              </div>
+            </ModalHeader>
+            <ModalBody>
+              <div className="space-y-4">
+                {/* Preference tabs */}
+                <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+                  {[
+                    { key: "overview" as const, label: "Overview" },
+                    { key: "preferred_rooms" as const, label: "Rooms" },
+                    { key: "preferred_times" as const, label: "Times" },
+                    { key: "preferred_year" as const, label: "Years" },
+                    { key: "preferred_subjects" as const, label: "Subjects" },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setTeacherPreferenceTab(tab.key)}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                        teacherPreferenceTab === tab.key
+                          ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                          : "border-transparent text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Overview tab */}
+                {teacherPreferenceTab === "overview" && (
+                  <div className="space-y-4">
+                    {/* Summary of preferences with category-level checkboxes */}
+                    {[
+                      { key: "preferred_rooms" as const, label: "Preferred Rooms", color: "blue" },
+                      { key: "preferred_times" as const, label: "Preferred Times", color: "green" },
+                      { key: "preferred_year" as const, label: "Preferred Years", color: "purple" },
+                      { key: "preferred_subjects" as const, label: "Preferred Subjects", color: "amber" },
+                    ].map((pref) => {
+                      const state = getPreferenceCategoryState(selectedTeacherForDetail, pref.key);
+                      const items = selectedTeacherForDetail.preferences?.[pref.key] || [];
+                      return (
+                        <div
+                          key={pref.key}
+                          className="rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              {/* 3-state category checkbox */}
+                              <div
+                                className="w-5 h-5 rounded border-2 flex items-center justify-center cursor-pointer"
+                                onClick={() => togglePreferenceCategory(selectedTeacherForDetail, pref.key)}
+                              >
+                                {state === "checked" && (
+                                  <HiCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                )}
+                                {state === "partial" && (
+                                  <div className="w-3 h-0.5 bg-amber-500 rounded" />
+                                )}
+                              </div>
+                              <span className="text-sm font-semibold">{pref.label}</span>
+                              <span className="text-xs">({items.length})</span>
+                            </div>
+                            <span className="text-xs">
+                              {state === "checked" ? "All approved" : state === "partial" ? "Partial" : "None approved"}
+                            </span>
+                          </div>
+                          {items.length > 0 ? (
+                            <div className="flex flex-wrap gap-2 ml-7">
+                              {items.map((item, idx) => {
+                                const itemStr = getPreferenceItemString(pref.key, item as string | TimePreference);
+                                return (
+                                  <span
+                                    key={idx}
+                                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                      pref.color === "blue"
+                                        ? "bg-blue-100 dark:bg-blue-900/50"
+                                        : pref.color === "green"
+                                        ? "bg-green-100 dark:bg-green-900/50"
+                                        : pref.color === "purple"
+                                        ? "bg-purple-100 dark:bg-purple-900/50"
+                                        : "bg-amber-100 dark:bg-amber-900/50"
+                                    }`}
+                                  >
+                                    {itemStr}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-xs ml-7 italic">No {pref.label.toLowerCase()} set</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Individual preference tabs */}
+                {teacherPreferenceTab !== "overview" && (
+                  <div className="space-y-3">
+                    {(() => {
+                      const prefKey = teacherPreferenceTab as "preferred_rooms" | "preferred_times" | "preferred_year" | "preferred_subjects";
+                      const items = selectedTeacherForDetail.preferences?.[prefKey] || [];
+                      const state = getPreferenceCategoryState(selectedTeacherForDetail, prefKey);
+
+                      return (
+                        <>
+                          {/* Category-level checkbox */}
+                          <div className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <div
+                              className="w-5 h-5 rounded border-2 flex items-center justify-center cursor-pointer"
+                              onClick={() => togglePreferenceCategory(selectedTeacherForDetail, prefKey)}
+                            >
+                              {state === "checked" && (
+                                <HiCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                              )}
+                              {state === "partial" && (
+                                <div className="w-3 h-0.5 bg-amber-500 rounded" />
+                              )}
+                            </div>
+                            <span className="text-sm font-semibold">
+                              All {prefKey.replace("preferred_", "").replace("_s", "").replace("_", " ")}
+                            </span>
+                            <span className="text-xs ml-auto">
+                              {state === "checked" ? "All approved" : state === "partial" ? "Partially approved" : "None approved"}
+                            </span>
+                          </div>
+
+                          {/* Individual items */}
+                          {items.length > 0 ? (
+                            items.map((item, idx) => {
+                              const itemStr = getPreferenceItemString(prefKey, item as string | TimePreference);
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700"
+                                >
+                                  <div
+                                    className="w-5 h-5 rounded border-2 flex items-center justify-center cursor-pointer"
+                                    onClick={() =>
+                                      togglePreferenceOverride(
+                                        selectedTeacherForDetail.teacher_id,
+                                        prefKey + ":" + itemStr
+                                      )
+                                    }
+                                  >
+                                    {(() => {
+                                      const override = getPreferenceOverride(
+                                        selectedTeacherForDetail.teacher_id,
+                                        prefKey + ":" + itemStr
+                                      );
+                                      const isChecked = override === undefined || override === true;
+                                      return isChecked && (
+                                        <HiCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                      );
+                                    })()}
+                                  </div>
+                                  <span className="text-sm">{itemStr}</span>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="text-center py-8 text-sm italic">
+                              No preferences set for this category.
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button onClick={() => setOpenTeacherDetailModal(false)}>Close</Button>
+            </ModalFooter>
+          </>
+        )}
       </Modal>
 
       {/* --- SEPARATE UNCLOSEABLE LOADING MODAL --- */}

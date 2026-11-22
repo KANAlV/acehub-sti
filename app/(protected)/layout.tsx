@@ -237,18 +237,18 @@ export default function ProtectedLayout({
         .substring(0, 2)
     : "U";
 
-  // Set httpOnly cookie when MSAL account is available (after fresh login)
+  // Set httpOnly cookie when the current account is available (fresh login or page reload)
   useEffect(() => {
-    if (msalAccount) {
+    if (account?.username) {
       fetch("/api/set-user-cookie", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: msalAccount.username }),
+        body: JSON.stringify({ email: account.username }),
       }).catch((err) =>
         console.warn("Failed to set user_email cookie:", err)
       );
     }
-  }, [msalAccount]);
+  }, [account?.username]);
 
   function redirectPage(page: string) {
     if (!pathname.toLowerCase().endsWith(page.toLowerCase())) {

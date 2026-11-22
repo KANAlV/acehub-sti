@@ -45,6 +45,7 @@ import {
   SubjectRecord,
 } from "@/app/actions/system";
 import { fetchPscsIdByEmail } from "@/app/actions/user";
+import { useSession } from "@/app/providers";
 
 interface TeacherInfo {
   name: string | null;
@@ -101,6 +102,7 @@ function formatTime(timeStr: string | null | undefined): string {
 
 export default function TeacherSchedule() {
   const router = useRouter();
+  const { sessionEmail } = useSession();
 
   const [scheduleName, setScheduleName] = useState<string | null>(null);
   const [pscsId, setPscsID] = useState<string | null>(null);
@@ -414,7 +416,7 @@ export default function TeacherSchedule() {
       if (pscsId) {
         const fetchRes = await fetchTeachers(pscsId, "All Active & On Leave", "All Departments", "surname", "ASC", -1, 1);
         if (fetchRes.success && fetchRes.data && fetchRes.data.length > 0) {
-          const teacher = fetchRes.data[0];
+          const teacher = fetchRes.data.find(t => t.pscs_id === pscsId) || fetchRes.data[0];
           const prefsRaw = teacher.preferences;
           let prefs: Record<string, unknown> = {};
           if (prefsRaw) {
@@ -450,13 +452,16 @@ export default function TeacherSchedule() {
 
   // --- Initial Setup Effect (Fetch Schedule Name & User PSCS ID) ---
   useEffect(() => {
+    // Wait for session email to be available before fetching
+    if (!sessionEmail) return;
+
     async function initializeContext() {
       setIsInitializing(true);
 
       try {
         const [schedRes, userRes] = await Promise.all([
           fetchActiveScheduleName(),
-          fetchPscsIdByEmail(),
+          fetchPscsIdByEmail(sessionEmail ?? undefined),
         ]);
 
         if (schedRes.success && schedRes.data) {
@@ -485,7 +490,7 @@ export default function TeacherSchedule() {
     }
 
     void initializeContext();
-  }, []);
+  }, [sessionEmail]);
 
   // --- Fetch basic teacher info as soon as PSCS ID is available (no schedule required) ---
   useEffect(() => {
@@ -494,7 +499,7 @@ export default function TeacherSchedule() {
 
       const res = await fetchTeachers(pscsId, "All Active & On Leave", "All Departments", "surname", "ASC", -1, 1);
       if (res.success && res.data && res.data.length > 0) {
-        const teacher = res.data[0];
+        const teacher = res.data.find(t => t.pscs_id === pscsId) || res.data[0];
         setTeacherInfo({
           name: teacher.full_name,
           pscs_id: teacher.pscs_id,
@@ -822,10 +827,24 @@ export default function TeacherSchedule() {
                   </span>
                 </div>
                 <div className="mt-2 h-2.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
-                  <div
-                    className="h-2.5 rounded-full bg-blue-600 transition-all duration-300"
-                    style={{ width: `${unitsAnalysis.utilization_rate ?? 0}%` }}
-                  ></div>
+                  {(() => {
+                    const rate = unitsAnalysis.utilization_rate ?? 0;
+                    const currentUnits = unitsAnalysis.current_units ?? 0;
+                    const absoluteMax = unitsAnalysis.absolute_max ?? 0;
+                    const isAtAbsoluteMax = absoluteMax > 0 && currentUnits >= absoluteMax;
+                    const isOverMax = rate > 100;
+                    const barColor = isAtAbsoluteMax
+                      ? "bg-red-600"
+                      : isOverMax
+                      ? "bg-yellow-500"
+                      : "bg-blue-600";
+                    return (
+                      <div
+                        className={`h-2.5 rounded-full ${barColor} transition-all duration-300`}
+                        style={{ width: `${Math.min(rate, 100)}%` }}
+                      ></div>
+                    );
+                  })()}
                 </div>
                 <div className="mt-1 flex justify-between text-[10px] text-gray-400">
                   <span>0%</span>

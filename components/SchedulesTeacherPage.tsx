@@ -137,7 +137,7 @@ export default function SchedulesTeacherPage({
     async function fetchTeacherPreferences() {
       const res = await fetchTeachers(pscs_id, "All Active & On Leave", "All Departments", "surname", "ASC", -1, 1);
       if (res.success && res.data && res.data.length > 0) {
-        const teacher = res.data[0];
+        const teacher = res.data.find(t => t.pscs_id === pscs_id) || res.data[0];
         const prefsRaw = teacher.preferences;
         let prefs: Record<string, unknown> = {};
         if (prefsRaw) {
