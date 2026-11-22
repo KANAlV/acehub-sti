@@ -671,17 +671,177 @@ export default function TeacherAQs() {
       const templateAqs = aqRes?.success && Array.isArray(aqRes.data) ? aqRes.data : [];
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("AQ Template") as WorksheetWithValidation;
+
+      // --- Sheet 1: Instructions ---
+      const instructionsSheet = workbook.addWorksheet("Instructions");
+      instructionsSheet.columns = [
+        { header: "", key: "step", width: 8 },
+        { header: "Instruction", key: "instruction", width: 80 },
+      ];
+
+      const instructions = [
+        "Welcome to the Teacher AQ Batch Upload Template.",
+        "This workbook contains 4 sheets: Instructions, TeacherAQ, AQ Cluster, and Individual AQ.",
+        "",
+        "STEP 1: Open the 'TeacherAQ' sheet. You will see all teachers pre-filled with their information.",
+        "Columns A-E (Teacher Code, Name, Department, Employment, Total AQ) are READ-ONLY and cannot be edited.",
+        "",
+        "STEP 2: To add Academic Qualifications (AQs) to a teacher, use columns F and G:",
+        "  - Column F (Add Cluster): Enter cluster names separated by commas (e.g., 'Bachelor of Science in Nursing, Master of Arts in Education').",
+        "  - Column G (Add Individual AQ): Enter individual AQ names separated by commas (e.g., 'TESDA NC II in Cooking, TESDA NC II in Bread and Pastry Production').",
+        "",
+        "STEP 3: To find valid AQ names, refer to the 'AQ Cluster' and 'Individual AQ' sheets.",
+        "  - 'AQ Cluster' sheet lists all available clusters and their entry AQs.",
+        "  - 'Individual AQ' sheet lists all available individual Academic Qualifications.",
+        "  - Copy the exact name from these reference sheets and paste it into the TeacherAQ sheet.",
+        "",
+        "STEP 4: You can add multiple AQs in a single cell by separating them with commas.",
+        "  Example for Column F: 'Cluster Name 1, Cluster Name 2'",
+        "  Example for Column G: 'Individual AQ 1, Individual AQ 2'",
+        "",
+        "STEP 5: When a cluster is added, it automatically expands to include all its entry AQs.",
+        "",
+        "STEP 6: Save the file and return to the system. Go to Excel Operations > Import Excel and upload your edited file.",
+        "",
+        "IMPORTANT NOTES:",
+        "- Only the TeacherAQ sheet is read during import. Do not rename or delete it.",
+        "- Do not edit columns A-E in the TeacherAQ sheet. Only edit columns F and G.",
+        "- AQ names must match exactly as listed in the reference sheets. Typos will cause validation errors.",
+        "- Status defaults to 'Approved' for all imported AQs.",
+        "- Leave a cell blank if you do not want to add any AQ of that type for that teacher.",
+      ];
+
+      instructions.forEach((text, index) => {
+        const row = instructionsSheet.addRow({
+          step: index + 1,
+          instruction: text,
+        });
+        if (text === "") {
+          row.getCell(2).value = "";
+        } else if (
+          text.startsWith("STEP") ||
+          text.startsWith("IMPORTANT") ||
+          text.startsWith("Welcome")
+        ) {
+          row.getCell(2).font = { bold: true, size: 12 };
+        } else if (text.startsWith("  -") || text.startsWith("  Example")) {
+          row.getCell(2).font = { italic: true };
+        }
+      });
+
+      // --- Sheet 2: AQ Cluster (Reference) ---
+      const clusterSheet = workbook.addWorksheet("AQ Cluster") as WorksheetWithValidation;
+      clusterSheet.columns = [
+        { header: "Cluster Name", key: "cluster_name", width: 40 },
+        { header: "Entry AQs", key: "entry_aqs", width: 80 },
+      ];
+
+      // Style cluster header
+      const clusterHeaderRow = clusterSheet.getRow(1);
+      clusterHeaderRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      clusterHeaderRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF4A90D9" },
+      };
+
+      allClustersData.forEach((cluster: MaqClusterWithEntriesRecord) => {
+        const entryNames = (cluster.entries || [])
+          .map((entry: MaqClusterEntryItem) => (typeof entry === "string" ? entry : entry.aq))
+          .filter(Boolean);
+        const row = clusterSheet.addRow({
+          cluster_name: cluster.cluster_name || "",
+          entry_aqs: entryNames.join(", "),
+        });
+        row.getCell(1).font = { bold: true };
+        // Style all cells as read-only with gray background
+        for (let col = 1; col <= 2; col++) {
+          const cell = row.getCell(col);
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF3F4F6" },
+          };
+          cell.font = { color: { argb: "FF6B7280" } };
+        }
+      });
+
+      // Lock AQ Cluster sheet — all data cells read-only
+      const clusterTotalRows = allClustersData.length;
+      if (clusterTotalRows > 0) {
+        for (let col = 1; col <= 2; col++) {
+          const colLetter = String.fromCharCode(64 + col); // A, B
+          clusterSheet.dataValidations.add(`${colLetter}2:${colLetter}${clusterTotalRows + 1}`, {
+            type: "custom",
+            allowBlank: true,
+            formulae: ["FALSE"],
+            showErrorMessage: true,
+            errorTitle: "Read-Only Reference Sheet",
+            error: "This is a reference sheet. You can copy values but cannot edit or delete them.",
+          });
+        }
+      }
+
+      // --- Sheet 3: Individual AQ (Reference) ---
+      const individualAqSheet = workbook.addWorksheet("Individual AQ") as WorksheetWithValidation;
+      individualAqSheet.columns = [
+        { header: "Academic Qualification", key: "aq_name", width: 70 },
+      ];
+
+      // Style individual AQ header
+      const individualAqHeaderRow = individualAqSheet.getRow(1);
+      individualAqHeaderRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      individualAqHeaderRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF4A90D9" },
+      };
+
+      allMaqNames.forEach((maqName) => {
+        const row = individualAqSheet.addRow({ aq_name: maqName });
+        // Style all cells as read-only with gray background
+        for (let col = 1; col <= 1; col++) {
+          const cell = row.getCell(col);
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF3F4F6" },
+          };
+          cell.font = { color: { argb: "FF6B7280" } };
+        }
+      });
+
+      // Lock Individual AQ sheet — all data cells read-only
+      const individualAqTotalRows = allMaqNames.length;
+      if (individualAqTotalRows > 0) {
+        for (let col = 1; col <= 1; col++) {
+          const colLetter = String.fromCharCode(64 + col); // A, B
+          individualAqSheet.dataValidations.add(
+            `${colLetter}2:${colLetter}${individualAqTotalRows + 1}`,
+            {
+              type: "custom",
+              allowBlank: true,
+              formulae: ["FALSE"],
+              showErrorMessage: true,
+              errorTitle: "Read-Only Reference Sheet",
+              error: "This is a reference sheet. You can copy values but cannot edit or delete them.",
+            },
+          );
+        }
+      }
+
+      // --- Sheet 4: TeacherAQ (Main editable sheet) ---
+      const teacherAqSheet = workbook.addWorksheet("TeacherAQ") as WorksheetWithValidation;
 
       // Define columns: read-only teacher info + Total AQ + editable Add Cluster + Add Individual AQ
-      worksheet.columns = [
+      teacherAqSheet.columns = [
         { header: "Teacher Code", key: "teacher_code", width: 20 },
         { header: "Teacher Name", key: "teacher_name", width: 35 },
         { header: "Department", key: "department", width: 28 },
         { header: "Employment", key: "employment", width: 22 },
         { header: "Total AQ", key: "total_aq", width: 14 },
-        { header: "Add Cluster", key: "add_cluster", width: 35 },
-        { header: "Add Individual AQ", key: "add_individual_aq", width: 35 },
+        { header: "Add Cluster", key: "add_cluster", width: 45 },
+        { header: "Add Individual AQ", key: "add_individual_aq", width: 45 },
       ];
 
       // Build a map of pscs_id to AQ records
@@ -692,19 +852,12 @@ export default function TeacherAQs() {
       });
 
       // Header styling
-      const headerRow = worksheet.getRow(1);
-      headerRow.font = { bold: true };
-      headerRow.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FF4A90D9" },
-      };
+      const headerRow = teacherAqSheet.getRow(1);
       headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
 
-      // Read-only columns (A-E) styling
-      const readOnlyHeaderRow = worksheet.getRow(1);
+      // Read-only columns (A-E) header styling
       for (let col = 1; col <= 5; col++) {
-        const cell = readOnlyHeaderRow.getCell(col);
+        const cell = headerRow.getCell(col);
         cell.fill = {
           type: "pattern",
           pattern: "solid",
@@ -712,9 +865,9 @@ export default function TeacherAQs() {
         };
         cell.font = { bold: true, color: { argb: "FF374151" } };
       }
-      // Editable columns (F-G) styling
+      // Editable columns (F-G) header styling
       for (let col = 6; col <= 7; col++) {
-        const editableHeader = readOnlyHeaderRow.getCell(col);
+        const editableHeader = headerRow.getCell(col);
         editableHeader.fill = {
           type: "pattern",
           pattern: "solid",
@@ -729,7 +882,7 @@ export default function TeacherAQs() {
         const counts = getAQStatusCountsFromRecords(teacherAqs);
         const totalAq = counts.approved + counts.pending + counts.failed + counts.denied;
 
-        const row = worksheet.addRow({
+        const row = teacherAqSheet.addRow({
           teacher_code: teacher.teacher_code || "",
           teacher_name: teacher.full_name || "",
           department: teacher.department || "",
@@ -764,37 +917,13 @@ export default function TeacherAQs() {
       const totalRows = templateTeachers.length;
       for (let col = 1; col <= 5; col++) {
         const colLetter = String.fromCharCode(64 + col); // A, B, C, D, E
-        worksheet.dataValidations.add(`${colLetter}2:${colLetter}${totalRows + 1}`, {
+        teacherAqSheet.dataValidations.add(`${colLetter}2:${colLetter}${totalRows + 1}`, {
           type: "custom",
           allowBlank: true,
           formulae: ["FALSE"],
           showErrorMessage: true,
           errorTitle: "Read-Only Column",
           error: "This column is read-only and cannot be edited.",
-        });
-      }
-
-      // Add Cluster dropdown - cluster names only
-      if (allClusterNames.length > 0) {
-        worksheet.dataValidations.add(`F2:F${totalRows + 1}`, {
-          type: "list",
-          allowBlank: true,
-          formulae: [`"${allClusterNames.join(",")}"`],
-          showErrorMessage: true,
-          errorTitle: "Invalid Cluster",
-          error: "Please select a valid cluster from the dropdown.",
-        });
-      }
-
-      // Add Individual AQ dropdown - individual MAQ names only
-      if (allMaqNames.length > 0) {
-        worksheet.dataValidations.add(`G2:G${totalRows + 1}`, {
-          type: "list",
-          allowBlank: true,
-          formulae: [`"${allMaqNames.join(",")}"`],
-          showErrorMessage: true,
-          errorTitle: "Invalid Academic Qualification",
-          error: "Please select a valid individual academic qualification from the dropdown.",
         });
       }
 
@@ -945,7 +1074,11 @@ export default function TeacherAQs() {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer);
 
-      const worksheet = workbook.worksheets[0];
+      // Try to find the TeacherAQ sheet first (for multi-sheet templates), fallback to first sheet
+      let worksheet = workbook.getWorksheet("TeacherAQ");
+      if (!worksheet) {
+        worksheet = workbook.worksheets[0];
+      }
       if (!worksheet || worksheet.rowCount === 0) {
         setFormatError("The uploaded Excel file contains no worksheets or data.");
         setIsImporting(false);
@@ -1018,16 +1151,18 @@ export default function TeacherAQs() {
       });
 
       const codeCol = headerIndexMap["teacher code"] || 1;
+      const nameCol = headerIndexMap["teacher name"] || 2;
       const addClusterCol = headerIndexMap["add cluster"];
       const addIndividualAqCol = headerIndexMap["add individual aq"];
       const aqCol = headerIndexMap["academic qualification"] || 2;
       const statusCol = headerIndexMap["status"] || 3;
 
-      // Build teacher code to pscs_id map
-      const teacherCodeMap = new Map<string, string>();
+      // Build teacher lookup map using composite key (teacher_code + full_name) to handle duplicate teacher codes
+      const teacherLookupMap = new Map<string, string>();
       teachersList.forEach((t) => {
-        if (t.teacher_code && t.pscs_id) {
-          teacherCodeMap.set(t.teacher_code, t.pscs_id);
+        if (t.teacher_code && t.pscs_id && t.full_name) {
+          const key = `${t.teacher_code.toUpperCase()}|||${t.full_name.toUpperCase()}`;
+          teacherLookupMap.set(key, t.pscs_id);
         }
       });
 
@@ -1043,8 +1178,9 @@ export default function TeacherAQs() {
       );
       if (allTeachersRes?.success && allTeachersRes.data) {
         allTeachersRes.data.forEach((t: TeacherRecord) => {
-          if (t.teacher_code && t.pscs_id) {
-            teacherCodeMap.set(t.teacher_code, t.pscs_id);
+          if (t.teacher_code && t.pscs_id && t.full_name) {
+            const key = `${t.teacher_code.toUpperCase()}|||${t.full_name.toUpperCase()}`;
+            teacherLookupMap.set(key, t.pscs_id);
           }
         });
       }
@@ -1066,6 +1202,29 @@ export default function TeacherAQs() {
         }
       });
 
+      // Fetch all existing AQ records to detect duplicates during import
+      const existingAqRes = await fetchTeacherAQRecords(
+        undefined,
+        undefined,
+        undefined,
+        "created_at",
+        "DESC",
+        10000,
+        1,
+      );
+      const existingAqs = existingAqRes?.success && Array.isArray(existingAqRes.data)
+        ? existingAqRes.data
+        : [];
+
+      // Build a set of existing AQ keys (pscs_id + aq_name) for case-insensitive duplicate detection
+      const existingAqSet = new Set<string>();
+      existingAqs.forEach((aq: AQRecord) => {
+        if (aq.pscs_id && aq.aq) {
+          const key = `${aq.pscs_id}|||${aq.aq.toUpperCase()}`;
+          existingAqSet.add(key);
+        }
+      });
+
       // Collect rows to process first
       const rowsToProcess: Array<{
         rowNumber: number;
@@ -1074,16 +1233,18 @@ export default function TeacherAQs() {
         aqName: string;
         status: string;
       }> = [];
+      let duplicateSkipped = 0;
 
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
 
         const teacherCode = String(row.getCell(codeCol).value || "").trim().toUpperCase();
+        const teacherName = String(row.getCell(nameCol).value || "").trim().toUpperCase();
 
         if ((hasAddCluster && hasAddIndividualAq) && addClusterCol && addIndividualAqCol) {
-          // New template format: read from "Add Cluster" and "Add Individual AQ" columns
-          const clusterName = String(row.getCell(addClusterCol).value || "").trim();
-          const individualAqName = String(row.getCell(addIndividualAqCol).value || "").trim();
+          // New template format: read comma-separated values from "Add Cluster" and "Add Individual AQ" columns
+          const clusterText = String(row.getCell(addClusterCol).value || "").trim();
+          const individualAqText = String(row.getCell(addIndividualAqCol).value || "").trim();
           const status = "Approved"; // Default status for template imports
 
           if (!teacherCode) {
@@ -1092,24 +1253,42 @@ export default function TeacherAQs() {
             return;
           }
 
-          // Validate teacher code
-          const pscsId = teacherCodeMap.get(teacherCode);
+          // Validate teacher using composite key (code + name) to handle duplicate teacher codes
+          const lookupKey = `${teacherCode}|||${teacherName}`;
+          const pscsId = teacherLookupMap.get(lookupKey);
           if (!pscsId) {
             logs.push(
-              `Row ${rowNumber} (${teacherCode}): Skipped. Teacher code not found in system.`,
+              `Row ${rowNumber} (${teacherCode}): Skipped. Teacher not found in system (code: ${teacherCode}, name: ${teacherName}).`,
             );
             failCount++;
             return;
           }
 
-          // Process cluster if provided
-          if (clusterName) {
+          // Parse comma-separated cluster names
+          const clusterNames = clusterText
+            ? clusterText.split(",").map((c) => c.trim()).filter(Boolean)
+            : [];
+
+          // Parse comma-separated individual AQ names
+          const individualAqNames = individualAqText
+            ? individualAqText.split(",").map((a) => a.trim()).filter(Boolean)
+            : [];
+
+          // Skip rows where both columns are empty (no new AQ to add)
+          if (clusterNames.length === 0 && individualAqNames.length === 0) {
+            return;
+          }
+
+          // Process each cluster
+          let rowHasError = false;
+          for (const clusterName of clusterNames) {
             if (!validClusterSet.has(clusterName)) {
               logs.push(
                 `Row ${rowNumber} (${teacherCode}): Skipped. "${clusterName}" is not a valid cluster.`,
               );
               failCount++;
-              return;
+              rowHasError = true;
+              continue;
             }
             // Expand cluster into its entry AQs
             const entryAqs = clusterEntriesMap.get(clusterName) || [];
@@ -1118,27 +1297,47 @@ export default function TeacherAQs() {
                 `Row ${rowNumber} (${teacherCode}): Skipped. Cluster "${clusterName}" has no entries.`,
               );
               failCount++;
-              return;
+              rowHasError = true;
+              continue;
             }
-            entryAqs.forEach((entryAq) => {
+            for (const entryAq of entryAqs) {
+              const key = `${pscsId}|||${entryAq.toUpperCase()}`;
+              if (existingAqSet.has(key)) {
+                logs.push(
+                  `Row ${rowNumber} (${teacherCode}, ${entryAq}): Skipped duplicate. Teacher already has this AQ.`,
+                );
+                duplicateSkipped++;
+                continue;
+              }
+              existingAqSet.add(key);
               rowsToProcess.push({ rowNumber, teacherCode, pscsId, aqName: entryAq, status });
-            });
+            }
           }
 
-          // Process individual AQ if provided
-          if (individualAqName) {
+          // Process each individual AQ
+          for (const individualAqName of individualAqNames) {
             if (!validMaqSet.has(individualAqName)) {
               logs.push(
                 `Row ${rowNumber} (${teacherCode}): Skipped. "${individualAqName}" is not a valid individual Academic Qualification.`,
               );
               failCount++;
-              return;
+              rowHasError = true;
+              continue;
             }
+            const key = `${pscsId}|||${individualAqName.toUpperCase()}`;
+            if (existingAqSet.has(key)) {
+              logs.push(
+                `Row ${rowNumber} (${teacherCode}, ${individualAqName}): Skipped duplicate. Teacher already has this AQ.`,
+              );
+              duplicateSkipped++;
+              continue;
+            }
+            existingAqSet.add(key);
             rowsToProcess.push({ rowNumber, teacherCode, pscsId, aqName: individualAqName, status });
           }
 
-          // Skip rows where both columns are empty (no new AQ to add)
-          if (!clusterName && !individualAqName) {
+          // If the row had errors, skip further processing for this row
+          if (rowHasError && clusterNames.length === 0 && individualAqNames.length === 0) {
             return;
           }
         } else {
@@ -1154,11 +1353,12 @@ export default function TeacherAQs() {
             return;
           }
 
-          // Validate teacher code
-          const pscsId = teacherCodeMap.get(teacherCode);
+          // Validate teacher using composite key (code + name) to handle duplicate teacher codes
+          const lookupKey = `${teacherCode}|||${teacherName}`;
+          const pscsId = teacherLookupMap.get(lookupKey);
           if (!pscsId) {
             logs.push(
-              `Row ${rowNumber} (${teacherCode}): Skipped. Teacher code not found in system.`,
+              `Row ${rowNumber} (${teacherCode}): Skipped. Teacher not found in system (code: ${teacherCode}, name: ${teacherName}).`,
             );
             failCount++;
             return;
@@ -1170,7 +1370,17 @@ export default function TeacherAQs() {
             status = "Approved";
           }
 
-          rowsToProcess.push({ rowNumber, teacherCode, pscsId, aqName, status });
+          // Check for duplicates before adding
+          const key = `${pscsId}|||${aqName.toUpperCase()}`;
+          if (existingAqSet.has(key)) {
+            logs.push(
+              `Row ${rowNumber} (${teacherCode}, ${aqName}): Skipped duplicate. Teacher already has this AQ.`,
+            );
+            duplicateSkipped++;
+          } else {
+            existingAqSet.add(key);
+            rowsToProcess.push({ rowNumber, teacherCode, pscsId, aqName, status });
+          }
         }
       });
 
@@ -1184,12 +1394,20 @@ export default function TeacherAQs() {
         const res = await createTeacherAQ(item.pscsId, item.aqName, aqContents, item.status);
         if (res?.success) {
           successCount++;
+          // Add newly created AQ to the existing set to prevent duplicates within the same import batch
+          const key = `${item.pscsId}|||${item.aqName.toUpperCase()}`;
+          existingAqSet.add(key);
         } else {
           logs.push(
             `Row ${item.rowNumber} (${item.teacherCode}, ${item.aqName}): ${res?.error || "Creation failed."}`,
           );
           failCount++;
         }
+      }
+
+      // Report duplicates skipped
+      if (duplicateSkipped > 0) {
+        logs.push(`${duplicateSkipped} duplicate(s) skipped — teacher(s) already have these AQ(s).`);
       }
 
       setImportLogs((prev) => [
@@ -1213,6 +1431,35 @@ export default function TeacherAQs() {
 
   return (
     <div className="space-y-6">
+      <style>{`
+        .teacher-aq-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .teacher-aq-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .teacher-aq-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(156, 163, 175, 0.3);
+          border-radius: 3px;
+        }
+        .teacher-aq-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(107, 114, 128, 0.5);
+        }
+        .dark .teacher-aq-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(107, 114, 128, 0.3);
+        }
+        .dark .teacher-aq-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(156, 163, 175, 0.5);
+        }
+        .teacher-aq-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+        }
+        .dark .teacher-aq-scrollbar {
+          scrollbar-color: rgba(107, 114, 128, 0.3) transparent;
+        }
+      `}</style>
+
       {showToast && (
         <div className="fixed right-5 bottom-5 z-50 flex flex-col items-end">
           <Toast>
@@ -1456,10 +1703,11 @@ export default function TeacherAQs() {
           </div>
         </div>
 
-        {/* Side Panel Inspector */}
+        {/* Side Panel Inspector - Desktop */}
         {selectedTeacher && (
-          <div className="fixed inset-0 top-17 bottom-0 left-14 z-10 h-[calc(100vh-64px)] bg-white p-4 transition-all sm:static sm:z-0 sm:col-span-5 sm:h-[calc(100vh-8rem)] sm:p-0 dark:bg-gray-900">
-            <Card className="sticky top-2">
+          <div className="hidden lg:col-span-5 lg:block">
+            <Card className="sticky top-4 h-[calc(100vh-8rem)] overflow-hidden bg-white dark:bg-gray-900">
+              <div className="h-full overflow-y-auto p-4 teacher-aq-scrollbar">
               <div className="flex items-start justify-between border-b pb-4 dark:border-gray-700">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1512,7 +1760,7 @@ export default function TeacherAQs() {
                   }
 
                   return (
-                    <div className="max-h-[calc(100vh-260px)] space-y-3 overflow-y-auto pr-1">
+                    <div className="space-y-3">
                       {teacherAqs.map((record) => {
                         const status = (
                           record.approved || "Pending"
@@ -1603,9 +1851,101 @@ export default function TeacherAQs() {
                   );
                 })()}
               </div>
+              </div>
             </Card>
           </div>
+
         )}
+
+      {/* Mobile Modal for Side Panel */}
+      <Modal show={!!selectedTeacher} onClose={() => setSelectedTeacher(null)} size="xl" popup className="lg:hidden">
+        <ModalHeader>
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                {selectedTeacher?.full_name}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {selectedTeacher?.email}
+              </p>
+            </div>
+            <Button
+              color="red"
+              size="xs"
+              className="cursor-pointer"
+              onClick={() => setSelectedTeacher(null)}
+            >
+              <HiX className="h-4 w-4" />
+            </Button>
+          </div>
+        </ModalHeader>
+        <ModalBody className="max-h-[70vh] overflow-y-auto teacher-aq-scrollbar">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Academic Qualifications List
+              </h4>
+              <Button
+                size="xs"
+                color="blue"
+                className="cursor-pointer"
+                onClick={() => {
+                  setIsAddAQOpen(true);
+                }}
+              >
+                <FaPlus className="mr-1 h-3 w-3" />
+                <span>Add AQ</span>
+              </Button>
+            </div>
+
+            {(() => {
+              const teacherAqs = selectedTeacher ? getTeacherAQs(selectedTeacher.pscs_id) : [];
+
+              if (teacherAqs.length === 0) {
+                return (
+                  <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700">
+                    No Academic Qualifications found for this teacher.
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {teacherAqs.map((record) => {
+                    return (
+                      <div
+                        key={record.aq_id}
+                        className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <FaGraduationCap className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                            <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {record.aq}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {renderStatusBadge(record.approved)}
+                            <Tooltip content="Remove AQ">
+                              <button
+                                type="button"
+                                onClick={() => confirmDeleteAQ(record)}
+                                className="cursor-pointer text-gray-400 transition-colors hover:text-red-600 dark:hover:text-red-400"
+                              >
+                                <HiTrash className="mt-2" />
+                              </button>
+                            </Tooltip>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </ModalBody>
+      </Modal>
       </div>
 
       {/* Add AQ Searchable Modal */}
@@ -1911,7 +2251,7 @@ export default function TeacherAQs() {
                 </div>
 
                 <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                  <span className="font-semibold uppercase tracking-wide">Validation Rule:</span> Template format: Columns A–E (Teacher Code, Name, Department, Employment, Total AQ) are read-only. Column F (&quot;Add Cluster&quot;) is editable — select a cluster to add all its entry AQs. Column G (&quot;Add Individual AQ&quot;) is editable — select an individual Academic Qualification. Status defaults to <b className="font-mono">Approved</b>.
+                  <span className="font-semibold uppercase tracking-wide">Validation Rule:</span> The template has 4 sheets: Instructions, TeacherAQ, AQ Cluster, and Individual AQ. Only the TeacherAQ sheet is imported. Columns A–E are read-only. Column F (&quot;Add Cluster&quot;) and Column G (&quot;Add Individual AQ&quot;) accept comma-separated text — copy exact names from the reference sheets. Each entry is validated against system data. Status defaults to <b className="font-mono">Approved</b>.
                 </div>
 
                 {formatError && (
@@ -1980,7 +2320,7 @@ export default function TeacherAQs() {
                     Download Pre-Filled Excel Template
                   </h4>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Pre-filled with all teachers &amp; their AQ data. Columns A–E are read-only (Teacher Code, Name, Department, Employment, Total AQ). Column F (&quot;Add Cluster&quot;) has a dropdown of clusters — selecting one adds all its entry AQs. Column G (&quot;Add Individual AQ&quot;) has a dropdown of individual Academic Qualifications.
+                    Contains 4 sheets: Instructions (step-by-step guide), TeacherAQ (pre-filled with all teachers, columns F and G accept comma-separated text), AQ Cluster (reference list of clusters), and Individual AQ (reference list of individual qualifications). Copy exact names from reference sheets and paste into the TeacherAQ sheet.
                   </p>
                 </div>
                 <Button
