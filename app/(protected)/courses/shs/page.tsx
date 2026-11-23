@@ -430,7 +430,7 @@ export default function SHSProgramsManagement() {
           continue;
         }
 
-        let createRes = await createProgram(activeUser, payload);
+        const createRes = await createProgram(activeUser, payload);
         if (createRes.success) {
           successCount++;
         } else {

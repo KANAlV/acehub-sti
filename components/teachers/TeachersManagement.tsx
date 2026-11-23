@@ -2066,7 +2066,7 @@ export default function TeachersManagement() {
                 </div>
 
                 <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                  <span className="font-semibold uppercase tracking-wide">Required Format Headers:</span> {REQUIRED_HEADERS.join(", ")} (Employment type has dropdown validation). Availability is editable only for Part-Time teachers — format: "Monday 8:00 AM-12:00 PM, Tuesday 1:00 PM-5:00 PM". Part-Time teachers may include Saturday; Part-Time Full Load and Full-Time teachers cannot have Saturday classes.
+                  <span className="font-semibold uppercase tracking-wide">Required Format Headers:</span> {REQUIRED_HEADERS.join(", ")} (Employment type has dropdown validation). Availability is editable only for Part-Time teachers — format: &quot;Monday 8:00 AM-12:00 PM, Tuesday 1:00 PM-5:00 PM&quot;. Part-Time teachers may include Saturday; Part-Time Full Load and Full-Time teachers cannot have Saturday classes.
                 </div>
 
                 {formatError && (
