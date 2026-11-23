@@ -105,6 +105,7 @@ const REQUIRED_HEADERS = [
   "Department",
   "Employment Type",
   "Status",
+  "Availability",
 ];
 
 interface DataValidationRule {
@@ -354,6 +355,7 @@ export default function TeachersManagement() {
       { header: "Department", key: "department", width: 25 },
       { header: "Employment Type", key: "employment_type", width: 20 },
       { header: "Status", key: "status", width: 15 },
+      { header: "Availability", key: "availability", width: 40 },
     ];
 
     worksheet.addRow({
@@ -367,12 +369,32 @@ export default function TeachersManagement() {
       department: allDepartments[0] || "Information Technology",
       employment_type: "Full-Time",
       status: "Active",
+      availability: "Monday 8:00 AM-12:00 PM, Tuesday 1:00 PM-5:00 PM",
     });
 
+    // Style header row (Row 1) with bold text and blue background
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF3B82F6" },
+      };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+    });
+    headerRow.height = 25;
+
+    // Style example availability in Row 2 as italic gray hint text
+    const exampleRow = worksheet.getRow(2);
+    exampleRow.getCell(11).font = { italic: true, color: { argb: "FF9CA3AF" } };
+
+    const departmentFormula =
+      '"' + allDepartments.map((d) => d.replace(/"/g, '""')).join(",") + '"';
     worksheet.dataValidations.add("H2:H1000", {
       type: "list",
       allowBlank: true,
-      formulae: [allDepartments.join(",")],
+      formulae: [departmentFormula],
       showErrorMessage: true,
       errorTitle: "Invalid Department",
       error: "Please select a valid department from the dropdown.",
@@ -394,6 +416,16 @@ export default function TeachersManagement() {
       showErrorMessage: true,
       errorTitle: "Invalid Status",
       error: "Please select a valid status from the dropdown. Leave blank for Active.",
+    });
+
+    // Lock Availability column for Full-Time teachers; allow text input for Part-Time
+    worksheet.dataValidations.add("K2:K1000", {
+      type: "custom",
+      allowBlank: true,
+      formulae: ["$I2<>\"Full-Time\""],
+      showErrorMessage: true,
+      errorTitle: "Availability Not Allowed",
+      error: "Only Part-Time teachers can have availability. Full-Time teachers have a default schedule.",
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -438,9 +470,37 @@ export default function TeachersManagement() {
         { header: "Department", key: "department", width: 25 },
         { header: "Employment Type", key: "employment_type", width: 20 },
         { header: "Status", key: "status", width: 15 },
+        { header: "Availability", key: "availability", width: 40 },
       ];
 
       exportList.forEach((item: TeacherRecord) => {
+        const isPartTime = ["Part-Time", "Part-Time Full Load"].includes(item.employment_type || "");
+        let availText = "";
+        if (isPartTime && item.availability) {
+          let availSlots: AvailabilitySlot[] = [];
+          if (typeof item.availability === "string") {
+            try {
+              const parsed = JSON.parse(item.availability);
+              if (Array.isArray(parsed)) {
+                availSlots = parsed;
+              }
+            } catch {
+              // ignore parse error
+            }
+          } else if (Array.isArray(item.availability)) {
+            availSlots = item.availability.filter(
+              (s): s is Record<string, string> => typeof s === "object" && s !== null,
+            ).map((s) => ({
+              day: s.day ? String(s.day) : "",
+              startTime: s.startTime ? String(s.startTime) : "",
+              endTime: s.endTime ? String(s.endTime) : "",
+            }));
+          }
+          availText = availSlots
+            .map((s) => `${s.day}: ${s.startTime} - ${s.endTime}`)
+            .join(", ");
+        }
+
         worksheet.addRow({
           pscs_id: item.pscs_id || "",
           teacher_code: item.teacher_code || "",
@@ -452,13 +512,29 @@ export default function TeachersManagement() {
           department: item.department || "",
           employment_type: item.employment_type || "Full-Time",
           status: item.status || "Active",
+          availability: availText,
         });
       });
 
+      // Style header row (Row 1) with bold text and blue background
+      const exportHeaderRow = worksheet.getRow(1);
+      exportHeaderRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF3B82F6" },
+        };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+      });
+      exportHeaderRow.height = 25;
+
+      const departmentFormula =
+        '"' + allDepartments.map((d) => d.replace(/"/g, '""')).join(",") + '"';
       worksheet.dataValidations.add("H2:H1000", {
         type: "list",
         allowBlank: true,
-        formulae: [allDepartments.join(",")],
+        formulae: [departmentFormula],
       });
 
       worksheet.dataValidations.add("I2:I1000", {
@@ -471,6 +547,16 @@ export default function TeachersManagement() {
         type: "list",
         allowBlank: true,
         formulae: ['"Active,On Leave,Inactive"'],
+      });
+
+      // Lock Availability column for Full-Time teachers in export
+      worksheet.dataValidations.add("K2:K1000", {
+        type: "custom",
+        allowBlank: true,
+        formulae: ["$I2<>\"Full-Time\""],
+        showErrorMessage: true,
+        errorTitle: "Availability Not Allowed",
+        error: "Only Part-Time teachers can have availability. Full-Time teachers have a default schedule.",
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
@@ -563,6 +649,7 @@ export default function TeachersManagement() {
       const deptCol = headerIndexMap["department"] || 8;
       const empCol = headerIndexMap["employment type"] || 9;
       const statusCol = headerIndexMap["status"] || 10;
+      const availCol = headerIndexMap["availability"] || 11;
 
       const rowsToProcess: {
         rowNum: number;
@@ -576,20 +663,101 @@ export default function TeachersManagement() {
         department: string;
         employment_type: string;
         status: string;
+        availability: AvailabilitySlot[];
       }[] = [];
+
+      // Helper: extract plain text from an ExcelJS cell value (handles hyperlinks, rich text, null objects)
+      const getCellValue = (val: import("exceljs").CellValue): string => {
+        if (val === null || val === undefined) return "";
+        if (typeof val === "string") return val;
+        if (typeof val === "number") return String(val);
+        if (typeof val === "boolean") return String(val);
+        if (typeof val === "object") {
+          // Hyperlink cell: { text: "...", hyperlink: "mailto:..." }
+          if ("text" in val && typeof val.text === "string") return val.text;
+          // Rich text array
+          if (Array.isArray(val)) return val.map((r) => r.text || "").join("");
+          // Fallback: try toString
+          return String(val);
+        }
+        return "";
+      };
 
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
-        const pscs_id = filterNumeric(String(row.getCell(pscsCol).value || "")).slice(0, 13);
-        const teacher_code = filterAlphaNoSpace(String(row.getCell(codeCol).value || "")).slice(0, 6).toUpperCase();
-        const f_name = filterAlphaDashSpace(String(row.getCell(fNameCol).value || "")).slice(0, 50).toUpperCase();
-        const m_name = filterAlphaDashSpace(String(row.getCell(mNameCol).value || "")).slice(0, 50).toUpperCase();
-        const surname = filterAlphaDashSpace(String(row.getCell(surnameCol).value || "")).slice(0, 50).toUpperCase();
-        const suffix = filterAlpha(String(row.getCell(suffixCol).value || "")).slice(0, 10).toUpperCase();
-        const email = filterEmail(String(row.getCell(emailCol).value || "")).slice(0, 100);
-        const department = String(row.getCell(deptCol).value || "").trim();
-        const employment_type = String(row.getCell(empCol).value || "Full-Time").trim();
-        const status = String(row.getCell(statusCol).value || "Active").trim();
+        const pscs_id = filterNumeric(getCellValue(row.getCell(pscsCol).value)).slice(0, 13);
+        const teacher_code = filterAlphaNoSpace(getCellValue(row.getCell(codeCol).value)).slice(0, 6).toUpperCase();
+        const f_name = filterAlphaDashSpace(getCellValue(row.getCell(fNameCol).value)).slice(0, 50).toUpperCase();
+        const m_name = filterAlphaDashSpace(getCellValue(row.getCell(mNameCol).value)).slice(0, 50).toUpperCase();
+        const surname = filterAlphaDashSpace(getCellValue(row.getCell(surnameCol).value)).slice(0, 50).toUpperCase();
+        const suffix = filterAlpha(getCellValue(row.getCell(suffixCol).value)).slice(0, 10).toUpperCase();
+        const email = filterEmail(getCellValue(row.getCell(emailCol).value)).slice(0, 100);
+        const department = getCellValue(row.getCell(deptCol).value).trim();
+        const employment_type = getCellValue(row.getCell(empCol).value) || "Full-Time";
+        const status = getCellValue(row.getCell(statusCol).value) || "Active";
+        const availRaw = getCellValue(row.getCell(availCol).value).trim();
+
+        const employment_typeTrimmed = employment_type.trim();
+        const statusTrimmed = status.trim();
+        const normalizedEmployment = ["Full-Time", "Part-Time Full Load", "Part-Time"].includes(employment_typeTrimmed)
+          ? employment_typeTrimmed
+          : "Full-Time";
+        const normalizedStatus = ["Active", "On Leave", "Inactive"].includes(statusTrimmed) ? statusTrimmed : "Active";
+        const isPartTime = ["Part-Time", "Part-Time Full Load"].includes(normalizedEmployment);
+
+        // Parse availability for Part-Time teachers
+        const parsedAvailability: AvailabilitySlot[] = [];
+        if (isPartTime && availRaw) {
+          // PTFL and Full-Time teachers cannot have Saturday classes; only Part-Time can
+          const isPTFL = normalizedEmployment === "Part-Time Full Load";
+          const validDays = isPTFL
+            ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+            : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+          const slots = availRaw.split(",").map((s) => s.trim()).filter(Boolean);
+          for (const slot of slots) {
+            // Expected format: "Monday 8:00 AM-12:00 PM" or "Monday: 8:00 AM - 12:00 PM"
+            // First try: "Day StartTime-EndTime" (space separated, time contains colon)
+            let match = slot.match(/^(\w+)\s+(\d{1,2}:\d{2}\s*[AP]M\s*[-–]\s*\d{1,2}:\d{2}\s*[AP]M)$/i);
+            if (match) {
+              // Space-separated format: "Monday 8:00 AM-12:00 PM"
+              const day = match[1].trim();
+              const timeRange = match[2].trim();
+              const timeMatch = timeRange.match(/^(\d{1,2}:\d{2}\s*[AP]M)\s*[-–]\s*(\d{1,2}:\d{2}\s*[AP]M)$/i);
+              if (timeMatch) {
+                const startTime = timeMatch[1].trim();
+                const endTime = timeMatch[2].trim();
+                if (day === "Saturday" && isPTFL) {
+                  logs.push(`Row ${rowNumber} (${teacher_code}): Skipped Saturday availability. Part-Time Full Load teachers cannot have Saturday classes.`);
+                } else if (validDays.includes(day)) {
+                  parsedAvailability.push({ day, startTime, endTime });
+                } else {
+                  logs.push(`Row ${rowNumber} (${teacher_code}): Skipped invalid availability day "${day}". Valid days: ${validDays.join(", ")}.`);
+                }
+              } else {
+                logs.push(`Row ${rowNumber} (${teacher_code}): Skipped malformed availability slot "${slot}". Format: "Day StartTime-EndTime".`);
+              }
+            } else {
+              // Fallback: "Day: StartTime - EndTime" (colon after day)
+              match = slot.match(/^(\w+)\s*:\s*(.+?)\s*[-–]\s*(.+)$/);
+              if (match) {
+                const day = match[1].trim();
+                const startTime = match[2].trim();
+                const endTime = match[3].trim();
+                if (day === "Saturday" && isPTFL) {
+                  logs.push(`Row ${rowNumber} (${teacher_code}): Skipped Saturday availability. Part-Time Full Load teachers cannot have Saturday classes.`);
+                } else if (validDays.includes(day)) {
+                  parsedAvailability.push({ day, startTime, endTime });
+                } else {
+                  logs.push(`Row ${rowNumber} (${teacher_code}): Skipped invalid availability day "${day}". Valid days: ${validDays.join(", ")}.`);
+                }
+              } else {
+                logs.push(`Row ${rowNumber} (${teacher_code}): Skipped malformed availability slot "${slot}". Format: "Day StartTime-EndTime".`);
+              }
+            }
+          }
+        } else if (!isPartTime && availRaw) {
+          logs.push(`Row ${rowNumber} (${teacher_code}): Availability ignored for Full-Time teacher. Full-Time teachers cannot have Saturday classes.`);
+        }
 
         if (!pscs_id || !teacher_code || !f_name || !surname || !email) {
           logs.push(`Row ${rowNumber}: Skipped. Mandatory fields are missing.`);
@@ -598,7 +766,7 @@ export default function TeachersManagement() {
         }
 
         if (!email.toLowerCase().endsWith("@alabang.sti.edu.ph")) {
-          logs.push(`Row ${rowNumber} (${teacher_code}): Skipped. Email must use domain @alabang.sti.edu.ph.`);
+          logs.push(`Row ${rowNumber} (${teacher_code}): Skipped. Email must use domain @alabang.sti.edu.ph`);
           failCount++;
           return;
         }
@@ -613,14 +781,20 @@ export default function TeachersManagement() {
           suffix,
           email,
           department,
-          employment_type: ["Full-Time", "Part-Time Full Load", "Part-Time"].includes(employment_type)
-            ? employment_type
-            : "Full-Time",
-          status: ["Active", "On Leave", "Inactive"].includes(status) ? status : "Active",
+          employment_type: normalizedEmployment,
+          status: normalizedStatus,
+          availability: parsedAvailability,
         });
       });
 
       for (const item of rowsToProcess) {
+        const availabilityPayload =
+          ["Part-Time", "Part-Time Full Load"].includes(item.employment_type)
+            ? item.availability.length > 0
+              ? item.availability
+              : []
+            : DEFAULT_FULLTIME_AVAILABILITY;
+
         const payload = {
           pscs_id: item.pscs_id,
           email: item.email,
@@ -632,7 +806,7 @@ export default function TeachersManagement() {
           department: item.department || undefined,
           employment_type: item.employment_type,
           status: item.status,
-          availability: DEFAULT_FULLTIME_AVAILABILITY,
+          availability: availabilityPayload,
         };
 
         const res = await createTeacher(username ?? "system", payload);
@@ -1892,7 +2066,7 @@ export default function TeachersManagement() {
                 </div>
 
                 <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                  <span className="font-semibold uppercase tracking-wide">Required Format Headers:</span> {REQUIRED_HEADERS.join(", ")} (Employment type has dropdown validation).
+                  <span className="font-semibold uppercase tracking-wide">Required Format Headers:</span> {REQUIRED_HEADERS.join(", ")} (Employment type has dropdown validation). Availability is editable only for Part-Time teachers — format: "Monday 8:00 AM-12:00 PM, Tuesday 1:00 PM-5:00 PM". Part-Time teachers may include Saturday; Part-Time Full Load and Full-Time teachers cannot have Saturday classes.
                 </div>
 
                 {formatError && (
@@ -1945,7 +2119,7 @@ export default function TeachersManagement() {
                     Export Filtered Teachers
                   </h4>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Generates a standardized Excel spreadsheet containing all active query results with employment dropdown rules.
+                    Generates a standardized Excel spreadsheet containing all active query results with employment dropdown rules and availability formatted for Part-Time teachers.
                   </p>
                 </div>
                 <Button onClick={handleExportExcel} className="w-full" color="green">
@@ -1961,7 +2135,7 @@ export default function TeachersManagement() {
                     Download Blank Excel Template
                   </h4>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Includes columns formatted as: <b className="font-mono">{REQUIRED_HEADERS.join(", ")}</b> with built-in employment type dropdown lists.
+                    Includes columns formatted as: <b className="font-mono">{REQUIRED_HEADERS.join(", ")}</b> with built-in dropdown lists. Availability column is locked for Full-Time teachers and accepts comma-separated text for Part-Time teachers.
                   </p>
                 </div>
                 <Button onClick={handleDownloadTemplate} className="w-full" color="blue">

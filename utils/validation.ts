@@ -6,8 +6,8 @@ export function filterEmail(value: string): string {
       .replace(/\s+/g, "")
       // Collapse any consecutive mix of hyphens, underscores, or dots (e.g., "--__--" -> "-")
       .replace(/[-_.]{2,}/g, (match: string): string => match[0])
-      // Remove any disallowed characters for email fields
-      .replace(/[^a-zA-Z0-9@._+-]/g, "")
+      // Remove any disallowed characters for email fields (- at end to avoid range interpretation)
+      .replace(/[^a-zA-Z0-9@._+\-]/g, "")
       // Remove consecutive spaces into one
       .replace(/\s+/g, " ");
 }
@@ -114,12 +114,18 @@ export const filterCourseCode = (str: string): string =>
     str.replace(/[^a-zA-Z0-9]/g, "");
 
 /**
- * Strips all characters except letters, digits, and spaces (a-zA-Z0-9 ), no symbols.
+ * Allows letters, digits, spaces, and common course name symbols: hyphens, parentheses,
+ * commas, periods, colons, ampersands, forward slashes, apostrophes, and brackets.
+ * Collapses consecutive repetitions of any allowed symbol into a single character.
  * Collapses consecutive spaces into one and trims leading/trailing spaces.
- * Ideal for course names (e.g. "Introduction to Computing").
+ * Ideal for course names (e.g. "Introduction to Computing", "Math - Calculus (1st Semester)", "CS/IT 101", "Rizal's Life").
  */
 export const filterCourseName = (str: string): string =>
-    str.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+    str
+        .replace(/[^a-zA-Z0-9 ()\-,.:&\/\[\]']/g, "")
+        .replace(/[()\-,.:&\/\[\]']{2,}/g, (match: string): string => match[0])
+        .replace(/\s+/g, " ")
+        .trim();
 
 /**
  * Validates a Year/Semester short code format (e.g. "11-1", "1-2", "12-3", "4-2").

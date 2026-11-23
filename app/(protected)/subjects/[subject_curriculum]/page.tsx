@@ -691,6 +691,9 @@ export default function CurriculumSubjectsPage() {
             error: "Use format: 11 - 1, 12 - 2, 1 - 1, 3 - 2. SHS: 11 - 1 to 12 - 3. Tertiary: 1 - 1 to 4 - 2.",
         });
 
+        // Format Year/Semester column as text to prevent Excel from auto-converting to dates
+        worksheet.getColumn(2).numFmt = '@';
+
         const programCodes = allProgramsFilterList.map((p) => p.program_code.replace(/"/g, '""')).join(",");
         if (programCodes) {
             worksheet.dataValidations.add("C2:C1000", {
@@ -764,6 +767,9 @@ export default function CurriculumSubjectsPage() {
                     formulae: [`"${programCodes}"`],
                 });
             }
+
+            // Format Year/Semester column as text to prevent Excel from auto-converting to dates
+            worksheet.getColumn(2).numFmt = '@';
 
             const buffer = await workbook.xlsx.writeBuffer();
             downloadWorkbook(buffer, `${curriculumVersion}_Subjects_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
@@ -940,10 +946,18 @@ export default function CurriculumSubjectsPage() {
                     return;
                 }
 
-                // Validate Course Name: no symbols allowed (only letters, numbers, spaces)
-                const filteredName = filterCourseName(rawName);
-                if (filteredName !== rawName.trim()) {
-                    logs.push(`Row ${rowNumber} (${rawCode}): Failed. Course name contains invalid characters (symbols). Only letters, numbers, and spaces are allowed.`);
+                // Validate Course Name: only letters, numbers, spaces, and common symbols allowed (no invalid characters)
+                // Normalize newlines, carriage returns, non-breaking spaces, and consecutive whitespace from Excel cells
+                const normalizedRawName = rawName
+                    .replace(/\r\n/g, " ")
+                    .replace(/\r/g, " ")
+                    .replace(/\n/g, " ")
+                    .replace(/\u00A0/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                const filteredName = filterCourseName(normalizedRawName);
+                if (filteredName !== normalizedRawName) {
+                    logs.push(`Row ${rowNumber} (${rawCode}): Failed. Course name contains invalid characters. Only letters, numbers, spaces, and common symbols (-, (), ., ,, :, &, /, [], ') are allowed.`);
                     failCount++;
                     return;
                 }
@@ -1010,8 +1024,13 @@ export default function CurriculumSubjectsPage() {
                 if (res?.success) {
                     successCount++;
                 } else {
-                    logs.push(`Row ${item.rowNum} (${item.code}): ${res?.error || "Creation failed."}`);
-                    failCount++;
+                    const errorMsg = res?.error || "Creation failed.";
+                    if (errorMsg.includes("duplicate key") || errorMsg.includes("subjects_cur_sub_constraint")) {
+                        logs.push(`Row ${item.rowNum} (${item.code}): Skipped. Subject already exists in the system.`);
+                    } else {
+                        logs.push(`Row ${item.rowNum} (${item.code}): Failed to create subject: ${errorMsg}`);
+                        failCount++;
+                    }
                 }
             }
 

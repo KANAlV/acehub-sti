@@ -253,7 +253,7 @@ export default function HelpPage() {
                     details: [
                         "Navigate to Courses from the sidebar. There are two sub-modules: SHS Courses and Tertiary Courses.",
                         "SHS Courses: Add each Senior High School strand (e.g., STEM, ABM, HUMSS) with student counts for Grade 11 and Grade 12. The scheduler uses these counts along with your Max Students per Section setting to determine how many sections to create.",
-                        "Tertiary Courses: Add each college degree program (e.g., BSIT, BSCS, BSHM) with student counts for 1st Year through 4th Year.",
+                        "Tertiary Courses: Add each tertiary degree program (e.g., BSIT, BSCS, BSHM) with student counts for 1st Year through 4th Year.",
                         "Student counts are critical — the scheduler divides total students by Max Students per Section to calculate the number of sections. Inaccurate counts will result in too few or too many sections.",
                         "After adding all programs and verifying student counts, proceed to Step 4.",
                     ],
@@ -505,7 +505,7 @@ export default function HelpPage() {
             route: "/courses",
             icon: HiAcademicCap,
             description:
-                "Manage Senior High School (SHS) strands and Tertiary college degree programs along with student population counts per grade or year level.",
+                "Manage Senior High School (SHS) strands and Tertiary degree programs along with student population counts per grade or year level.",
             roles: ["School Registrar", "Academic Head"],
             features: [
                 "Dedicated sub-modules for SHS Strands (/courses/shs) and Tertiary Programs (/courses/tertiary)",
@@ -556,11 +556,11 @@ export default function HelpPage() {
                     tabId: "courses-tertiary",
                     tabName: "Tertiary Programs (/courses/tertiary)",
                     summary:
-                        "Manage college degree programs (e.g., BSIT, BSCPE, BSHM) and maintain student headcounts across 1st Year through 4th Year.",
+                        "Manage tertiary degree programs (e.g., BSIT, BSCPE, BSHM) and maintain student headcounts across 1st Year through 4th Year.",
                     steps: [
                         {
                             stepNumber: 1,
-                            title: "Open College Programs Management",
+                            title: "Open Tertiary Programs Management",
                             description: "Access the Tertiary degree program registry from the Courses menu.",
                             details: [
                                 "Expand 'Courses' in the left navigation sidebar and select 'Tertiary Courses'.",
@@ -569,7 +569,7 @@ export default function HelpPage() {
                         },
                         {
                             stepNumber: 2,
-                            title: "Register a New College Program",
+                            title: "Register a New Tertiary Program",
                             description: "Create a tertiary program entry with 1st to 4th year student counts.",
                             details: [
                                 "Click '+ Add Program' in the upper-right toolbar.",
@@ -583,7 +583,7 @@ export default function HelpPage() {
                             title: "Update Year-Level Distributions",
                             description: "Keep student counts updated so section splits remain accurate.",
                             details: [
-                                "Click 'Edit' on any program row to open the Edit College Program modal.",
+                                "Click 'Edit' on any program row to open the Edit Tertiary Program modal.",
                                 "Modify the student population numbers per year level and click 'Save' (button enables once changes are detected).",
                                 "Use the red delete button in the modal footer if a program needs to be removed.",
                             ],
