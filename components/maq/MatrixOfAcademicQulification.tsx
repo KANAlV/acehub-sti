@@ -282,6 +282,19 @@ export default function MatrixOfAcademicQualificationPage() {
     worksheet.addRow({ academic_qualification: "BSCS" });
     worksheet.addRow({ academic_qualification: "BSIT" });
 
+    // Style header row (Row 1) with bold text and blue background
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF3B82F6" },
+      };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+    });
+    headerRow.height = 25;
+
     const buffer = await workbook.xlsx.writeBuffer();
     downloadWorkbook(buffer, "Academic_Qualifications_Template.xlsx");
     triggerToast("Blank Excel template downloaded successfully!", "success");
@@ -304,6 +317,19 @@ export default function MatrixOfAcademicQualificationPage() {
         { header: "No.", key: "no", width: 8 },
         { header: "Academic Qualification", key: "academic_qualification", width: 35 },
       ];
+
+      // Style header row (Row 1) with bold text and blue background
+      const exportHeaderRow = worksheet.getRow(1);
+      exportHeaderRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF3B82F6" },
+        };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+      });
+      exportHeaderRow.height = 25;
 
       exportList.forEach((item, index) => {
         worksheet.addRow({

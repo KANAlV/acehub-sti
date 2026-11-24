@@ -426,6 +426,19 @@ export default function MaqClusterPage() {
       academic_qualifications: "BSIT, BSIS",
     });
 
+    // Style header row (Row 1) with bold text and blue background
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF3B82F6" },
+      };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+    });
+    headerRow.height = 25;
+
     const buffer = await workbook.xlsx.writeBuffer();
     downloadWorkbook(buffer, "MAQ_Cluster_Import_Template.xlsx");
     triggerToast("Blank Excel template downloaded successfully!", "success");
@@ -449,6 +462,19 @@ export default function MaqClusterPage() {
         { header: "Cluster Name", key: "cluster_name", width: 25 },
         { header: "Academic Qualifications", key: "academic_qualifications", width: 40 },
       ];
+
+      // Style header row (Row 1) with bold text and blue background
+      const exportHeaderRow = worksheet.getRow(1);
+      exportHeaderRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF3B82F6" },
+        };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+      });
+      exportHeaderRow.height = 25;
 
       exportList.forEach((item, index) => {
         let rawEntries: (string | MaqClusterEntryItem)[] = [];

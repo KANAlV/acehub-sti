@@ -866,24 +866,24 @@ export default function FcceManagement() {
                     <p className="text-gray-500">Manage and track FCCE student course passing statuses and archive records.</p>
                 </div>
 
-                <div className="my-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-                    <div className="relative mb-2 w-full md:w-64">
-                        <TextInput
-                            id="search-fcce"
-                            type="text"
-                            placeholder="Search PSCS ID, Course, Teacher..."
-                            value={searchTerm}
-                            onChange={handleSearchChange}
-                            icon={HiSearch}
-                        />
-                        {searchTerm && (
-                            <button type="button" onClick={handleClearSearch} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500">
-                                <HiX className="h-4 w-4" />
-                            </button>
-                        )}
-                    </div>
-
+                <div className="my-4 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-3">
+                        <div className="relative w-full sm:max-w-xs">
+                            <TextInput
+                                id="search-fcce"
+                                type="text"
+                                placeholder="Search PSCS ID, Course, Teacher..."
+                                value={searchTerm}
+                                onChange={handleSearchChange}
+                                icon={HiSearch}
+                            />
+                            {searchTerm && (
+                                <button type="button" onClick={handleClearSearch} className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500">
+                                    <HiX className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
+
                         {viewMode === "UNMATCHED" ? (
                             <Tooltip placement={"right"} content={"Click to Go back to all records"}>
                                 <IoMdExit className={"h-8 w-8 rotate-180 cursor-pointer"} onClick={handleViewModeToggle} />
@@ -896,7 +896,7 @@ export default function FcceManagement() {
                             )
                         )}
 
-                        <div className="w-full md:w-40">
+                        <div className="w-40">
                             <Select id="archive-filter" value={archiveFilter} onChange={handleArchiveFilterChange}>
                                 <option value="ACTIVE">Active Only</option>
                                 <option value="ARCHIVED">Archived Only</option>
@@ -904,6 +904,12 @@ export default function FcceManagement() {
                             </Select>
                         </div>
 
+                        <Button color="yellow" className="whitespace-nowrap" onClick={() => setOpenArchiveAllModal(true)}>
+                            <HiOutlineArchive className="mr-2 h-4 w-4" /> Archive All Active
+                        </Button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
                         <Button
                             color="gray"
                             className="whitespace-nowrap"
@@ -913,11 +919,7 @@ export default function FcceManagement() {
                             Excel Operations
                         </Button>
 
-                        <Button color="yellow" className="w-full md:w-48 whitespace-nowrap" onClick={() => setOpenArchiveAllModal(true)}>
-                            <HiOutlineArchive className="mr-2 h-4 w-4" /> Archive All Active
-                        </Button>
-
-                        <Button className="w-full whitespace-nowrap md:w-48" onClick={() => setOpenAddModal(true)}>
+                        <Button className="whitespace-nowrap" onClick={() => setOpenAddModal(true)}>
                             <FaPlus className="mr-2" /> Add Record
                         </Button>
                     </div>
@@ -930,37 +932,38 @@ export default function FcceManagement() {
                     </div>
                 )}
 
-                <Card className="overflow-x-auto">
-                    <Table hoverable>
-                        <TableHead>
-                            <TableRow>
+                <div className="overflow-y-auto rounded-lg border border-gray-700 bg-gray-800 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxHeight: "600px" }}>
+                    <Card className="overflow-x-auto bg-gray-800 dark:bg-gray-800">
+                        <Table hoverable>
+                            <TableHead>
+                            <TableRow className="bg-blue-600 dark:bg-blue-600">
                                 <TableHeadCell onClick={() => handleFcceSorting("pscs_id")}>
-                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                                    <div className="flex cursor-pointer text-white hover:underline">
                                         PSCS ID {sortFcceBy === "pscs_id" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("teacher_name")}>
-                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                                    <div className="flex cursor-pointer text-white hover:underline">
                                         Teacher Name {sortFcceBy === "teacher_name" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("course_name")}>
-                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                                    <div className="flex cursor-pointer text-white hover:underline">
                                         Course Name {sortFcceBy === "course_name" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("ay_sem")}>
-                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                                    <div className="flex cursor-pointer text-white hover:underline">
                                         AY / Sem {sortFcceBy === "ay_sem" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("pass")}>
-                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                                    <div className="flex cursor-pointer text-white hover:underline">
                                         Status {sortFcceBy === "pass" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("created_at")}>
-                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
+                                    <div className="flex cursor-pointer text-white hover:underline">
                                         Created At {sortFcceBy === "created_at" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
@@ -1022,7 +1025,8 @@ export default function FcceManagement() {
                             )}
                         </TableBody>
                     </Table>
-                </Card>
+                    </Card>
+                </div>
 
                 <div className="mt-4 flex justify-center">
                     <Pagination layout="pagination" currentPage={currentFccePage} totalPages={Math.ceil(recordsCount / maxRowFcce) || 1} onPageChange={onPageChangeFcce} showIcons />

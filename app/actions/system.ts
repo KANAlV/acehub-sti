@@ -979,6 +979,7 @@ export type TeacherMetricRow = {
   code: string;
   status: string;
   department: string;
+  employment_type: string;
   current_units: number;
   max_units: number;
   absolute_max: number;
@@ -1076,6 +1077,7 @@ export async function fetchScheduleTeacherMetricsTable(params: {
       code: String(row.code ?? ""),
       department: String(row.department ?? ""),
       status: String(row.status ?? ""),
+      employment_type: String(row.employment_type ?? ""),
       current_units: Number(row.current_units) || 0,
       max_units: Number(row.max_units) || 0,
       absolute_max: Number(row.absolute_max) || 0,
