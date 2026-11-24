@@ -1034,6 +1034,7 @@ export async function fetchScheduleTeacherMetricsTable(params: {
   search?: string | null;
   status?: string;
   department?: string;
+  employmentType?: string;
   sortBy?: string;
   sortDir?: string;
   limit?: number;
@@ -1050,6 +1051,7 @@ export async function fetchScheduleTeacherMetricsTable(params: {
       search = null,
       status = "All Active & On Leave",
       department = "All Departments",
+      employmentType = "All",
       sortBy = "surname",
       sortDir = "ASC",
       limit = 10,
@@ -1062,6 +1064,7 @@ export async function fetchScheduleTeacherMetricsTable(params: {
         ${search},
         ${status},
         ${department},
+        ${employmentType},
         ${sortBy},
         ${sortDir},
         ${limit},
@@ -1100,6 +1103,7 @@ export async function fetchScheduleTeacherMetricsCount(params: {
   search?: string | null;
   status?: string;
   department?: string;
+  employmentType?: string;
 }): Promise<{
   success: boolean;
   count: number;
@@ -1112,6 +1116,7 @@ export async function fetchScheduleTeacherMetricsCount(params: {
       search = null,
       status = "All Active & On Leave",
       department = "All Departments",
+      employmentType = "All",
     } = params;
 
     const result = await sql`
@@ -1119,7 +1124,8 @@ export async function fetchScheduleTeacherMetricsCount(params: {
         ${scheduleId}::uuid,
         ${search},
         ${status},
-        ${department}
+        ${department},
+        ${employmentType}
       ) AS count
     `;
 

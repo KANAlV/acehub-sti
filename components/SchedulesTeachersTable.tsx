@@ -95,6 +95,7 @@ export default function SchedulesTeachersTable({
   const [allDepartments, setAllDepartments] = useState<string[]>([]);
   const [departmentFilter, setDepartmentFilter] =
     useState<string>("All Departments");
+  const [employmentTypeFilter, setEmploymentTypeFilter] = useState("All");
 
   // --- Pagination Constants --- //
   const maxRowTeacher = 10;
@@ -111,6 +112,7 @@ export default function SchedulesTeachersTable({
   // --- Faculty Load Config ---
   const [facultyConfig, setFacultyConfig] = useState<Configuration | null>(null);
   const [employmentTypeMap, setEmploymentTypeMap] = useState<Record<string, string>>({});
+  const [teacherStatusMap, setTeacherStatusMap] = useState<Record<string, string>>({});
 
   /** Map employment type to the correct faculty load limit from config */
   function getMaxUnitsForEmployment(employmentType?: string): number {
@@ -165,12 +167,17 @@ export default function SchedulesTeachersTable({
     const res = await fetchTeachers(null, "All Active & On Leave", "All Departments", "surname", "ASC", 1000, 1);
     if (res.success && res.data) {
       const map: Record<string, string> = {};
+      const statusMap: Record<string, string> = {};
       res.data.forEach((t) => {
         if (t.teacher_id && t.employment_type) {
           map[t.teacher_id] = t.employment_type;
         }
+        if (t.teacher_id && t.status) {
+          statusMap[t.teacher_id] = t.status;
+        }
       });
       setEmploymentTypeMap(map);
+      setTeacherStatusMap(statusMap);
     }
   }
 
@@ -214,6 +221,7 @@ export default function SchedulesTeachersTable({
     search: string | null = debouncedSearch,
     status: TeacherStatusFilter = statusFilter,
     department: string = departmentFilter,
+    employmentType: string = employmentTypeFilter,
     sortby: string = sortTeachersBy,
     sortdir: string = sortTeachersDir,
     limit: number = maxRowTeacher,
@@ -229,6 +237,7 @@ export default function SchedulesTeachersTable({
       search: search,
       status: status,
       department: department,
+      employmentType: employmentType,
       sortBy: sortby,
       sortDir: sortdir,
       limit: limit,
@@ -249,19 +258,21 @@ export default function SchedulesTeachersTable({
     }
 
     setIsTableLoading(false);
-    await getTeacherCount(search, status, department);
+    await getTeacherCount(search, status, department, employmentType);
   }
 
   async function getTeacherCount(
     search: string | null = debouncedSearch,
     status: TeacherStatusFilter = statusFilter,
     department: string = departmentFilter,
+    employmentType: string = employmentTypeFilter,
   ) {
     const params = {
       scheduleId: scheduleID!,
       search: search,
       status: status,
       department: department,
+      employmentType: employmentType,
     };
 
     const response = await fetchScheduleTeacherMetricsCount(params);
@@ -328,6 +339,7 @@ export default function SchedulesTeachersTable({
       searchTerm,
       statusFilter,
       selectedDept,
+      employmentTypeFilter,
       sortTeachersBy,
       sortTeachersDir,
       maxRowTeacher,
@@ -345,6 +357,25 @@ export default function SchedulesTeachersTable({
       searchTerm,
       selectedStatus,
       departmentFilter,
+      employmentTypeFilter,
+      sortTeachersBy,
+      sortTeachersDir,
+      maxRowTeacher,
+      1,
+    );
+  };
+
+  const handleEmploymentTypeFilterChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const selectedEmploymentType = e.target.value;
+    setEmploymentTypeFilter(selectedEmploymentType);
+    setCurrentTeacherPage(1);
+    void getTeachers(
+      searchTerm,
+      statusFilter,
+      departmentFilter,
+      selectedEmploymentType,
       sortTeachersBy,
       sortTeachersDir,
       maxRowTeacher,
@@ -363,6 +394,7 @@ export default function SchedulesTeachersTable({
       searchTerm,
       statusFilter,
       departmentFilter,
+      employmentTypeFilter,
       sortBy,
       newDir,
       maxRowTeacher,
@@ -392,6 +424,7 @@ export default function SchedulesTeachersTable({
       searchTerm,
       statusFilter,
       departmentFilter,
+      employmentTypeFilter,
       sortTeachersBy,
       sortTeachersDir,
       maxRowTeacher,
@@ -535,6 +568,20 @@ export default function SchedulesTeachersTable({
           </Select>
         </div>
 
+        {/* Employment Type Dropdown Filter */}
+        <div className="w-full md:w-52">
+          <Select
+            id="employment-type-filter"
+            value={employmentTypeFilter}
+            onChange={handleEmploymentTypeFilterChange}
+          >
+            <option value="All">All Employment Types</option>
+            <option value="Full-Time">Full-Time</option>
+            <option value="Part-Time Full Load">Part-Time Full Load</option>
+            <option value="Part-Time">Part-Time</option>
+          </Select>
+        </div>
+
         {/* Search Bar */}
         <div className="relative w-full md:w-60">
           <TextInput
@@ -637,6 +684,8 @@ export default function SchedulesTeachersTable({
                     </div>
                   </TableHeadCell>
 
+                  <TableHeadCell>Employment Type</TableHeadCell>
+
                   <TableHeadCell
                     onClick={() => handleTeacherSorting("current_units")}
                   >
@@ -683,7 +732,21 @@ export default function SchedulesTeachersTable({
               </TableHead>
 
               <TableBody className="divide-y">
-                {teachers.length > 0 ? (
+                {isTableLoading ? (
+                  <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
+                    <TableCell
+                      colSpan={10}
+                      className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
+                    >
+                      <div className="flex items-center justify-center">
+                        <Spinner />
+                        <span className="ml-4">
+                          Fetching faculty metrics data...
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : teachers.length > 0 ? (
                   teachers.map((item: TeacherMetricRow) => {
                     const row = getCorrectedTeacherMetrics(item);
                     const isDeptValid =
@@ -744,18 +807,21 @@ export default function SchedulesTeachersTable({
                         <TableCell>
                           <span
                             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              item.status === "Active"
+                              teacherStatusMap[item.teacher_id] === "Active"
                                 ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                                : item.status === "On Leave"
+                                : teacherStatusMap[item.teacher_id] === "On Leave"
                                   ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
-                                  : item.status === "Inactive"
+                                  : teacherStatusMap[item.teacher_id] === "Inactive"
                                     ? "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
                                     : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
                             }`}
                           >
-                            {item.status || "Active"}
+                            {teacherStatusMap[item.teacher_id] || "—"}
                           </span>
                         </TableCell>
+
+                        {/* Employment Type */}
+                        <TableCell>{row.employment_type || "—"}</TableCell>
 
                         {/* Units (Current / Max) */}
                         <TableCell
@@ -801,24 +867,10 @@ export default function SchedulesTeachersTable({
                       </TableRow>
                     );
                   })
-                ) : isLoading ? (
-                  <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
-                    <TableCell
-                      colSpan={9}
-                      className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
-                    >
-                      <div className="flex items-center justify-center">
-                        <Spinner />
-                        <span className="ml-4">
-                          Fetching faculty metrics data...
-                        </span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
                 ) : (
                   <TableRow className="bg-white dark:border-gray-700 dark:bg-gray-800">
                     <TableCell
-                      colSpan={9}
+                      colSpan={10}
                       className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
                     >
                       {searchTerm
