@@ -474,7 +474,7 @@ export default function RoomsManagement() {
         worksheet.addRow({
             room_name: "Lab 101",
             room_type: roomTypes[0]?.value || "Lecture Room",
-            floor_level: 1,
+            floor_level: "Floor 1",
         });
 
         const typeValues = roomTypes.map((rt) => rt.value.replace(/"/g, '""')).join(",");
@@ -487,6 +487,17 @@ export default function RoomsManagement() {
             showErrorMessage: true,
             errorTitle: "Invalid Room Type",
             error: "Please select a valid room type from the dropdown list.",
+        });
+
+        // Add dropdown validation for Floor Level (Floor 1 - Floor 10)
+        const floorLevels = Array.from({ length: 10 }, (_, i) => `Floor ${i + 1}`).join(",");
+        worksheet.dataValidations.add("C2:C1000", {
+            type: "list",
+            allowBlank: false,
+            formulae: [`"${floorLevels}"`],
+            showErrorMessage: true,
+            errorTitle: "Invalid Floor Level",
+            error: "Please select a valid floor level (Floor 1 - Floor 10) from the dropdown list.",
         });
 
         const buffer = await workbook.xlsx.writeBuffer();
@@ -520,7 +531,7 @@ export default function RoomsManagement() {
                     no: index + 1,
                     room_name: item.room_name || "",
                     room_type: (item.room_type ? roomTypeMap.get(item.room_type) : null) || item.room_type_name || item.room_type || "—",
-                    floor_level: item.floor_level !== null && item.floor_level !== undefined ? item.floor_level : "—",
+                    floor_level: item.floor_level !== null && item.floor_level !== undefined ? `Floor ${item.floor_level}` : "—",
                 });
             });
 
@@ -529,6 +540,13 @@ export default function RoomsManagement() {
                 type: "list",
                 allowBlank: false,
                 formulae: [`"${typeValues}"`],
+            });
+
+            const floorLevels = Array.from({ length: 10 }, (_, i) => `Floor ${i + 1}`).join(",");
+            worksheet.dataValidations.add("D2:D1000", {
+                type: "list",
+                allowBlank: false,
+                formulae: [`"${floorLevels}"`],
             });
 
             const buffer = await workbook.xlsx.writeBuffer();
@@ -659,7 +677,16 @@ export default function RoomsManagement() {
                     return;
                 }
 
-                const floorLevel = isNaN(rawFloor) ? 1 : Math.max(1, Math.min(15, rawFloor));
+                const rawFloorValue = String(row.getCell(floorCol).value || "").trim();
+                let floorLevel: number;
+                if (rawFloorValue.startsWith("Floor ")) {
+                    floorLevel = parseInt(rawFloorValue.replace("Floor ", ""), 10);
+                    if (isNaN(floorLevel)) floorLevel = 1;
+                } else {
+                    const numericFloor = Number(rawFloorValue);
+                    floorLevel = isNaN(numericFloor) ? 1 : numericFloor;
+                }
+                floorLevel = Math.max(1, Math.min(10, floorLevel));
                 rowsToProcess.push({
                     rowNum: rowNumber,
                     name: rawName,
@@ -1221,14 +1248,14 @@ export default function RoomsManagement() {
                         </div>
 
                         <div>
-                            <Label htmlFor="edit_floor_level">Floor Level (1 - 15) *</Label>
+                            <Label htmlFor="edit_floor_level">Floor Level (1 - 10) *</Label>
                             <Select
                                 id="edit_floor_level"
                                 value={editFloorLevel}
                                 onChange={(e) => setEditFloorLevel(e.target.value)}
                                 className="[&_select]:max-h-40 [&_select]:overflow-y-auto"
                             >
-                                {Array.from({ length: 15 }, (_, i) => i + 1).map((floor) => (
+                                {Array.from({ length: 10 }, (_, i) => i + 1).map((floor) => (
                                     <option key={floor} value={String(floor)}>
                                         Floor {floor}
                                     </option>
