@@ -125,7 +125,7 @@ export default function HelpPage() {
         teachers: ["teachers"],
         maq: ["maq"],
         fcce: ["fcce"],
-        help: ["help"],
+        help: [],
         config: ["configurations"],
         superuser: ["configurations"],
     };
@@ -175,7 +175,7 @@ export default function HelpPage() {
         if (accessible.length > 0) {
             return accessible[0];
         }
-        return "help";
+        return "dashboard";
     }
 
     // Build role description for the welcome banner
@@ -1072,64 +1072,68 @@ export default function HelpPage() {
                 },
                 {
                     tabId: "schedule-summary",
-                    tabName: "Schedule Summary & Excel Export",
+                    tabName: "Schedule Summary",
                     summary:
-                        "Audit generated schedule quality, set the active dashboard schedule, open the interactive timetable grid for manual adjustments, or export to Excel.",
+                        "Review a generated schedule's quality — KPI (Key Performance Indicator) cards, resource usage, conflicts, unassigned entries, and teacher workload analysis — then set it as active, open the timetable, or delete it.",
                     steps: [
                         {
                             stepNumber: 1,
                             title: "Open Schedule Summary View",
-                            description: "Inspect analytics and assignment health for a generated schedule.",
+                            description: "Navigate to a specific schedule's summary page to inspect its overall quality.",
                             details: [
-                                "Click on any schedule from the Schedules list to open its Summary Display page.",
-                                "Review the four top KPI (Key Performance Indicator) cards: Total Entries, Active Teachers, Subjects, and Total Units.",
-                                "The schedule banner shows the schedule name, generation date, and term (Term 1 or Term 2).",
+                                "Click on any schedule from the Schedules list to open its Summary page.",
+                                "The header banner shows the schedule name and creation date at the top-left.",
+                                "At the top-right, you will see action buttons: 'Open Timetable' to view the grid, 'Set as Active' to publish it on the Dashboard, and 'Delete' to remove the schedule.",
+                                "A 'Back to Schedules' link at the top-left lets you return to the schedule list.",
                             ],
                         },
                         {
                             stepNumber: 2,
-                            title: "Audit Resource Usage & Unassigned Metrics",
-                            description: "Check for entries lacking a teacher or room assignment and assess overall schedule quality.",
+                            title: "Review Top-Level KPI Cards",
+                            description: "Inspect the five summary stat cards for a quick schedule health check.",
                             details: [
-                                "Inspect the Teacher usage progress bar to see what percentage of faculty are actively assigned.",
-                                "Inspect the Room usage progress bar to evaluate facility usage across the schedule.",
-                                "Check 'Entries Lacking Teacher' — these classes need manual teacher assignment in the timetable editor.",
-                                "Check 'Entries Lacking Room' — these classes need a room assigned manually or the room pool needs expansion.",
-                                "Review Active Sections count to confirm all expected sections are represented in the schedule.",
+                                "Total Entries: Total number of scheduled class sessions across all sections and days. A value of 0 (shown in red) means no classes were placed.",
+                                "Active Teachers: Number of unique teachers assigned at least one class. A red exclamation icon appears if there are teacher conflicts (same teacher double-booked).",
+                                "Sections Active: Number of unique sections represented in the schedule. Compare this against your expected section count from course student enrollment.",
+                                "Subjects: Number of unique subjects scheduled. A red exclamation icon appears if there are section conflicts (same section double-booked).",
+                                "Total Units: Sum of all teaching units across all entries. A red exclamation icon shows the total number of all conflicts combined.",
+                                "Values shown in red indicate zero entries — check your configuration if these are unexpectedly low.",
                             ],
                         },
                         {
                             stepNumber: 3,
-                            title: "Open & Edit the Interactive Timetable",
-                            description: "Use the visual timetable grid to inspect and manually adjust class entries.",
+                            title: "Inspect Schedule Overview & Assignment Quality",
+                            description: "Check resource usage, unassigned entries, performance metrics, and schedule conflicts.",
                             details: [
-                                "Click 'Open Timetable' in the schedule banner to launch the full timetable grid view.",
-                                "The timetable displays Monday through Saturday (7:00 AM – 9:00 PM) in 30-minute slots with rooms as columns and time as rows.",
-                                "Click any class block to view its details: subject, section, teacher, room, and time range.",
-                                "Drag and drop class blocks to reassign them to different time slots or rooms — the system checks for conflicts as you move them.",
-                                "Use the filter controls to view the timetable by specific room, teacher, or section.",
-                                "Click 'Save' after making manual adjustments to persist changes to the schedule.",
+                                "Resource Utilization: Two progress bars show how many teachers and rooms are used out of the total available. Green means healthy usage, yellow means near capacity (80%+), and red means at or over capacity.",
+                                "Unassigned Entries: Shows how many class entries are missing a teacher or a room. 'Entries Lacking Teacher' and 'Entries Lacking Room' are shown in amber if greater than 0, or green if all entries are assigned.",
+                                "Performance Metrics: 'Daily Average' shows the average number of class entries per day across the week. 'Avg Class Duration' shows the average length of a class session in minutes.",
+                                "Schedule Conflicts: Lists the number of Teacher Conflicts (teacher double-booked), Room Conflicts (room double-booked), and Section Conflicts (section double-booked), plus a Total Conflicts count. Values in red mean conflicts exist; green means zero conflicts.",
+                                "If any conflict count is greater than 0, resolve the conflicts in the timetable editor before publishing the schedule.",
                             ],
                         },
                         {
                             stepNumber: 4,
-                            title: "Export Schedule to Excel & Set Dashboard Display",
-                            description: "Download spreadsheets for offline distribution or publish the schedule to the main Dashboard.",
+                            title: "Review Teacher Analysis Section",
+                            description: "Examine individual teacher workload and capacity to identify overloaded or underutilized faculty.",
                             details: [
-                                "Click 'Export' in the top-right action bar to download the complete schedule data in Excel (.xlsx) format.",
-                                "The exported file includes all class entries with day, time, subject, section, teacher, and room information.",
-                                "Click 'Set as Display on Dashboard' to make this schedule the active institutional view — it will appear on the Dashboard for all users.",
-                                "Only one schedule can be the active dashboard display at a time — setting a new one replaces the previous active schedule.",
+                                "Teacher Workload Summary: Four stat cards show Total Teachers (registered in the system), Active in Schedule (assigned at least one class), Overloaded (exceeding their max units — shown in red), and Total Units Assigned (sum of all units in blue).",
+                                "Teacher Cards Grid: Each assigned teacher gets a card showing their name, ID number, teacher code, employment status, current units, max units, absolute max (overload limit), available units remaining, and utilization percentage.",
+                                "Each card has a progress bar showing the teacher's utilization — click any card to view that teacher's detailed schedule analysis page.",
+                                "'View All Teachers' card at the end of the grid takes you to the full teacher list for that schedule.",
+                                "Use this section to spot teachers who are overloaded (near or at their max) or underutilized (low percentage) so you can rebalance assignments.",
                             ],
                         },
                         {
                             stepNumber: 5,
-                            title: "Delete a Generated Schedule",
-                            description: "Remove a schedule that is no longer needed.",
+                            title: "Set Schedule as Active or Delete It",
+                            description: "Publish the schedule to the Dashboard for all users to see, or remove it if it is no longer needed.",
                             details: [
-                                "From the Schedules list, click the delete control on the schedule you want to remove.",
-                                "Confirm deletion in the dialog — this permanently removes all class entries and associated data for that schedule.",
-                                "Warning: If the schedule is currently set as the active dashboard display, the Dashboard will show no active schedule until you activate another one.",
+                                "Click 'Set as Active' in the top action bar to make this schedule the active institutional view — it will appear on the Dashboard and Timetable pages for all users.",
+                                "Once active, the button changes to 'Already Active'. Click it again to deactivate the schedule.",
+                                "Only one schedule can be active at a time — setting a new one replaces the previous active schedule.",
+                                "Click 'Delete' to permanently remove the schedule. Confirm in the popup dialog to proceed.",
+                                "Warning: If you delete the active schedule, the Dashboard will show 'No Active Schedule Available' until you activate another one.",
                             ],
                         },
                     ],
@@ -1499,81 +1503,6 @@ export default function HelpPage() {
                                 "Use the 'Search logs...' bar or sort by Timestamp, User, or Action to trace specific changes.",
                             ],
                         },
-                    ],
-                },
-            ],
-        },
-        {
-            id: "help",
-            title: "Help & User Manual",
-            route: "/help",
-            icon: HiBookOpen,
-            description:
-                "Interactive system user manual providing searchable, module-by-module and tab-by-tab operational instructions for every AceHub feature — from Dashboard analytics to Configuration management.",
-            roles: ["Academic Head", "School Registrar", "Academic Assistant", "Teacher"],
-            features: [
-                "Instant keyword search across all modules, sub-tabs, features, and step-by-step details",
-                "Left-side module navigation panel with 12 system modules and filter count",
-                "Sub-tab switching for multi-tab modules (Courses, Subjects, Teachers, MAQ, Schedules, FCCE, Configurations)",
-                "Authorized role badges showing which user roles can access each module",
-                "Key features and capabilities summary for every module",
-                "Numbered step-by-step operational walkthroughs with detailed action steps",
-                "Route badges showing the exact URL path for each module",
-            ],
-            steps: [
-                {
-                    stepNumber: 1,
-                    title: "Navigate the Help Page Layout",
-                    description: "Understand the two-column layout and how to move between modules.",
-                    details: [
-                        "The Help page uses a split layout: the left column lists all System Modules, and the right column displays the detailed guide for the selected module.",
-                        "The top banner contains the page title and a search bar for filtering modules by keyword.",
-                        "Click any module in the left panel to load its guide in the right panel — the active module is highlighted in blue.",
-                        "The module count badge at the top of the left panel shows how many modules match your current search filter.",
-                    ],
-                },
-                {
-                    stepNumber: 2,
-                    title: "Search Across All Modules & Tasks",
-                    description: "Instantly locate relevant instructions using keyword search.",
-                    details: [
-                        "Type any keyword into the search bar at the top right — for example: 'Excel', 'MAQ', 'Overload', 'Break', 'Schedule', 'Import', 'Preference', or 'Archive'.",
-                        "The left module navigation list filters as you type to show only modules whose title, description, features, steps, or sub-tab content matches your keyword.",
-                        "Click the 'X' button inside the search bar to clear the filter and restore all modules.",
-                        "If no modules match your search, a 'No matching modules found' message appears in the left panel.",
-                    ],
-                },
-                {
-                    stepNumber: 3,
-                    title: "Read Module Guides & Sub-Tabs",
-                    description: "Explore detailed instructions for specific pages and their internal tabs.",
-                    details: [
-                        "Select any module from the left System Modules panel to view its guide.",
-                        "Each module guide shows the Route badge (exact URL - Uniform Resource Locator), Module Tabs count (if applicable), Authorized User Roles, and Key Features.",
-                        "Modules with multiple internal tabs (Courses, Subjects, Teachers, MAQ, Schedules, FCCE, Configurations) display sub-tab buttons below the features section — click a sub-tab to see its dedicated step-by-step guide.",
-                        "Single-tab modules display their steps directly without sub-tab buttons.",
-                    ],
-                },
-                {
-                    stepNumber: 4,
-                    title: "Follow Step-by-Step Operation Guides",
-                    description: "Execute tasks by following the numbered instructions for each module or sub-tab.",
-                    details: [
-                        "Each step is numbered sequentially and includes a title, a one-sentence description, and a bulleted list of detailed actions.",
-                        "Follow the steps in order — earlier steps often set up context required by later steps (e.g., creating a subject before assigning it in a schedule).",
-                        "The detail bullets describe exact button labels, field names, and expected system behavior so you can replicate the actions in the application.",
-                        "If a step references another module (e.g., 'configured under Configurations > Room Types'), navigate to that module's guide for additional context.",
-                    ],
-                },
-                {
-                    stepNumber: 5,
-                    title: "Cross-Reference Related Modules",
-                    description: "Use the Help page to understand how modules interconnect and depend on each other.",
-                    details: [
-                        "Many modules depend on data from other modules — for example, Schedules requires Courses, Subjects, Teachers, Rooms, and MAQ to be configured first.",
-                        "Use the left navigation to quickly jump between related modules and review their setup steps.",
-                        "The Configurations module guide documents system-wide settings (faculty load limits, break periods, room types) that affect multiple other modules.",
-                        "The Teacher Pre-assignments module bridges Teachers, Subjects, and Schedules by locking instructor-to-course assignments before schedule generation.",
                     ],
                 },
             ],

@@ -1,11 +1,14 @@
 "use client";
 
 import {
+  Configuration,
   fetchDepartments,
+  fetchFacultyLoadConfig,
   fetchScheduleByName,
   fetchScheduleTeacherMetricsComputation,
   fetchScheduleTeacherMetricsCount,
   fetchScheduleTeacherMetricsTable,
+  fetchTeachers,
   TeacherMetricRow,
   TeacherStatusFilter,
 } from "@/app/actions/system";
@@ -105,7 +108,72 @@ export default function SchedulesTeachersTable({
   const [showToastTimer, setShowToastTimer] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  // --- Faculty Load Config ---
+  const [facultyConfig, setFacultyConfig] = useState<Configuration | null>(null);
+  const [employmentTypeMap, setEmploymentTypeMap] = useState<Record<string, string>>({});
+
+  /** Map employment type to the correct faculty load limit from config */
+  function getMaxUnitsForEmployment(employmentType?: string): number {
+    const normalized = (employmentType || "full_time").toLowerCase();
+    const facultyLoad = facultyConfig?.faculty_load ?? {
+      full_time: 21,
+      part_time: 12,
+      part_time_full_load: 18,
+    };
+    if (
+      normalized.includes("part-time full load") ||
+      normalized.includes("part_time_full_load")
+    ) {
+      return Number(facultyLoad.part_time_full_load ?? 18);
+    } else if (normalized.includes("part")) {
+      return Number(facultyLoad.part_time ?? 12);
+    } else {
+      return Number(facultyLoad.full_time ?? 21);
+    }
+  }
+
+  /** Compute corrected metrics for a teacher row based on their employment type */
+  function getCorrectedTeacherMetrics(row: TeacherMetricRow) {
+    // Use employment type from the teachers table map, fallback to row's employment_type
+    const empType = employmentTypeMap[row.teacher_id] || row.employment_type || "";
+    const maxUnits = getMaxUnitsForEmployment(empType);
+    const overloadMax = Number(facultyConfig?.overload_max ?? 3);
+    const absoluteMax = maxUnits + overloadMax;
+    const available = Math.max(0, maxUnits - row.current_units);
+    const utilization =
+      maxUnits > 0 ? Math.round((row.current_units / maxUnits) * 1000) / 10 : 0;
+    return {
+      ...row,
+      employment_type: empType,
+      max_units: maxUnits,
+      absolute_max: absoluteMax,
+      available,
+      utilization,
+    };
+  }
+
   // --- Data Fetching ---
+  async function loadFacultyConfig() {
+    const res = await fetchFacultyLoadConfig();
+    if (res.success && res.data && res.data.length > 0) {
+      setFacultyConfig(res.data[0]);
+    }
+  }
+
+  async function loadEmploymentTypes() {
+    // Fetch all teachers to build a map of teacher_id -> employment_type
+    const res = await fetchTeachers(null, "All Active & On Leave", "All Departments", "surname", "ASC", 1000, 1);
+    if (res.success && res.data) {
+      const map: Record<string, string> = {};
+      res.data.forEach((t) => {
+        if (t.teacher_id && t.employment_type) {
+          map[t.teacher_id] = t.employment_type;
+        }
+      });
+      setEmploymentTypeMap(map);
+    }
+  }
+
   async function fetchScheduleData() {
     setIsLoading(true);
     const res = await fetchScheduleByName(scheduleName);
@@ -213,6 +281,8 @@ export default function SchedulesTeachersTable({
   // --- Use Effects ---
   useEffect(() => {
     void loadAllDepartments();
+    void loadFacultyConfig();
+    void loadEmploymentTypes();
     void fetchScheduleData();
   }, [scheduleName]);
 
@@ -615,6 +685,7 @@ export default function SchedulesTeachersTable({
               <TableBody className="divide-y">
                 {teachers.length > 0 ? (
                   teachers.map((item: TeacherMetricRow) => {
+                    const row = getCorrectedTeacherMetrics(item);
                     const isDeptValid =
                       !item.department ||
                       allDepartments.some(
@@ -623,8 +694,8 @@ export default function SchedulesTeachersTable({
                           item.department?.trim().toLowerCase(),
                       );
 
-                    const isOverloaded = item.current_units >= item.max_units;
-                    const isNearCapacity = item.utilization >= 80;
+                    const isOverloaded = row.current_units >= row.max_units;
+                    const isNearCapacity = row.utilization >= 80;
 
                     return (
                       <TableRow
@@ -696,17 +767,17 @@ export default function SchedulesTeachersTable({
                                 : "text-gray-900 dark:text-white"
                           }`}
                         >
-                          {item.current_units?.toFixed(1)} / {item.max_units}
-                          {item.absolute_max && (
+                          {row.current_units?.toFixed(1)} / {row.max_units}
+                          {row.absolute_max && (
                             <span className="ml-1 text-xs font-normal text-gray-400">
-                              (Abs Max: {item.absolute_max})
+                              (Abs Max: {row.absolute_max})
                             </span>
                           )}
                         </TableCell>
 
                         {/* Available */}
                         <TableCell className="font-mono text-sm text-emerald-600 dark:text-emerald-400">
-                          +{item.available?.toFixed(1)}
+                          +{row.available?.toFixed(1)}
                         </TableCell>
 
                         {/* Utilization */}
@@ -720,7 +791,7 @@ export default function SchedulesTeachersTable({
                                   : "text-emerald-600 dark:text-emerald-400"
                             }
                           >
-                            {item.utilization?.toFixed(1)}%
+                            {row.utilization?.toFixed(1)}%
                           </span>
                         </TableCell>
 
