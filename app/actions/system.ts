@@ -161,6 +161,35 @@ export async function fetchSubjectRequirementById(
   }
 }
 
+export async function fetchSubjectRequirementByCode(
+  courseCode: string
+): Promise<{
+  success: boolean;
+  data: SubjectRequirementRecord | null;
+  error?: string;
+}> {
+  try {
+    const result = await sql`
+      SELECT * FROM subject_requirements
+      WHERE course_code = ${courseCode}
+      LIMIT 1
+    `;
+
+    if (!result || result.length === 0) {
+      return { success: true, data: null };
+    }
+
+    return { success: true, data: result[0] as SubjectRequirementRecord };
+  } catch (error) {
+    console.error("Failed to fetch subject requirement by code:", error);
+    return {
+      success: false,
+      data: null,
+      error: (error as Error).message || "Failed to fetch subject requirement.",
+    };
+  }
+}
+
 export async function saveScheduleEntries(
   scheduleId: string,
   entries: LocalTimetableEntry[]
@@ -588,7 +617,7 @@ export async function getTeachersWithAqAndFcce(params: {
 
 
 /** --- POST GENERATED SCHEDULE --- **/
-2
+
 export async function saveGeneratedSchedule(payload: {
   scheduleName: string;
   generationConfig: { description: string };
@@ -717,6 +746,54 @@ export interface ScheduleTeacherMetricsData {
   overloaded: number;
   on_leave_count: number;
   teachers: TeacherMetricRecord[];
+}
+export interface ScheduleConflictsCount {
+  teacher_conflicts: number;
+  room_conflicts: number;
+  section_conflicts: number;
+  total_conflicts: number;
+}
+export interface FetchScheduleConflictsCountResponse {
+  success: boolean;
+  data: ScheduleConflictsCount;
+  error?: string;
+}
+
+export async function fetchScheduleConflictsCount(
+    scheduleId: string
+): Promise<FetchScheduleConflictsCountResponse> {
+  try {
+    const [row] = await sql<ScheduleConflictsCount[]>`
+      SELECT
+        teacher_conflicts,
+        room_conflicts,
+        section_conflicts,
+        total_conflicts
+      FROM get_schedule_conflicts_count(${scheduleId}::UUID);
+    `;
+
+    return {
+      success: true,
+      data: {
+        teacher_conflicts: Number(row?.teacher_conflicts ?? 0),
+        room_conflicts: Number(row?.room_conflicts ?? 0),
+        section_conflicts: Number(row?.section_conflicts ?? 0),
+        total_conflicts: Number(row?.total_conflicts ?? 0),
+      },
+    };
+  } catch (error) {
+    console.error("Failed to fetch schedule conflicts count:", error);
+    return {
+      success: false,
+      data: {
+        teacher_conflicts: 0,
+        room_conflicts: 0,
+        section_conflicts: 0,
+        total_conflicts: 0,
+      },
+      error: (error as Error).message || "Failed to count schedule conflicts.",
+    };
+  }
 }
 
 export async function fetchScheduleByName(scheduleName: string) {
@@ -1079,6 +1156,7 @@ export interface TeacherDetailedInfo {
 
 export interface TeacherScheduleEntryRow {
   day: string;
+  subject_id: string;
   subject_name: string;
   start_time: string;
   end_time: string;
@@ -1127,6 +1205,7 @@ export async function fetchTeacherDetailedMetrics(
 
     const entries: TeacherScheduleEntryRow[] = (entryRows as unknown as Record<string, unknown>[]).map((row) => ({
       day: String(row.day ?? ""),
+      subject_id: String(row.subject_id ?? ""),
       subject_name: String(row.subject_name ?? ""),
       start_time: String(row.start_time ?? ""),
       end_time: String(row.end_time ?? ""),

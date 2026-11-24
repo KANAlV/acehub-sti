@@ -26,6 +26,9 @@ import {
   HiCheck,
   HiExclamation,
   HiX,
+  HiOutlineUser,
+  HiOutlineOfficeBuilding,
+  HiOutlineAcademicCap,
 } from "react-icons/hi";
 import { useRouter } from "next/navigation";
 import React, { useState, useEffect, useRef, useCallback } from "react";
@@ -36,6 +39,7 @@ import {
   fetchScheduleEntriesSummary,
   fetchScheduleTeacherMetricsSummary,
   fetchScheduleUsageSummary,
+  fetchScheduleConflictsCount,
   TeacherMetricRecord,
   updateActiveSchedule,
 } from "@/app/actions/system";
@@ -94,6 +98,10 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
   const [teachersList, setTeachersList] = useState<TeacherCardData[] | null>(
     null,
   );
+  const [teacherConflicts, setTeacherConflicts] = useState<number | null>(null);
+  const [roomConflicts, setRoomConflicts] = useState<number | null>(null);
+  const [sectionConflicts, setSectionConflicts] = useState<number | null>(null);
+  const [totalConflicts, setTotalConflicts] = useState<number | null>(null);
 
   // --- Toast State & Timer Ref ---
   const [showToast, setShowToast] = useState<boolean>(false);
@@ -264,6 +272,21 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
     }
   }
 
+  async function getScheduleConflictsCount() {
+    if (scheduleID !== null) {
+      const res = await fetchScheduleConflictsCount(scheduleID);
+
+      if (res.success && res.data) {
+        setTeacherConflicts(res.data.teacher_conflicts);
+        setRoomConflicts(res.data.room_conflicts);
+        setSectionConflicts(res.data.section_conflicts);
+        setTotalConflicts(res.data.total_conflicts);
+      } else {
+        triggerToast(res.error || "Failed to load conflicts count.", "error");
+      }
+    }
+  }
+
   async function getScheduleTeacherMetricsSummary() {
     if (scheduleID !== null) {
       const res = await fetchScheduleTeacherMetricsSummary(scheduleID);
@@ -322,6 +345,7 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
       void getScheduleDetailedSummary();
       void getScheduleUsageSummary();
       void getScheduleTeacherMetricsSummary();
+      void getScheduleConflictsCount();
     }
   }, [scheduleID]);
 
@@ -440,7 +464,7 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
       </div>
 
       {/* Top Metric Cards Row */}
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {/* Card 1 */}
         <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800">
           <div>
@@ -470,8 +494,32 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
               {activeTeachers !== null ? activeTeachers : <Spinner size="sm" />}
             </h3>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-800/40 dark:bg-emerald-950/60 dark:text-emerald-400">
-            <HiUserGroup className="h-5 w-5" />
+          <div className="flex items-center gap-2">
+            {teacherConflicts !== null && teacherConflicts > 0 && (
+              <Tooltip content={`${teacherConflicts} teacher conflict${teacherConflicts > 1 ? 's' : ''}`}>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 dark:border-red-800/40 dark:bg-red-950/60 dark:text-red-400">
+                  <HiExclamationCircle className="h-5 w-5" />
+                </div>
+              </Tooltip>
+            )}
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-800/40 dark:bg-emerald-950/60 dark:text-emerald-400">
+              <HiUserGroup className="h-5 w-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2.5 - Sections Active */}
+        <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+          <div>
+            <p className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+              Sections Active
+            </p>
+            <h3 className="text-3xl font-extrabold text-gray-900 dark:text-white">
+              {sectionsCount !== null ? sectionsCount : <Spinner size="sm" />}
+            </h3>
+          </div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 text-cyan-600 dark:border-cyan-800/40 dark:bg-cyan-950/60 dark:text-cyan-400">
+            <HiOutlineAcademicCap className="h-5 w-5" />
           </div>
         </div>
 
@@ -487,8 +535,17 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
               {subjectsCount !== null ? subjectsCount : <Spinner size="sm" />}
             </h3>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-purple-200 bg-purple-50 text-purple-600 dark:border-purple-800/40 dark:bg-purple-950/60 dark:text-purple-400">
-            <HiBookOpen className="h-5 w-5" />
+          <div className="flex items-center gap-2">
+            {sectionConflicts !== null && sectionConflicts > 0 && (
+              <Tooltip content={`${sectionConflicts} section conflict${sectionConflicts > 1 ? 's' : ''}`}>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 dark:border-red-800/40 dark:bg-red-950/60 dark:text-red-400">
+                  <HiExclamationCircle className="h-5 w-5" />
+                </div>
+              </Tooltip>
+            )}
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-purple-200 bg-purple-50 text-purple-600 dark:border-purple-800/40 dark:bg-purple-950/60 dark:text-purple-400">
+              <HiBookOpen className="h-5 w-5" />
+            </div>
           </div>
         </div>
 
@@ -504,8 +561,17 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
               {totalUnits !== null ? totalUnits : <Spinner size="sm" />}
             </h3>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-800/40 dark:bg-amber-950/60 dark:text-amber-500">
-            <HiClock className="h-5 w-5" />
+          <div className="flex items-center gap-2">
+            {totalConflicts !== null && totalConflicts > 0 && (
+              <Tooltip content={`${totalConflicts} total conflict${totalConflicts > 1 ? 's' : ''}`}>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 dark:border-red-800/40 dark:bg-red-950/60 dark:text-red-400">
+                  <HiExclamationCircle className="h-5 w-5" />
+                </div>
+              </Tooltip>
+            )}
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-800/40 dark:bg-amber-950/60 dark:text-amber-500">
+              <HiClock className="h-5 w-5" />
+            </div>
           </div>
         </div>
       </div>
@@ -571,19 +637,56 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
                   className="bg-gray-100 dark:bg-gray-700"
                 />
               </div>
-              <div className="flex justify-between pt-1 text-xs text-gray-500 dark:text-gray-400">
-                <span>Sections Active</span>
-                <span className="font-mono font-bold text-gray-900 dark:text-gray-200">
-                  {sectionsCount !== null ? sectionsCount : "-"}
-                </span>
+            </div>
+
+            {/* Unassigned Entries */}
+            <div className="mt-4">
+              <h4 className="mb-4 text-xs font-bold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+                Unassigned Entries
+              </h4>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between border-b border-gray-100 pb-2 dark:border-gray-700/60">
+                  <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                    <HiExclamationCircle
+                      className={`h-4 w-4 ${(unassignedTeachersCount ?? 0) > 0 ? "text-amber-500" : "hidden"}`}
+                    />
+                    Entries Lacking Teacher:
+                  </span>
+                  <span
+                    className={`font-mono font-bold ${(unassignedTeachersCount ?? 0) > 0 ? "text-amber-500 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}
+                  >
+                    {unassignedTeachersCount !== null ? (
+                      `${unassignedTeachersCount} ${unassignedTeachersCount === 1 ? "entry" : "entries"}`
+                    ) : (
+                      <Spinner size="sm" />
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between pt-1">
+                  <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                    <HiExclamationCircle
+                      className={`h-4 w-4 ${(unassignedRoomsCount ?? 0) > 0 ? "text-amber-500" : "hidden"}`}
+                    />
+                    Entries Lacking Room:
+                  </span>
+                  <span
+                    className={`font-mono font-bold ${(unassignedRoomsCount ?? 0) > 0 ? "text-amber-500 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}
+                  >
+                    {unassignedRoomsCount !== null ? (
+                      `${unassignedRoomsCount} ${unassignedRoomsCount === 1 ? "entry" : "entries"}`
+                    ) : (
+                      <Spinner size="sm" />
+                    )}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Schedule Details & Unassigned Checks */}
+          {/* Schedule Details & Conflicts */}
           <div>
             <h4 className="mb-4 text-xs font-bold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-              Performance & Unassigned Metrics
+              Performance Metrics
             </h4>
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between border-b border-gray-100 pb-2 dark:border-gray-700/60">
@@ -602,39 +705,74 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
                   {avgClassDuration !== null ? avgClassDuration : "-"}
                 </span>
               </div>
-              <div className="flex justify-between border-b border-gray-100 pb-2 dark:border-gray-700/60">
-                <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-                  <HiExclamationCircle
-                    className={`h-4 w-4 ${(unassignedTeachersCount ?? 0) > 0 ? "text-amber-500" : "hidden"}`}
-                  />
-                  Entries Lacking Teacher:
-                </span>
-                <span
-                  className={`font-mono font-bold ${(unassignedTeachersCount ?? 0) > 0 ? "text-amber-500 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}
-                >
-                  {unassignedTeachersCount !== null ? (
-                    `${unassignedTeachersCount} ${unassignedTeachersCount === 1 ? "entry" : "entries"}`
-                  ) : (
-                    <Spinner size="sm" />
-                  )}
-                </span>
-              </div>
-              <div className="flex justify-between pt-1">
-                <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-                  <HiExclamationCircle
-                    className={`h-4 w-4 ${(unassignedRoomsCount ?? 0) > 0 ? "text-amber-500" : "hidden"}`}
-                  />
-                  Entries Lacking Room:
-                </span>
-                <span
-                  className={`font-mono font-bold ${(unassignedRoomsCount ?? 0) > 0 ? "text-amber-500 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}
-                >
-                  {unassignedRoomsCount !== null ? (
-                    `${unassignedRoomsCount} ${unassignedRoomsCount === 1 ? "entry" : "entries"}`
-                  ) : (
-                    <Spinner size="sm" />
-                  )}
-                </span>
+            </div>
+
+            {/* Schedule Conflicts */}
+            <div className="mt-6">
+              <h4 className="mb-4 text-xs font-bold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+                Schedule Conflicts
+              </h4>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between border-b border-gray-100 pb-2 dark:border-gray-700/60">
+                  <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                    <HiOutlineUser className="h-4 w-4" />
+                    Teacher Conflicts:
+                  </span>
+                  <span
+                    className={`font-mono font-bold ${
+                      (teacherConflicts ?? 0) > 0
+                        ? "text-red-500 dark:text-red-400"
+                        : "text-emerald-600 dark:text-emerald-400"
+                    }`}
+                  >
+                    {teacherConflicts !== null ? teacherConflicts : <Spinner size="sm" />}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-gray-100 pb-2 dark:border-gray-700/60">
+                  <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                    <HiOutlineOfficeBuilding className="h-4 w-4" />
+                    Room Conflicts:
+                  </span>
+                  <span
+                    className={`font-mono font-bold ${
+                      (roomConflicts ?? 0) > 0
+                        ? "text-red-500 dark:text-red-400"
+                        : "text-emerald-600 dark:text-emerald-400"
+                    }`}
+                  >
+                    {roomConflicts !== null ? roomConflicts : <Spinner size="sm" />}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-gray-100 pb-2 dark:border-gray-700/60">
+                  <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                    <HiOutlineAcademicCap className="h-4 w-4" />
+                    Section Conflicts:
+                  </span>
+                  <span
+                    className={`font-mono font-bold ${
+                      (sectionConflicts ?? 0) > 0
+                        ? "text-red-500 dark:text-red-400"
+                        : "text-emerald-600 dark:text-emerald-400"
+                    }`}
+                  >
+                    {sectionConflicts !== null ? sectionConflicts : <Spinner size="sm" />}
+                  </span>
+                </div>
+                <div className="flex justify-between pt-1">
+                  <span className="flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-300">
+                    <HiExclamationCircle className="h-4 w-4" />
+                    Total Conflicts:
+                  </span>
+                  <span
+                    className={`font-mono font-bold ${
+                      (totalConflicts ?? 0) > 0
+                        ? "text-red-500 dark:text-red-400"
+                        : "text-emerald-600 dark:text-emerald-400"
+                    }`}
+                  >
+                    {totalConflicts !== null ? totalConflicts : <Spinner size="sm" />}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -705,8 +843,11 @@ export default function SummaryDisplay({ scheduleName }: ScheduleSummaryProps) {
                       `/schedules/${scheduleName}/teachers/${encodeURIComponent(teacher.idNumber)}`,
                     )
                   }
-                  className="relative flex cursor-pointer flex-col justify-between rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:border-gray-300 dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700"
+                  className="relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:border-gray-300 dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700"
                 >
+                  <div
+                    className="pointer-events-none absolute inset-0 bg-gray-400 opacity-0 transition-opacity duration-200 hover:opacity-10"
+                  />
                   <div>
                     <div className="mb-2 flex items-start justify-between">
                       <div>

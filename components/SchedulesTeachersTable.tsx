@@ -224,10 +224,10 @@ export default function SchedulesTeachersTable({
   }, [scheduleID]);
 
   useEffect(() => {
-    if (searchTerm.length > 2 || searchTerm.length === 0) {
+    if (debouncedSearch.length > 2 || debouncedSearch.length === 0) {
       void getTeachers();
     }
-  }, [searchTerm]);
+  }, [debouncedSearch]);
 
   // --- UI FUNCTIONS ---
   function getCapacityTextColor(current: number | null, max: number | null) {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Modal, ModalBody, ModalHeader, Button } from "flowbite-react";
+import { Modal, ModalBody, ModalHeader, Button, Tooltip } from "flowbite-react";
 import { HiOutlineExclamationCircle } from "react-icons/hi";
 import {
   fetchSubjectRequirementById,
@@ -309,15 +309,20 @@ export default function TeacherAssignmentModal({
     : Number(existingLoad) + Number(additionalUnits);
 
   // Projected Preps Calculation
-  const existingPreps = new Set(
+  // Calculate the "before" prep count from the teacher's current entries (without the target subject)
+  const currentPreps = new Set(
     teacherEntries.map((e) => e.subject_id || e.course_code),
   );
+  const currentPrepCount = currentPreps.size;
+
+  // Add the target subject to get the projected prep count
+  // If the teacher already has this subject, the set size won't increase
   if (targetSubjectId) {
-    existingPreps.add(targetSubjectId);
+    currentPreps.add(targetSubjectId);
   } else if (targetCourseCode) {
-    existingPreps.add(targetCourseCode);
+    currentPreps.add(targetCourseCode);
   }
-  const projectedPreps = existingPreps.size;
+  const projectedPreps = currentPreps.size;
 
   const handleConfirmClick = () => {
     if (!selectedTeacher) return;
@@ -554,6 +559,54 @@ export default function TeacherAssignmentModal({
                       )}
                   </div>
                 )}
+
+                {/* Impact Projection (Onload) */}
+                {!isTeacherAlreadyAssigned && (
+                  <div className="mt-3 border-t pt-3">
+                    <div className="mb-2 text-center text-[10px] font-bold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+                      Impact on {selectedTeacher.full_name} (Onload)
+                    </div>
+                    <div className="flex items-center justify-around">
+                      <div className="text-center">
+                        <div className="text-[10px] font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+                          Proj. Prep
+                        </div>
+                        {projectedPreps > prepLimit ? (
+                          <Tooltip content="Exceeds Max Prep">
+                            <div className="mt-0.5 text-base font-bold text-red-600 dark:text-red-400">
+                              {currentPrepCount} → {projectedPreps} / {prepLimit}
+                            </div>
+                          </Tooltip>
+                        ) : (
+                          <div className="mt-0.5 text-base font-bold text-emerald-600 dark:text-emerald-400">
+                            {currentPrepCount} → {projectedPreps} / {prepLimit}
+                          </div>
+                        )}
+                      </div>
+                      <div className="h-8 w-px bg-gray-200 dark:bg-gray-700" />
+                      <div className="text-center">
+                        <div className="text-[10px] font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+                          Proj. Load
+                        </div>
+                        {projectedLoad > absoluteMaxLoad ? (
+                          <Tooltip content="Exceeds Max Load">
+                            <div className="mt-0.5 text-base font-bold text-red-600 dark:text-red-400">
+                              {Number(existingLoad).toFixed(1)} → {Number(projectedLoad).toFixed(1)} / {facultyLoadLimit}
+                            </div>
+                          </Tooltip>
+                        ) : projectedLoad > facultyLoadLimit ? (
+                          <div className="mt-0.5 text-base font-bold text-amber-600 dark:text-amber-400">
+                            {Number(existingLoad).toFixed(1)} → {Number(projectedLoad).toFixed(1)} / {facultyLoadLimit}
+                          </div>
+                        ) : (
+                          <div className="mt-0.5 text-base font-bold text-cyan-600 dark:text-cyan-400">
+                            {Number(existingLoad).toFixed(1)} → {Number(projectedLoad).toFixed(1)} / {facultyLoadLimit}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -594,40 +647,6 @@ export default function TeacherAssignmentModal({
               </div>
             )}
 
-            {/* Dynamic Workload & Preparation Stats Widget */}
-            {selectedTeacher && !isTeacherAlreadyAssigned && (
-              <div className="flex items-center justify-around rounded-xl border border-gray-200 bg-white p-3 text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                <div className="text-center">
-                  <div className="text-[10px] font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-                    Proj. Prep
-                  </div>
-                  <div
-                    className={`mt-0.5 text-base font-bold ${
-                      projectedPreps > prepLimit
-                        ? "text-red-600 dark:text-red-400"
-                        : "text-emerald-600 dark:text-emerald-400"
-                    }`}
-                  >
-                    {existingPreps.size - 1} → {projectedPreps} / {prepLimit}
-                  </div>
-                </div>
-                <div className="h-8 w-px bg-gray-200 dark:bg-gray-700" />
-                <div className="text-center">
-                  <div className="text-[10px] font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-                    Proj. Load
-                  </div>
-                  <div
-                    className={`mt-0.5 text-base font-bold ${
-                      projectedLoad > facultyLoadLimit
-                        ? "text-amber-600 dark:text-amber-400"
-                        : "text-cyan-600 dark:text-cyan-400"
-                    }`}
-                  >
-                    {Number(existingLoad).toFixed(1)} → {Number(projectedLoad).toFixed(1)} / {facultyLoadLimit}
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Academic Qualifications (AQ) Status Alert Box */}
             {selectedTeacher && !isTeacherAlreadyAssigned && (
@@ -711,9 +730,9 @@ export default function TeacherAssignmentModal({
                 color="cyan"
                 size="sm"
                 onClick={handleConfirmClick}
-                disabled={!selectedTeacher || isTeacherAlreadyAssigned}
+                disabled={!selectedTeacher || isTeacherAlreadyAssigned || projectedLoad > absoluteMaxLoad}
                 className={`cursor-pointer bg-cyan-600 text-white hover:bg-cyan-700 ${
-                  !selectedTeacher || isTeacherAlreadyAssigned ? "cursor-not-allowed opacity-50" : ""
+                  !selectedTeacher || isTeacherAlreadyAssigned || projectedLoad > absoluteMaxLoad ? "cursor-not-allowed opacity-50" : ""
                 }`}
               >
                 Confirm Assignment
