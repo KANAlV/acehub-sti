@@ -51,7 +51,7 @@ import {
   ProgramInput,
 } from "@/app/actions/system";
 
-export interface CollegeYearLevelDistribution {
+export interface TertiaryYearLevelDistribution {
   "1"?: number;
   "2"?: number;
   "3"?: number;
@@ -59,10 +59,10 @@ export interface CollegeYearLevelDistribution {
   [key: string]: unknown;
 }
 
-export interface CollegeProgram {
+export interface TertiaryProgram {
   program_code: string;
   program_name: string | null;
-  students: CollegeYearLevelDistribution | null;
+  students: TertiaryYearLevelDistribution | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -75,6 +75,9 @@ const REQUIRED_HEADERS = [
   "3rd Year Count",
   "4th Year Count",
 ];
+
+// Strict year level constant — prevents cross-contamination with SHS imports
+const YEAR_LEVEL = "tertiary";
 
 interface DataValidationRule {
   type: string;
@@ -92,14 +95,14 @@ interface WorksheetWithValidation extends ExcelJS.Worksheet {
   };
 }
 
-export default function CollegeProgramsManagement() {
+export default function TertiaryProgramsManagement() {
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
   const activeUser = activeAccount?.username || "system";
   const [isLoading, setLoading] = useState(false);
 
   // --- Table & Filter States --- //
-  const [programs, setPrograms] = useState<CollegeProgram[]>([]);
+  const [programs, setPrograms] = useState<TertiaryProgram[]>([]);
   const [programsCount, setProgramsCount] = useState(0);
   const [sortProgramsBy, setSortProgramsBy] = useState("program_code");
   const [sortProgramsDir, setSortProgramsDir] = useState<"ASC" | "DESC">("ASC");
@@ -191,14 +194,14 @@ export default function CollegeProgramsManagement() {
     if (val === "") return "";
     const parsed = parseInt(val, 10);
     if (isNaN(parsed)) return 0;
-    return Math.min(1000, Math.max(0, parsed));
+    return Math.min(500, Math.max(0, parsed));
   };
 
   /***********************
    * HELPER UTILITIES *
    ***********************/
 
-  const parseStudentsJSON = (students: unknown): CollegeYearLevelDistribution => {
+  const parseStudentsJSON = (students: unknown): TertiaryYearLevelDistribution => {
     if (!students) return { "1": 0, "2": 0, "3": 0, "4": 0 };
     if (typeof students === "string") {
       try {
@@ -207,10 +210,10 @@ export default function CollegeProgramsManagement() {
         return { "1": 0, "2": 0, "3": 0, "4": 0 };
       }
     }
-    return students as CollegeYearLevelDistribution;
+    return students as TertiaryYearLevelDistribution;
   };
 
-  const getTotalStudents = (students: CollegeYearLevelDistribution | null): number => {
+  const getTotalStudents = (students: TertiaryYearLevelDistribution | null): number => {
     if (!students) return 0;
     const parsed = parseStudentsJSON(students);
     const y1 = parsed["1"] ?? 0;
@@ -238,7 +241,7 @@ export default function CollegeProgramsManagement() {
 
   const handleDownloadTemplate = useCallback(async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("College Programs") as WorksheetWithValidation;
+    const worksheet = workbook.addWorksheet("Colleg Programs") as WorksheetWithValidation;
 
     worksheet.columns = [
       { header: "Program Code", key: "program_code", width: 15 },
@@ -258,33 +261,33 @@ export default function CollegeProgramsManagement() {
       year_4: 85,
     });
 
-    worksheet.dataValidations.add("C2:F1000", {
+    worksheet.dataValidations.add("C2:F500", {
       type: "whole",
       operator: "between",
       allowBlank: false,
-      formulae: [0, 1000],
+      formulae: [0, 500],
       showErrorMessage: true,
       errorTitle: "Invalid Student Count",
-      error: "Please enter a whole number between 0 and 1,000.",
+      error: "Please enter a whole number between 0 and 500.",
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    downloadWorkbook(buffer, "College_Programs_Template.xlsx");
+    downloadWorkbook(buffer, "Tertiary_Programs_Template.xlsx");
     triggerToast("success", "Blank Excel template downloaded successfully!");
   }, []);
 
   const handleExportExcel = useCallback(async () => {
     try {
-      const response = await fetchPrograms(searchTerm || null, "tertiary", sortProgramsBy, sortProgramsDir, 10000, 1);
+      const response = await fetchPrograms(searchTerm || null, YEAR_LEVEL, sortProgramsBy, sortProgramsDir, 10000, 1);
       const exportList = response.success && Array.isArray(response.data) ? response.data : [];
 
       if (exportList.length === 0) {
-        triggerToast("warning", "No college program records available to export.");
+        triggerToast("warning", "No tertiary program records available to export.");
         return;
       }
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("College Programs Export") as WorksheetWithValidation;
+      const worksheet = workbook.addWorksheet("Tertiary Programs Export") as WorksheetWithValidation;
 
       worksheet.columns = [
         { header: "Program Code", key: "program_code", width: 15 },
@@ -307,16 +310,16 @@ export default function CollegeProgramsManagement() {
         });
       });
 
-      worksheet.dataValidations.add("C2:F1000", {
+      worksheet.dataValidations.add("C2:F500", {
         type: "whole",
         operator: "between",
         allowBlank: false,
-        formulae: [0, 1000],
+        formulae: [0, 500],
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
-      downloadWorkbook(buffer, `College_Programs_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
-      triggerToast("success", "College programs exported to Excel successfully");
+      downloadWorkbook(buffer, `Tertiary_Programs_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
+      triggerToast("success", "Tertiary programs exported to Excel successfully");
     } catch (err) {
       console.error(err);
       triggerToast("error", "Failed to export records to Excel");
@@ -422,11 +425,11 @@ export default function CollegeProgramsManagement() {
           return;
         }
 
-        // Apply system clampStudentCount logic (0 - 1000)
-        const clampedY1 = Math.min(1000, Math.max(0, rawY1));
-        const clampedY2 = Math.min(1000, Math.max(0, rawY2));
-        const clampedY3 = Math.min(1000, Math.max(0, rawY3));
-        const clampedY4 = Math.min(1000, Math.max(0, rawY4));
+        // Apply system clampStudentCount logic (0 - 500)
+        const clampedY1 = Math.min(500, Math.max(0, rawY1));
+        const clampedY2 = Math.min(500, Math.max(0, rawY2));
+        const clampedY3 = Math.min(500, Math.max(0, rawY3));
+        const clampedY4 = Math.min(500, Math.max(0, rawY4));
 
         rowsToProcess.push({
           rowNum: rowNumber,
@@ -443,7 +446,7 @@ export default function CollegeProgramsManagement() {
         const payload: ProgramInput = {
           program_code: item.code,
           program_name: item.name || undefined,
-          year_level: "tertiary",
+          year_level: YEAR_LEVEL,
           students: {
             "1": item.y1,
             "2": item.y2,
@@ -452,12 +455,36 @@ export default function CollegeProgramsManagement() {
           },
         };
 
-        const res = await createProgram(activeUser, payload);
-        if (res.success) {
+        // Validate that the imported record matches the expected year level
+        if (payload.year_level !== YEAR_LEVEL) {
+          logs.push(`Row ${item.rowNum} (${item.code}): Skipped. Year level mismatch — expected "${YEAR_LEVEL}".`);
+          failCount++;
+          continue;
+        }
+
+        const createRes = await createProgram(activeUser, payload);
+        if (createRes.success) {
           successCount++;
         } else {
-          logs.push(`Row ${item.rowNum} (${item.code}): ${res.error || "Creation failed."}`);
-          failCount++;
+          // If creation fails, try updating the existing program instead
+          const updatePayload = {
+            program_name: item.name || undefined,
+            year_level: YEAR_LEVEL,
+            students: {
+              "1": item.y1,
+              "2": item.y2,
+              "3": item.y3,
+              "4": item.y4,
+            },
+          };
+          const updateRes = await updateProgram(activeUser, item.code, updatePayload);
+          if (updateRes.success) {
+            successCount++;
+            logs.push(`Row ${item.rowNum} (${item.code}): Updated existing program.`);
+          } else {
+            logs.push(`Row ${item.rowNum} (${item.code}): ${createRes.error || "Creation failed."}`);
+            failCount++;
+          }
         }
       }
 
@@ -468,8 +495,8 @@ export default function CollegeProgramsManagement() {
       ]);
 
       if (successCount > 0) {
-        triggerToast("success", `Imported ${successCount} college program records successfully.`);
-        getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+        triggerToast("success", `Imported ${successCount} tertiary program records successfully.`);
+        getTertiaryPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
       }
     } catch (err) {
       console.error(err);
@@ -489,14 +516,14 @@ export default function CollegeProgramsManagement() {
     setSortProgramsDir(newDir);
     setPrograms([]);
     setCurrentProgramPage(1);
-    getCollegePrograms(searchTerm, sortBy, newDir, maxRowPrograms, 1);
+    getTertiaryPrograms(searchTerm, sortBy, newDir, maxRowPrograms, 1);
   };
 
   const onPageChangePrograms = (page: number) => {
     if (pageChangingPrograms) return;
     setPageChangingPrograms(true);
     setPrograms([]);
-    getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, page);
+    getTertiaryPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, page);
     setPageChangingPrograms(false);
     setCurrentProgramPage(page);
   };
@@ -569,7 +596,7 @@ export default function CollegeProgramsManagement() {
    * INTEGRATED CRUD LOGIC *
    **********************/
 
-  async function getCollegePrograms(
+  async function getTertiaryPrograms(
       search: string | null = searchTerm,
       sortby: string = sortProgramsBy,
       sortdir: "ASC" | "DESC" = sortProgramsDir,
@@ -579,12 +606,12 @@ export default function CollegeProgramsManagement() {
     setLoading(true);
 
     const [dataRes, countRes] = await Promise.all([
-      fetchPrograms(search, "tertiary", sortby, sortdir, limit, page),
-      fetchProgramsCount(search, "tertiary"),
+      fetchPrograms(search, YEAR_LEVEL, sortby, sortdir, limit, page),
+      fetchProgramsCount(search, YEAR_LEVEL),
     ]);
 
     if (dataRes.success && Array.isArray(dataRes.data)) {
-      const mappedPrograms: CollegeProgram[] = dataRes.data.map((item: ProgramRecord) => ({
+      const mappedPrograms: TertiaryProgram[] = dataRes.data.map((item: ProgramRecord) => ({
         program_code: item.program_code,
         program_name: item.program_name,
         students: parseStudentsJSON(item.students),
@@ -594,7 +621,7 @@ export default function CollegeProgramsManagement() {
 
       setPrograms(mappedPrograms);
     } else {
-      triggerToast("error", dataRes.error || "Failed to fetch college programs.");
+      triggerToast("error", dataRes.error || "Failed to fetch tertiary programs.");
       setPrograms([]);
     }
 
@@ -616,7 +643,7 @@ export default function CollegeProgramsManagement() {
     const payload: ProgramInput = {
       program_code: inputProgramCode.trim(),
       program_name: inputProgramName.trim() || undefined,
-      year_level: "tertiary",
+      year_level: YEAR_LEVEL,
       students: {
         "1": Number(inputYear1Count) || 0,
         "2": Number(inputYear2Count) || 0,
@@ -628,18 +655,18 @@ export default function CollegeProgramsManagement() {
     const res = await createProgram(activeUser, payload);
 
     if (res.success) {
-      triggerToast("success", `College Program "${inputProgramCode}" created successfully.`);
+      triggerToast("success", `Tertiary Program "${inputProgramCode}" created successfully.`);
       handleCloseProgramModals();
-      getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+      getTertiaryPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
     } else {
-      triggerToast("error", res.error || "Failed to create college program.");
+      triggerToast("error", res.error || "Failed to create tertiary program.");
     }
   }
 
   async function handleProgramUpdate() {
     const payload = {
       program_name: editProgramName.trim() || undefined,
-      year_level: "tertiary",
+      year_level: YEAR_LEVEL,
       students: {
         "1": Number(editYear1Count) || 0,
         "2": Number(editYear2Count) || 0,
@@ -651,11 +678,11 @@ export default function CollegeProgramsManagement() {
     const res = await updateProgram(activeUser, selectedProgramCode, payload);
 
     if (res.success) {
-      triggerToast("success", `College Program "${selectedProgramCode}" updated successfully.`);
+      triggerToast("success", `Tertiary Program "${selectedProgramCode}" updated successfully.`);
       handleCloseProgramModals();
-      getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+      getTertiaryPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
     } else {
-      triggerToast("error", res.error || "Failed to update college program.");
+      triggerToast("error", res.error || "Failed to update tertiary program.");
     }
   }
 
@@ -663,11 +690,11 @@ export default function CollegeProgramsManagement() {
     const res = await deleteProgram(activeUser, selectedProgramCode);
 
     if (res.success) {
-      triggerToast("success", `College Program "${selectedProgramCode}" deleted successfully.`);
+      triggerToast("success", `Tertiary Program "${selectedProgramCode}" deleted successfully.`);
       handleCloseProgramModals();
-      getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+      getTertiaryPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
     } else {
-      triggerToast("error", res.error || "Failed to delete college program.");
+      triggerToast("error", res.error || "Failed to delete tertiary program.");
     }
   }
 
@@ -707,7 +734,7 @@ export default function CollegeProgramsManagement() {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      void getCollegePrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
+      void getTertiaryPrograms(searchTerm, sortProgramsBy, sortProgramsDir, maxRowPrograms, currentProgramPage);
     }, 1500);
 
     return () => clearTimeout(delayDebounceFn);
@@ -751,16 +778,16 @@ export default function CollegeProgramsManagement() {
           {/* --- Header Section with Search & Add Button --- */}
           <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
             <div>
-              <h2 className="mb-1 text-lg font-bold">College Programs Management</h2>
+              <h2 className="mb-1 text-lg font-bold">Tertiary Programs Management</h2>
               <p className="text-gray-500">
-                Manage college degree programs and student counts per year level (1st - 4th Year).
+                Manage tertiary degree programs and student counts per year level (1st - 4th Year).
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative w-full md:w-64">
                 <TextInput
-                    id="search-college-programs"
+                    id="search-tertiary-programs"
                     type="text"
                     placeholder="Search code, program name..."
                     value={searchTerm}
@@ -797,7 +824,7 @@ export default function CollegeProgramsManagement() {
             </div>
           </div>
 
-          {/* --- Main College Programs Table --- */}
+          {/* --- Main Tertiary Programs Table --- */}
           <Card className="overflow-x-auto">
             <Table hoverable>
               <TableHead>
@@ -883,8 +910,8 @@ export default function CollegeProgramsManagement() {
                           className="py-6 text-center text-sm text-gray-500 italic dark:text-gray-400"
                       >
                         {searchTerm
-                            ? `No college programs matching "${searchTerm}" found.`
-                            : "No college program entries found yet."}
+                            ? `No tertiary programs matching "${searchTerm}" found.`
+                            : "No tertiary program entries found yet."}
                       </TableCell>
                     </TableRow>
                 )}
@@ -1044,7 +1071,7 @@ export default function CollegeProgramsManagement() {
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-4 dark:border-gray-700 dark:bg-gray-800">
                     <div>
                       <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                        Export Filtered College Programs
+                        Export Filtered Tertiary Programs
                       </h4>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         Generates a standardized Excel spreadsheet containing all active query results with integer validation rules.
@@ -1080,9 +1107,9 @@ export default function CollegeProgramsManagement() {
           </ModalFooter>
         </Modal>
 
-        {/* --- Add College Program Modal --- */}
+        {/* --- Add Tertiary Program Modal --- */}
         <Modal show={openAddProgramModal} onClose={handleCloseProgramModals}>
-          <ModalHeader>Add College Program</ModalHeader>
+          <ModalHeader>Add Tertiary Program</ModalHeader>
           <ModalBody>
             <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
               <div>
@@ -1124,7 +1151,7 @@ export default function CollegeProgramsManagement() {
 
               <div>
                 <div className="mb-2 block">
-                  <Label>Student Distribution by Year Level (Max 1,000 per year)</Label>
+                  <Label>Student Distribution by Year Level (Max 500 per year)</Label>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1135,7 +1162,7 @@ export default function CollegeProgramsManagement() {
                         id="input_year_1"
                         type="text"
                         min={0}
-                        max={1000}
+                        max={500}
                         placeholder="0"
                         value={inputYear1Count}
                         onChange={(e) =>
@@ -1151,7 +1178,7 @@ export default function CollegeProgramsManagement() {
                         id="input_year_2"
                         type="text"
                         min={0}
-                        max={1000}
+                        max={500}
                         placeholder="0"
                         value={inputYear2Count}
                         onChange={(e) =>
@@ -1167,7 +1194,7 @@ export default function CollegeProgramsManagement() {
                         id="input_year_3"
                         type="text"
                         min={0}
-                        max={1000}
+                        max={500}
                         placeholder="0"
                         value={inputYear3Count}
                         onChange={(e) =>
@@ -1183,7 +1210,7 @@ export default function CollegeProgramsManagement() {
                         id="input_year_4"
                         type="text"
                         min={0}
-                        max={1000}
+                        max={500}
                         placeholder="0"
                         value={inputYear4Count}
                         onChange={(e) =>
@@ -1205,9 +1232,9 @@ export default function CollegeProgramsManagement() {
           </ModalFooter>
         </Modal>
 
-        {/* --- Edit College Program Modal --- */}
+        {/* --- Edit Tertiary Program Modal --- */}
         <Modal show={openEditProgramModal} onClose={handleCloseProgramModals}>
-          <ModalHeader>Edit College Program ({selectedProgramCode})</ModalHeader>
+          <ModalHeader>Edit Tertiary Program ({selectedProgramCode})</ModalHeader>
           <ModalBody>
             <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
               <div>
@@ -1227,7 +1254,7 @@ export default function CollegeProgramsManagement() {
 
               <div>
                 <div className="mb-2 block">
-                  <Label>Student Distribution by Year Level (Max 1,000 per year)</Label>
+                  <Label>Student Distribution by Year Level (Max 500 per year)</Label>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1238,7 +1265,7 @@ export default function CollegeProgramsManagement() {
                         id="edit_year_1"
                         type="text"
                         min={0}
-                        max={1000}
+                        max={500}
                         placeholder="0"
                         value={editYear1Count}
                         onChange={(e) =>
@@ -1254,7 +1281,7 @@ export default function CollegeProgramsManagement() {
                         id="edit_year_2"
                         type="text"
                         min={0}
-                        max={1000}
+                        max={500}
                         placeholder="0"
                         value={editYear2Count}
                         onChange={(e) =>
@@ -1270,7 +1297,7 @@ export default function CollegeProgramsManagement() {
                         id="edit_year_3"
                         type="text"
                         min={0}
-                        max={1000}
+                        max={500}
                         placeholder="0"
                         value={editYear3Count}
                         onChange={(e) =>
@@ -1286,7 +1313,7 @@ export default function CollegeProgramsManagement() {
                         id="edit_year_4"
                         type="text"
                         min={0}
-                        max={1000}
+                        max={500}
                         placeholder="0"
                         value={editYear4Count}
                         onChange={(e) =>
