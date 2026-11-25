@@ -2118,7 +2118,7 @@ export default function ScheduleTimetableClient({
           <table className="w-full border-collapse text-left text-xs pointer-events-auto" style={{ tableLayout: "fixed" }}>
           <thead>
           <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            <th className="sticky left-0 z-5 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+            <th className="sticky left-0 z-30 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
               Time
             </th>
             {daysOfWeek.map((day) => (
@@ -2142,7 +2142,7 @@ export default function ScheduleTimetableClient({
 
               return (
                 <tr key={tIdx} className="h-11 border-b dark:border-gray-800">
-                  <td className="sticky left-0 z-5 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  <td className="sticky left-0 z-30 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                     {timeSlot}
                   </td>
                   {daysOfWeek.map((day) => {
