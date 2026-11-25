@@ -70,7 +70,7 @@ import {
 import Image from "next/image";
 
 // For Debugging Only (Developer-controlled code flag)
-const testMode = true;
+const testMode = false;
 
 // --- Types matching database statement schema --- //
 export interface ScheduleRecord {
@@ -185,10 +185,9 @@ export default function ScheduleManagement() {
   const [teacherPreferenceTab, setTeacherPreferenceTab] = useState<"overview" | "preferred_rooms" | "preferred_times" | "preferred_year" | "preferred_subjects">("overview");
   const [teacherList, setTeacherList] = useState<TeacherRecord[]>([]);
   const [isTeacherListLoading, setIsTeacherListLoading] = useState(false);
-  const [approvedTeachers, setApprovedTeachers] = useState<Set<string>>(new Set());
   const [teacherPreferenceOverrides, setTeacherPreferenceOverrides] = useState<
     Map<string, Map<string, boolean>>
-  >(new Map()); // teacherId -> preferenceKey -> approved
+  >(new Map()); // teacherId -> preferenceKey -> enabled
 
   interface TeacherRecord {
     teacher_id: string;
@@ -979,28 +978,6 @@ export default function ScheduleManagement() {
       return nameA.localeCompare(nameB);
     });
 
-  // Part-time teachers are auto-approved by default
-  function isTeacherAutoApproved(teacher: TeacherRecord): boolean {
-    const cat = getEmploymentCategory(teacher.employment_type);
-    return cat === "Part-Time" || cat === "Part-Time Full Load";
-  }
-
-  function isTeacherApproved(teacherId: string): boolean {
-    return approvedTeachers.has(teacherId);
-  }
-
-  function toggleTeacherApproval(teacherId: string) {
-    setApprovedTeachers((prev) => {
-      const next = new Set(prev);
-      if (next.has(teacherId)) {
-        next.delete(teacherId);
-      } else {
-        next.add(teacherId);
-      }
-      return next;
-    });
-  }
-
   // Get preference override for a specific teacher and preference key
   function getPreferenceOverride(teacherId: string, prefKey: string): boolean | undefined {
     return teacherPreferenceOverrides.get(teacherId)?.get(prefKey);
@@ -1032,7 +1009,7 @@ export default function ScheduleManagement() {
     return String(item);
   }
 
-  function getApprovedPreferenceItems<T extends string | TimePreference>(
+  function getEnabledPreferenceItems<T extends string | TimePreference>(
     teacher: TeacherRecord,
     prefKey:
       | "preferred_rooms"
@@ -1051,28 +1028,27 @@ export default function ScheduleManagement() {
     });
   }
 
-  function getApprovedTeachersForGeneration(): GenerationTeacherRecord[] {
+  function getTeachersForGeneration(): GenerationTeacherRecord[] {
     return teacherList
-      .filter((teacher) => approvedTeachers.has(teacher.teacher_id))
       .map((teacher) => ({
         ...teacher,
         preferences: {
-          preferred_rooms: getApprovedPreferenceItems(
+          preferred_rooms: getEnabledPreferenceItems(
             teacher,
             "preferred_rooms",
             teacher.preferences?.preferred_rooms,
           ),
-          preferred_times: getApprovedPreferenceItems(
+          preferred_times: getEnabledPreferenceItems(
             teacher,
             "preferred_times",
             teacher.preferences?.preferred_times,
           ),
-          preferred_year: getApprovedPreferenceItems(
+          preferred_year: getEnabledPreferenceItems(
             teacher,
             "preferred_year",
             teacher.preferences?.preferred_year,
           ),
-          preferred_subjects: getApprovedPreferenceItems(
+          preferred_subjects: getEnabledPreferenceItems(
             teacher,
             "preferred_subjects",
             teacher.preferences?.preferred_subjects,
@@ -1106,6 +1082,74 @@ export default function ScheduleManagement() {
     return "partial";
   }
 
+  function getTeacherPreferenceState(
+    teacher: TeacherRecord,
+  ): "unchecked" | "partial" | "checked" {
+    const categories = [
+      ["preferred_rooms", teacher.preferences?.preferred_rooms || []],
+      ["preferred_times", teacher.preferences?.preferred_times || []],
+      ["preferred_year", teacher.preferences?.preferred_year || []],
+      ["preferred_subjects", teacher.preferences?.preferred_subjects || []],
+    ] as const;
+    const states = categories
+      .filter(([, items]) => items.length > 0)
+      .map(([prefKey]) => getPreferenceCategoryState(teacher, prefKey));
+
+    if (
+      states.length === 0 ||
+      states.every((state) => state === "unchecked")
+    ) {
+      return "unchecked";
+    }
+    if (states.every((state) => state === "checked")) return "checked";
+    return "partial";
+  }
+
+  function hasTeacherPreferences(teacher: TeacherRecord): boolean {
+    const preferences = teacher.preferences;
+    return Boolean(
+      preferences?.preferred_rooms?.length ||
+        preferences?.preferred_times?.length ||
+        preferences?.preferred_year?.length ||
+        preferences?.preferred_subjects?.length,
+    );
+  }
+
+  function setTeacherPreferencesEnabled(teacher: TeacherRecord, enabled: boolean) {
+    const categories = [
+      ["preferred_rooms", teacher.preferences?.preferred_rooms || []],
+      ["preferred_times", teacher.preferences?.preferred_times || []],
+      ["preferred_year", teacher.preferences?.preferred_year || []],
+      ["preferred_subjects", teacher.preferences?.preferred_subjects || []],
+    ] as const;
+
+    setTeacherPreferenceOverrides((prev) => {
+      const next = new Map(prev);
+      const updated = new Map(next.get(teacher.teacher_id) || new Map());
+
+      categories.forEach(([prefKey, items]) => {
+        items.forEach((item) => {
+          const itemString = getPreferenceItemString(
+            prefKey,
+            item as string | TimePreference,
+          );
+          updated.set(`${prefKey}:${itemString}`, enabled);
+        });
+      });
+
+      next.set(teacher.teacher_id, updated);
+      return next;
+    });
+  }
+
+  function toggleTeacherPreferences(teacher: TeacherRecord) {
+    if (!hasTeacherPreferences(teacher)) return;
+    setTeacherPreferencesEnabled(
+      teacher,
+      getTeacherPreferenceState(teacher) !== "checked",
+    );
+  }
+
   // Toggle all items in a preference category
   function togglePreferenceCategory(teacher: TeacherRecord, prefKey: "preferred_rooms" | "preferred_times" | "preferred_year" | "preferred_subjects") {
     const prefs = teacher.preferences;
@@ -1134,7 +1178,7 @@ export default function ScheduleManagement() {
   async function loadTeachers() {
     setIsTeacherListLoading(true);
     setTeacherList([]);
-    setApprovedTeachers(new Set());
+    setTeacherPreferenceOverrides(new Map());
     const res = await fetchTeachersWithAqFcceAndPreferences(null);
     if (res.success && res.data) {
       // Backend already parses and normalizes preferences; map to TeacherRecord type
@@ -1152,14 +1196,6 @@ export default function ScheduleManagement() {
         } as TeacherRecord;
       });
       setTeacherList(teachers);
-      // Auto-approve part-time teachers
-      const autoApproved = new Set<string>();
-      teachers.forEach((t) => {
-        if (isTeacherAutoApproved(t)) {
-          autoApproved.add(t.teacher_id);
-        }
-      });
-      setApprovedTeachers(autoApproved);
     }
     setIsTeacherListLoading(false);
   }
@@ -1184,7 +1220,7 @@ export default function ScheduleManagement() {
   // Handle Confirm Teachers -> proceed to generation
   function handleConfirmTeachers() {
     setAutoStep("setup");
-    // Proceed with generation using approved teachers
+    // Proceed with generation using selected teacher preferences
     handleAutoGenerationSubmitWithTeachers();
   }
 
@@ -1198,7 +1234,7 @@ export default function ScheduleManagement() {
       scheduleNameTrimmed,
       curriculumIds,
       selectedTertiaryTerm,
-      getApprovedTeachersForGeneration(),
+      getTeachersForGeneration(),
     );
   }
 
@@ -1464,8 +1500,7 @@ export default function ScheduleManagement() {
           ) : creationMode === "auto" && autoStep === "teachers" ? (
             <div className="space-y-4">
               <p className="text-sm text-gray-600 dark:text-gray-300">
-                Review and approve teachers for schedule generation. Click on a teacher to view and manage their preferences.
-                Part-time teachers are approved by default.
+                Review teacher preferences for schedule generation. Click a teacher to manage individual preferences, or use the checkbox to toggle all preferences.
               </p>
 
               {/* Tabs for filtering teachers */}
@@ -1519,26 +1554,55 @@ export default function ScheduleManagement() {
                     </div>
                   ) : (
                     filteredTeachers.map((teacher) => {
-                      const approved = isTeacherApproved(teacher.teacher_id);
+                      const preferenceState = getTeacherPreferenceState(teacher);
+                      const hasPreferences = hasTeacherPreferences(teacher);
                       const category = getEmploymentCategory(teacher.employment_type);
                       return (
                         <button
                           key={teacher.teacher_id}
                           onClick={() => openTeacherDetail(teacher)}
                           className={`w-full flex items-center gap-3 p-3 text-left border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
-                            approved ? "bg-emerald-50/50 dark:bg-emerald-900/10" : ""
+                            preferenceState === "checked"
+                              ? "bg-emerald-50/50 dark:bg-emerald-900/10"
+                              : preferenceState === "partial"
+                                ? "bg-amber-50/50 dark:bg-amber-900/10"
+                                : ""
                           }`}
                         >
-                          {/* Checkbox */}
+                          {/* Toggle all teacher preferences */}
                           <div
-                            className="flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center cursor-pointer"
+                            role="checkbox"
+                            aria-checked={
+                              preferenceState === "partial"
+                                ? "mixed"
+                                : preferenceState === "checked"
+                            }
+                            aria-disabled={!hasPreferences}
+                            aria-label={`Enable all preferences for ${teacher.full_name}`}
+                            title={
+                              hasPreferences
+                                ? "Toggle all preferences for this teacher"
+                                : "This teacher has no preferences"
+                            }
+                            className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center ${
+                              hasPreferences ? "cursor-pointer" : "cursor-not-allowed opacity-50"
+                            } ${
+                              preferenceState === "checked"
+                                ? "border-emerald-500"
+                                : preferenceState === "partial"
+                                  ? "border-amber-500"
+                                  : "border-gray-400 dark:border-gray-500"
+                            }`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              toggleTeacherApproval(teacher.teacher_id);
+                              toggleTeacherPreferences(teacher);
                             }}
                           >
-                            {approved && (
+                            {preferenceState === "checked" && (
                               <HiCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            )}
+                            {preferenceState === "partial" && (
+                              <div className="w-3 h-0.5 bg-amber-500 rounded" />
                             )}
                           </div>
 
@@ -1576,7 +1640,11 @@ export default function ScheduleManagement() {
               {/* Summary */}
               <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
                 <span>
-                  {approvedTeachers.size} of {teacherList.length} teachers approved
+                  {
+                    teacherList.filter(
+                      (teacher) => getTeacherPreferenceState(teacher) === "checked",
+                    ).length
+                  } of {teacherList.length} teachers have all preferences enabled
                 </span>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
                   Click a teacher to manage preferences
@@ -2103,26 +2171,6 @@ export default function ScheduleManagement() {
                     {getEmploymentCategory(selectedTeacherForDetail.employment_type)}
                   </div>
                 </div>
-                {/* Approval toggle */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">Approve</span>
-                  <div
-                    className={`w-10 h-6 rounded-full cursor-pointer transition-colors ${
-                      isTeacherApproved(selectedTeacherForDetail.teacher_id)
-                        ? "bg-emerald-500"
-                        : "bg-gray-300 dark:bg-gray-600"
-                    }`}
-                    onClick={() => toggleTeacherApproval(selectedTeacherForDetail.teacher_id)}
-                  >
-                    <div
-                      className={`w-4 h-4 rounded-full bg-white mt-1 ml-1 transition-transform ${
-                        isTeacherApproved(selectedTeacherForDetail.teacher_id)
-                          ? "translate-x-4"
-                          : ""
-                      }`}
-                    />
-                  </div>
-                </div>
               </div>
             </ModalHeader>
             <ModalBody>
@@ -2185,7 +2233,7 @@ export default function ScheduleManagement() {
                               <span className="text-xs text-gray-500 dark:text-gray-400">({items.length})</span>
                             </div>
                             <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {state === "checked" ? "All approved" : state === "partial" ? "Partial" : "None approved"}
+                              {state === "checked" ? "All enabled" : state === "partial" ? "Partial" : "None enabled"}
                             </span>
                           </div>
                           {items.length > 0 ? (
@@ -2246,7 +2294,7 @@ export default function ScheduleManagement() {
                               All {prefKey.replace("preferred_", "").replace("_s", "").replace("_", " ")}
                             </span>
                             <span className="text-xs ml-auto text-gray-500 dark:text-gray-400">
-                              {state === "checked" ? "All approved" : state === "partial" ? "Partially approved" : "None approved"}
+                              {state === "checked" ? "All enabled" : state === "partial" ? "Partially enabled" : "None enabled"}
                             </span>
                           </div>
 
