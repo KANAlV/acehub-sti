@@ -1309,7 +1309,7 @@ export default function HelpPage() {
                 {
                     stepNumber: 1,
                     title: "Open the Room Reservation Module",
-                    description: "Access the facility booking workspace from the main navigation.",
+                    description: "Access the facility room_reservation workspace from the main navigation.",
                     details: [
                         "Click 'Room Reservation' in the left navigation sidebar.",
                         "The module displays a summary of upcoming reservations and quick-access buttons for creating new bookings.",
@@ -1319,7 +1319,7 @@ export default function HelpPage() {
                 {
                     stepNumber: 2,
                     title: "Check Room Availability",
-                    description: "Verify which rooms are free for your desired date and time window before booking.",
+                    description: "Verify which rooms are free for your desired date and time window before room_reservation.",
                     details: [
                         "Select the target date using the date picker at the top of the reservation page.",
                         "The system displays all rooms and their scheduled class entries for the selected date.",
@@ -1337,8 +1337,8 @@ export default function HelpPage() {
                         "Set the Date using the calendar picker.",
                         "Specify the Start Time and End Time — the system validates that the range does not overlap with existing class schedules or other reservations.",
                         "Enter the Reservation Purpose (e.g., 'Makeup Class', 'Department Meeting', 'Final Examination').",
-                        "Select the Requesting Faculty member if booking on behalf of another instructor.",
-                        "Click 'Submit Reservation' to create the booking. A conflict error will appear if the slot is already occupied.",
+                        "Select the Requesting Faculty member if room_reservation on behalf of another instructor.",
+                        "Click 'Submit Reservation' to create the room_reservation. A conflict error will appear if the slot is already occupied.",
                     ],
                 },
                 {
@@ -1356,7 +1356,7 @@ export default function HelpPage() {
                 {
                     stepNumber: 5,
                     title: "Resolve Reservation Conflicts",
-                    description: "Handle situations where a new reservation overlaps with an existing class or booking.",
+                    description: "Handle situations where a new reservation overlaps with an existing class or room_reservation.",
                     details: [
                         "If the system reports a conflict, review the conflicting entry shown in the error message.",
                         "Adjust the Start Time or End Time to avoid the overlap, or select a different room.",

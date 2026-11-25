@@ -65,11 +65,12 @@ import {
   assignTeachersToSchedule,
   ScheduleEntry,
   fetchSubjectsForGeneration,
+  TeacherRecord as GenerationTeacherRecord,
 } from "@/app/actions/AutoScheduleGeneration";
 import Image from "next/image";
 
 // For Debugging Only (Developer-controlled code flag)
-const testMode = false;
+const testMode = true;
 
 // --- Types matching database statement schema --- //
 export interface ScheduleRecord {
@@ -436,6 +437,7 @@ export default function ScheduleManagement() {
     scheduleName: string,
     curriculumIds: string[],
     tertiaryTerm: string,
+    teachersForGeneration?: GenerationTeacherRecord[],
   ) {
     setOpenAqWarningModal(false);
     setOpenLoadingModal(true);
@@ -471,6 +473,7 @@ export default function ScheduleManagement() {
       curriculumIds,
       tertiaryTerm,
       shsTerm,
+      allSubjects.map((subject) => subject.program_code || ""),
     );
     console.log("=== GENERATED SECTIONS RESULT ===", sectionRes);
 
@@ -504,9 +507,11 @@ export default function ScheduleManagement() {
         scheduleName,
         curriculumIds,
         tertiaryTerm,
+        teachersForGeneration ?? [],
         sectionRes.sections,
         allSubjects,
         shsTerm,
+        testMode,
       );
       console.log("=== ROOM & CLASS SCHEDULE ENTRIES (WITH TEACHERS) ===", roomScheduleRes);
 
@@ -706,7 +711,9 @@ export default function ScheduleManagement() {
     }
 
     setGenerationProgress(100);
-    setGenerationStatusText("Generation complete!");
+    setGenerationStatusText(
+      isSuccess ? "Generation complete!" : "Generation failed.",
+    );
     setIsSubmittingAutoGeneration(false);
     setOpenLoadingModal(false);
 
@@ -1025,6 +1032,55 @@ export default function ScheduleManagement() {
     return String(item);
   }
 
+  function getApprovedPreferenceItems<T extends string | TimePreference>(
+    teacher: TeacherRecord,
+    prefKey:
+      | "preferred_rooms"
+      | "preferred_times"
+      | "preferred_year"
+      | "preferred_subjects",
+    items: T[] | undefined,
+  ): T[] {
+    const overrides = teacherPreferenceOverrides.get(teacher.teacher_id);
+    return (items || []).filter((item) => {
+      const itemString = getPreferenceItemString(
+        prefKey,
+        item as string | TimePreference,
+      );
+      return overrides?.get(`${prefKey}:${itemString}`) !== false;
+    });
+  }
+
+  function getApprovedTeachersForGeneration(): GenerationTeacherRecord[] {
+    return teacherList
+      .filter((teacher) => approvedTeachers.has(teacher.teacher_id))
+      .map((teacher) => ({
+        ...teacher,
+        preferences: {
+          preferred_rooms: getApprovedPreferenceItems(
+            teacher,
+            "preferred_rooms",
+            teacher.preferences?.preferred_rooms,
+          ),
+          preferred_times: getApprovedPreferenceItems(
+            teacher,
+            "preferred_times",
+            teacher.preferences?.preferred_times,
+          ),
+          preferred_year: getApprovedPreferenceItems(
+            teacher,
+            "preferred_year",
+            teacher.preferences?.preferred_year,
+          ),
+          preferred_subjects: getApprovedPreferenceItems(
+            teacher,
+            "preferred_subjects",
+            teacher.preferences?.preferred_subjects,
+          ),
+        },
+      }));
+  }
+
   // Get 3-state checkbox status for a preference category: "unchecked" | "partial" | "checked"
   function getPreferenceCategoryState(teacher: TeacherRecord, prefKey: "preferred_rooms" | "preferred_times" | "preferred_year" | "preferred_subjects"): "unchecked" | "partial" | "checked" {
     const prefs = teacher.preferences;
@@ -1077,6 +1133,8 @@ export default function ScheduleManagement() {
   // Load teachers when teacher modal opens
   async function loadTeachers() {
     setIsTeacherListLoading(true);
+    setTeacherList([]);
+    setApprovedTeachers(new Set());
     const res = await fetchTeachersWithAqFcceAndPreferences(null);
     if (res.success && res.data) {
       // Backend already parses and normalizes preferences; map to TeacherRecord type
@@ -1136,26 +1194,12 @@ export default function ScheduleManagement() {
     const curriculumIds = curriculumAdd.map((item) => item.curriculum_id);
 
     setOpenAddModal(false);
-    setOpenLoadingModal(true);
-    setIsSubmittingAutoGeneration(true);
-    setGenerationProgress(10);
-    setGenerationStatusText("Fetching and checking subject requirements...");
-
-    const subjectRes = await fetchSubjectsForGeneration(
+    await executeAutoGenerationPipeline(
+      scheduleNameTrimmed,
       curriculumIds,
       selectedTertiaryTerm,
-      selectedShsTerm,
+      getApprovedTeachersForGeneration(),
     );
-    if (!subjectRes.success || !subjectRes.data) {
-      setIsSubmittingAutoGeneration(false);
-      setOpenLoadingModal(false);
-      setToastMessage(subjectRes.error || "Failed to fetch subject requirements.");
-      setToastType("error");
-      setShowToast(true);
-      return;
-    }
-
-    await executeAutoGenerationPipeline(scheduleNameTrimmed, curriculumIds, selectedTertiaryTerm);
   }
 
   return (
@@ -1927,7 +1971,10 @@ export default function ScheduleManagement() {
               >
                 Back
               </Button>
-              <Button onClick={handleConfirmTeachers}>
+              <Button
+                onClick={handleConfirmTeachers}
+                disabled={isTeacherListLoading || isSubmittingAutoGeneration}
+              >
                 Generate Schedule
               </Button>
               <Button

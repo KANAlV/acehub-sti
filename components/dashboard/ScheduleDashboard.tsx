@@ -370,7 +370,7 @@ export default function ScheduleDashboard() {
         <div className="mt-4 flex items-center gap-3 md:mt-0">
           <Button
             size="sm"
-            className="bg-cyan-600 font-medium text-white hover:bg-cyan-700"
+            className="bg-cyan-600 font-medium text-white hover:bg-cyan-700 cursor-pointer"
             onClick={() => router.push("/timetable")}
           >
             <HiCalendar className="mr-2 h-4 w-4" /> Open Timetable

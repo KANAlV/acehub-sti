@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Badge,
@@ -30,12 +30,16 @@ import {
   fetchRoomTypeList,
   fetchFacultyLoadConfig,
   Configuration,
-  TimetableEntryRecord,
   SubjectUnitsRecord,
   RoomForGeneration,
   RoomType,
   fetchActiveScheduleName,
+  fetchReservations,
+  ReservationRecord,
 } from "@/app/actions/system";
+import TimetableCalendar, {
+  type LocalTimetableEntry,
+} from "@/components/schedules/TimetableCalendar";
 import { GiCoffeeCup } from "react-icons/gi";
 import { generateSubjectAbv } from "@/utils/NameAbbreviator";
 
@@ -56,7 +60,9 @@ function SectionAccordionDropdown({
   onToggleOpen,
   hideAll = false,
 }: SectionAccordionDropdownProps) {
-  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
+  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(
+    new Set(),
+  );
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const sortAlphanumeric = (a: string, b: string) => {
@@ -70,7 +76,10 @@ function SectionAccordionDropdown({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         if (open) onToggleOpen();
       }
     };
@@ -112,7 +121,8 @@ function SectionAccordionDropdown({
     onToggleOpen();
   };
 
-  const displayLabel = selectedSection === "ALL" ? "-- All Sections --" : selectedSection;
+  const displayLabel =
+    selectedSection === "ALL" ? "-- All Sections --" : selectedSection;
 
   return (
     <div className="relative w-full sm:w-44" ref={dropdownRef}>
@@ -128,7 +138,12 @@ function SectionAccordionDropdown({
           stroke="currentColor"
           viewBox="0 0 24 24"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
         </svg>
       </button>
 
@@ -141,7 +156,7 @@ function SectionAccordionDropdown({
               className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
                 selectedSection === "ALL"
                   ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                  : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                  : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
               }`}
             >
               -- All Sections --
@@ -162,18 +177,24 @@ function SectionAccordionDropdown({
                 >
                   <span>{course}</span>
                   <div className="flex items-center gap-1">
-                    <span className="text-gray-500 dark:text-gray-500">{secList.length}</span>
+                    <span className="text-gray-500 dark:text-gray-500">
+                      {secList.length}
+                    </span>
                     <svg
                       className={`h-3 w-3 transition-transform ${expandedCourses.has(course) ? "rotate-90" : ""}`}
                       fill="currentColor"
                       viewBox="0 0 20 20"
                     >
-                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      <path
+                        fillRule="evenodd"
+                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   </div>
                 </button>
                 {expandedCourses.has(course) && (
-                  <div className="ml-2 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
+                  <div className="mt-1 ml-2 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
                     {secList.map((sec) => (
                       <button
                         key={sec}
@@ -182,7 +203,7 @@ function SectionAccordionDropdown({
                         className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
                           selectedSection === sec
                             ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                            : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                            : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                         }`}
                       >
                         {sec}
@@ -236,7 +257,10 @@ function RoomAccordionDropdown({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         if (open) onToggleOpen();
       }
     };
@@ -277,7 +301,8 @@ function RoomAccordionDropdown({
     onToggleOpen();
   };
 
-  const displayLabel = selectedRoom === allRoomsLabel ? "-- All Rooms --" : selectedRoom;
+  const displayLabel =
+    selectedRoom === allRoomsLabel ? "-- All Rooms --" : selectedRoom;
 
   return (
     <div className="relative w-full sm:w-44" ref={dropdownRef}>
@@ -293,7 +318,12 @@ function RoomAccordionDropdown({
           stroke="currentColor"
           viewBox="0 0 24 24"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
         </svg>
       </button>
 
@@ -306,7 +336,7 @@ function RoomAccordionDropdown({
               className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
                 selectedRoom === allRoomsLabel
                   ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                  : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                  : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
               }`}
             >
               -- All Rooms --
@@ -327,18 +357,24 @@ function RoomAccordionDropdown({
                 >
                   <span>Floor {floor}</span>
                   <div className="flex items-center gap-1">
-                    <span className="text-gray-500 dark:text-gray-500">{rooms.length}</span>
+                    <span className="text-gray-500 dark:text-gray-500">
+                      {rooms.length}
+                    </span>
                     <svg
                       className={`h-3 w-3 transition-transform ${expandedFloors.has(floor) ? "rotate-90" : ""}`}
                       fill="currentColor"
                       viewBox="0 0 20 20"
                     >
-                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      <path
+                        fillRule="evenodd"
+                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   </div>
                 </button>
                 {expandedFloors.has(floor) && (
-                  <div className="ml-2 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
+                  <div className="mt-1 ml-2 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
                     {rooms.map((room) => (
                       <button
                         key={room.room_id}
@@ -347,7 +383,7 @@ function RoomAccordionDropdown({
                         className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
                           selectedRoom === (room.room_name ?? "")
                             ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                            : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                            : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                         }`}
                       >
                         {room.room_name}
@@ -370,18 +406,24 @@ function RoomAccordionDropdown({
               >
                 <span>Unassigned Floor</span>
                 <div className="flex items-center gap-1">
-                  <span className="text-gray-500 dark:text-gray-500">{unassignedRooms.length}</span>
+                  <span className="text-gray-500 dark:text-gray-500">
+                    {unassignedRooms.length}
+                  </span>
                   <svg
                     className={`h-3 w-3 transition-transform ${expandedFloors.has("unassigned") ? "rotate-90" : ""}`}
                     fill="currentColor"
                     viewBox="0 0 20 20"
                   >
-                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    <path
+                      fillRule="evenodd"
+                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 </div>
               </button>
               {expandedFloors.has("unassigned") && (
-                <div className="ml-2 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
+                <div className="mt-1 ml-2 space-y-0.5 border-l-2 border-gray-200 pl-2 dark:border-gray-600">
                   {unassignedRooms.map((room) => (
                     <button
                       key={room.room_id}
@@ -390,7 +432,7 @@ function RoomAccordionDropdown({
                       className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
                         selectedRoom === (room.room_name ?? "")
                           ? "bg-blue-100 font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                          : "hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300"
+                          : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                       }`}
                     >
                       {room.room_name}
@@ -417,26 +459,6 @@ interface BreakPeriodRecord {
   end_time: string;
 }
 
-export interface LocalTimetableEntry extends Omit<
-  TimetableEntryRecord,
-  | "subject_id"
-  | "teacher_id"
-  | "room_id"
-  | "lecture_units"
-  | "lab_units"
-  | "teacher_code"
-  | "type"
-> {
-  subject_id: string | null;
-  teacher_id: string | null;
-  room_id: string | null;
-  lecture_units: number;
-  lab_units: number;
-  teacher_code: string;
-  type?: string; // "Lecture" | "Laboratory"
-  originalDuration?: number;
-}
-
 export default function Timetable() {
   const [scheduleName, setScheduleName] = useState<string | null>(null);
 
@@ -449,6 +471,8 @@ export default function Timetable() {
 
   // --- Entries State (using LocalTimetableEntry from ScheduleTimetable) --- //
   const [entries, setEntries] = useState<LocalTimetableEntry[]>([]);
+  const [reservations, setReservations] = useState<ReservationRecord[]>([]);
+  const [reservationError, setReservationError] = useState<string | null>(null);
 
   // --- Dark Mode ---
   const { computedMode } = useThemeMode();
@@ -463,11 +487,18 @@ export default function Timetable() {
     useState<string>("ALL");
   const [selectedTimetableRoom, setSelectedTimetableRoom] =
     useState<string>("ALL");
+  const [timetableView, setTimetableView] = useState<"calendar" | "week">(
+    "calendar",
+  );
 
   // --- Dropdown open state for mutual exclusion ---
-  const [activeDropdown, setActiveDropdown] = useState<"section" | "room" | null>(null);
-  const toggleSectionDropdown = () => setActiveDropdown(prev => prev === "section" ? null : "section");
-  const toggleRoomDropdown = () => setActiveDropdown(prev => prev === "room" ? null : "room");
+  const [activeDropdown, setActiveDropdown] = useState<
+    "section" | "room" | null
+  >(null);
+  const toggleSectionDropdown = () =>
+    setActiveDropdown((prev) => (prev === "section" ? null : "section"));
+  const toggleRoomDropdown = () =>
+    setActiveDropdown((prev) => (prev === "room" ? null : "room"));
 
   // --- Rooms, Room Types & Subject Metadata Maps (from ScheduleTimetable) --- //
   const [allRooms, setAllRooms] = useState<RoomForGeneration[]>([]);
@@ -643,6 +674,28 @@ export default function Timetable() {
     }
 
     void LoadPage();
+  }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    async function loadReservations() {
+      const result = await fetchReservations(null, "start_time", "ASC", -1, 0);
+      if (!isCurrent) return;
+
+      if (result.success) {
+        setReservations(result.data || []);
+        setReservationError(null);
+      } else {
+        setReservations([]);
+        setReservationError(result.error || "Please try again later.");
+      }
+    }
+
+    void loadReservations();
+    return () => {
+      isCurrent = false;
+    };
   }, []);
 
   // 1. Fetch schedule ID by name on mount / scheduleName change
@@ -888,19 +941,23 @@ export default function Timetable() {
     return a.localeCompare(b);
   };
 
-  const availableTimetableSections: { section: string; courseCode: string }[] = Array.from(
-    new Map(
-      entries
-        .filter((e) => e.section)
-        .map((e) => [e.section as string, e.course_code as string])
-    ).entries()
-  )
-    .map(([section, courseCode]) => ({ section, courseCode: courseCode ?? "" }))
-    .sort((a, b) => {
-      const courseDiff = a.courseCode.localeCompare(b.courseCode);
-      if (courseDiff !== 0) return courseDiff;
-      return sortAlphanumeric(a.section, b.section);
-    });
+  const availableTimetableSections: { section: string; courseCode: string }[] =
+    Array.from(
+      new Map(
+        entries
+          .filter((e) => e.section)
+          .map((e) => [e.section as string, e.course_code as string]),
+      ).entries(),
+    )
+      .map(([section, courseCode]) => ({
+        section,
+        courseCode: courseCode ?? "",
+      }))
+      .sort((a, b) => {
+        const courseDiff = a.courseCode.localeCompare(b.courseCode);
+        if (courseDiff !== 0) return courseDiff;
+        return sortAlphanumeric(a.section, b.section);
+      });
 
   // --- Unassigned Counts (from ScheduleTimetable) --- //
   const unassignedBlocksCount = entries.filter(
@@ -918,8 +975,7 @@ export default function Timetable() {
 
     for (const entryB of entries) {
       if (entryB.schedule_entry_id === entryA.schedule_entry_id) continue;
-      if (!entryB.day || !entryB.start_time || entryB.start_time <= 0)
-        continue;
+      if (!entryB.day || !entryB.start_time || entryB.start_time <= 0) continue;
       if (entryB.day.toLowerCase() !== entryA.day.toLowerCase()) continue;
 
       const isOverlapping =
@@ -951,7 +1007,12 @@ export default function Timetable() {
 
   // --- Fatigue Risk Detection (from ScheduleTimetable) --- //
   const checkFatigueRisk = (entry: LocalTimetableEntry) => {
-    if (!entry.teacher_id || !entry.day || !entry.start_time || entry.start_time <= 0)
+    if (
+      !entry.teacher_id ||
+      !entry.day ||
+      !entry.start_time ||
+      entry.start_time <= 0
+    )
       return false;
     const teacherAllEntries = entries.filter(
       (e) => e.teacher_id === entry.teacher_id && e.day && e.start_time > 0,
@@ -1016,7 +1077,7 @@ export default function Timetable() {
               Active Schedule Not Set
             </h3>
             <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
-                There is currently no active schedule configured for the system.
+              There is currently no active schedule configured for the system.
             </p>
             <Button
               color="gray"
@@ -1033,9 +1094,9 @@ export default function Timetable() {
   }
 
   return (
-    <div className="scrollbar-track-transparent relative flex scrollbar-thumb-gray-400 overflow-y-auto">
+    <div className="relative flex scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-y-auto">
       {/* --- Main Div --- */}
-      <div className="scrollbar-track-transparent flex-1 scrollbar-thumb-gray-400 space-y-4 overflow-y-auto p-4">
+      <div className="flex-1 scrollbar-thumb-gray-400 scrollbar-track-transparent space-y-4 overflow-y-auto p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Button
@@ -1058,7 +1119,8 @@ export default function Timetable() {
               {unassignedTeacherBlocksCount > 0 && (
                 <Badge color="failure" size="sm" icon={HiExclamationTriangle}>
                   {unassignedTeacherBlocksCount} Entr
-                  {unassignedTeacherBlocksCount > 1 ? "ies" : "y"} Missing Teachers
+                  {unassignedTeacherBlocksCount > 1 ? "ies" : "y"} Missing
+                  Teachers
                 </Badge>
               )}
             </div>
@@ -1070,7 +1132,7 @@ export default function Timetable() {
 
         <div className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-700 dark:bg-gray-800">
           {/* --- Legend --- */}
-          <div className="flex items-center gap-4 text-xs font-medium text-gray-600 dark:text-gray-300">
+          <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-gray-600 dark:text-gray-300">
             <div className="flex items-center gap-1.5">
               <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-100 dark:border-blue-700 dark:bg-blue-950"></span>
               <span>Lecture</span>
@@ -1102,6 +1164,14 @@ export default function Timetable() {
             <div className="flex items-center gap-1.5">
               <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800"></span>
               <span>Other Section / Room</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded border border-fuchsia-300 bg-fuchsia-50 dark:border-fuchsia-700 dark:bg-fuchsia-950"></span>
+              <span>Reservation</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded border border-fuchsia-400 bg-fuchsia-200 dark:border-fuchsia-600 dark:bg-fuchsia-900"></span>
+              <span>Reschedule</span>
             </div>
           </div>
 
@@ -1143,205 +1213,278 @@ export default function Timetable() {
           </div>
         </div>
 
-        {/* --- Timetable Grid Container with Absolute Overlay Layer --- */}
-        <div className="relative max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div
+          className="flex justify-end"
+          role="group"
+          aria-label="Timetable display"
+        >
+          <button
+            type="button"
+            onClick={() => setTimetableView("calendar")}
+            aria-pressed={timetableView === "calendar"}
+            className={`rounded-l-lg border px-3 py-2 text-sm font-medium transition-colors ${
+              timetableView === "calendar"
+                ? "border-blue-700 bg-blue-700 text-white dark:border-blue-600 dark:bg-blue-600"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            }`}
+          >
+            Calendar
+          </button>
+          <button
+            type="button"
+            onClick={() => setTimetableView("week")}
+            aria-pressed={timetableView === "week"}
+            className={`rounded-r-lg border-y border-r px-3 py-2 text-sm font-medium transition-colors ${
+              timetableView === "week"
+                ? "border-blue-700 bg-blue-700 text-white dark:border-blue-600 dark:bg-blue-600"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            }`}
+          >
+            Weekly view
+          </button>
+        </div>
 
-          {/* --- Background Skeleton Table --- */}
-          <div className="relative min-w-212.5">
-          
-          {/* --- ABSOLUTE OVERLAY ENGINE FOR NORMAL BLOCKS, GHOSTS, & CONFLICTS --- */}
-          <div className="absolute inset-0 pointer-events-none">
-          {(() => {
-          const DAY_COLUMNS = [
-            "monday",
-            "tuesday",
-            "wednesday",
-            "thursday",
-            "friday",
-            "saturday",
-          ];
+        {timetableView === "calendar" ? (
+          <TimetableCalendar
+            entries={entries}
+            breaks={expandedBreaks}
+            reservations={reservations}
+            rooms={allRooms}
+            selectedSection={selectedTimetableSection}
+            selectedRoom={selectedTimetableRoom}
+            isLoading={isLoading}
+            error={error}
+            reservationError={reservationError}
+          />
+        ) : (
+          <>
+            {/* --- Timetable Grid Container with Absolute Overlay Layer --- */}
+            <div className="relative max-h-150 scrollbar-thumb-gray-400 scrollbar-track-transparent overflow-x-auto overflow-y-auto rounded-xl border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+              {/* --- Background Skeleton Table --- */}
+              <div className="relative min-w-212.5">
+                {/* --- ABSOLUTE OVERLAY ENGINE FOR NORMAL BLOCKS, GHOSTS, & CONFLICTS --- */}
+                <div className="pointer-events-none absolute inset-0">
+                  {(() => {
+                    const DAY_COLUMNS = [
+                      "monday",
+                      "tuesday",
+                      "wednesday",
+                      "thursday",
+                      "friday",
+                      "saturday",
+                    ];
 
-          const entriesToRender = entries.filter((entry) => {
-            if (!entry.day || entry.start_time === undefined || entry.start_time <= 0) {
-              return false;
-            }
-            const matchesSection =
-              selectedTimetableSection === "ALL" ||
-              entry.section === selectedTimetableSection;
-            const matchesRoom =
-              selectedTimetableRoom === "ALL" ||
-              entry.room_name === selectedTimetableRoom;
-
-            if (matchesSection && matchesRoom) return true;
-
-            // Show ghost entries from same section or room
-            const isSameSection =
-              selectedTimetableSection !== "ALL" &&
-              entry.section.toLowerCase() === selectedTimetableSection.toLowerCase();
-            const matchesActiveRoom =
-              selectedTimetableRoom !== "ALL" &&
-              entry.room_name?.toLowerCase() === selectedTimetableRoom.toLowerCase();
-
-            return isSameSection || matchesActiveRoom;
-          });
-
-          if (entriesToRender.length === 0) return null;
-
-          return entriesToRender.map((entry) => {
-            const dayLower = entry.day.toLowerCase();
-            const dayIndex = DAY_COLUMNS.indexOf(dayLower);
-            if (dayIndex === -1) return null;
-
-            const durationMins =
-              entry.end_time - entry.start_time || entry.originalDuration || 60;
-            const topOffsetPx =
-              ((entry.start_time - GRID_START_MINS) / 30) * ROW_HEIGHT_PX;
-            const heightPx = Math.max(
-              ROW_HEIGHT_PX,
-              (durationMins / 30) * ROW_HEIGHT_PX,
-            );
-
-            const isConflict = hasEntryConflict(entry);
-            const isFatigue = checkFatigueRisk(entry);
-            const isLabType = entry.type?.toLowerCase() === "laboratory";
-
-            const matchesDirectFilter =
-              (selectedTimetableSection === "ALL" || entry.section === selectedTimetableSection) &&
-              (selectedTimetableRoom === "ALL" || entry.room_name === selectedTimetableRoom);
-            const isGhost = !matchesDirectFilter;
-
-            let blockStyle = "bg-blue-50/90 text-blue-950 border-blue-300 dark:bg-blue-950/80 dark:text-blue-200 dark:border-blue-700";
-            let zIndexClass = "z-10";
-
-            if (isConflict) {
-              blockStyle = "bg-red-100 text-red-950 border-red-500 dark:bg-red-950/90 dark:text-red-100 dark:border-red-600 shadow-lg";
-              zIndexClass = "z-20";
-            } else if (isFatigue) {
-              blockStyle = "bg-amber-100 text-amber-950 border-amber-400 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700";
-            } else if (isLabType) {
-              blockStyle = "bg-emerald-50/90 text-emerald-950 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700";
-            }
-
-            if (isGhost) {
-              blockStyle = "bg-gray-100 text-gray-500 border-gray-300 opacity-50 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
-              zIndexClass = "z-5";
-            }
-
-            return (
-              <div
-                key={entry.schedule_entry_id}
-                className={`absolute flex flex-col overflow-hidden rounded border p-2 backdrop-blur-xs ${zIndexClass} ${blockStyle}`}
-                style={{
-                  top: `${topOffsetPx + 45}px`,
-                  left: `calc(96px + (${dayIndex} * ((100% - 96px) / 6)))`,
-                  width: `calc((100% - 96px) / 6 - 6px)`,
-                  height: `${heightPx - 4}px`,
-                }}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="truncate text-xs font-bold">
-                    {generateSubjectAbv(entry.course_name)}
-                  </div>
-                </div>
-                <div className="truncate text-[10px] font-medium opacity-90">
-                  {entry.course_name} {isGhost ? "(Other Section/Room)" : ""}
-                </div>
-                <div className="mt-auto space-y-0.5 text-[10px] font-semibold opacity-90">
-                  <div className={"text-xs"}>
-                    Teacher: {entry.teacher_code || "Unassigned"}
-                  </div>
-                  <div className={"text-xs"}>Sec: {entry.section}</div>
-                  <div className={"text-xs"}>
-                    Room: {entry.room_name || "TBA"}
-                  </div>
-                  <div className="font-mono">
-                    {formatTime(entry.start_time)} -{" "}
-                    {formatTime(entry.end_time)}
-                  </div>
-                </div>
-              </div>
-            );
-          });
-        })()}
-          </div>
-
-          <table className="w-full border-collapse text-left text-xs pointer-events-auto" style={{ tableLayout: "fixed" }}>
-          <thead>
-          <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            <th className="sticky left-0 z-5 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
-              Time
-            </th>
-            {daysOfWeek.map((day) => (
-              <th
-                key={day}
-                className="min-w-30 border-r border-b p-3 text-center font-bold"
-              >
-                <span className="sm:hidden">
-                  {day.substring(0, 3).toUpperCase()}
-                </span>
-                <span className="hidden sm:inline">
-                  {day.toUpperCase()}
-                </span>
-              </th>
-            ))}
-          </tr>
-          </thead>
-            <tbody>
-            {timeSlotsGrid.map((timeSlot, tIdx) => {
-              const slotTotalMins = timeStrToMinutes(timeSlot);
-
-              return (
-                <tr key={tIdx} className="h-11 border-b dark:border-gray-800">
-                  <td className="sticky left-0 z-5 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                    {timeSlot}
-                  </td>
-                  {daysOfWeek.map((day) => {
-                    const matchedBreak = expandedBreaks.find((bp) => {
-                      if (bp.day.toLowerCase() !== day.toLowerCase())
+                    const entriesToRender = entries.filter((entry) => {
+                      if (
+                        !entry.day ||
+                        entry.start_time === undefined ||
+                        entry.start_time <= 0
+                      ) {
                         return false;
-                      return (
-                        slotTotalMins >= bp.start_time &&
-                        slotTotalMins < bp.end_time
-                      );
+                      }
+                      const matchesSection =
+                        selectedTimetableSection === "ALL" ||
+                        entry.section === selectedTimetableSection;
+                      const matchesRoom =
+                        selectedTimetableRoom === "ALL" ||
+                        entry.room_name === selectedTimetableRoom;
+
+                      if (matchesSection && matchesRoom) return true;
+
+                      // Show ghost entries from same section or room
+                      const isSameSection =
+                        selectedTimetableSection !== "ALL" &&
+                        entry.section.toLowerCase() ===
+                          selectedTimetableSection.toLowerCase();
+                      const matchesActiveRoom =
+                        selectedTimetableRoom !== "ALL" &&
+                        entry.room_name?.toLowerCase() ===
+                          selectedTimetableRoom.toLowerCase();
+
+                      return isSameSection || matchesActiveRoom;
                     });
 
-                    return (
-                      <td
-                        key={day}
-                        className={`relative border-r p-1 text-center transition-colors ${
-                          matchedBreak
-                            ? "border-violet-200 bg-violet-50/80 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
-                            : "text-gray-300 dark:border-gray-800"
-                        }`}
-                      >
-                        {matchedBreak &&
-                          slotTotalMins === matchedBreak.start_time && (
-                            <div
-                              className="absolute inset-1.5 z-5 flex flex-col items-center justify-center overflow-hidden rounded bg-violet-100/90 p-1 text-center shadow-xs dark:bg-violet-900/80"
-                              style={{
-                                height: `${((matchedBreak.end_time - matchedBreak.start_time) / 30) * ROW_HEIGHT_PX - 12}px`,
-                              }}
-                            >
-                              <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-violet-900 dark:text-violet-100">
-                                <GiCoffeeCup />
-                                <div>{matchedBreak.break_description}</div>
-                              </div>
-                              <div className="font-mono text-[9px] text-violet-700 dark:text-violet-300">
-                                {formatTime(matchedBreak.start_time)} -{" "}
-                                {formatTime(matchedBreak.end_time)}
-                              </div>
+                    if (entriesToRender.length === 0) return null;
+
+                    return entriesToRender.map((entry) => {
+                      const dayLower = entry.day.toLowerCase();
+                      const dayIndex = DAY_COLUMNS.indexOf(dayLower);
+                      if (dayIndex === -1) return null;
+
+                      const durationMins =
+                        entry.end_time - entry.start_time ||
+                        entry.originalDuration ||
+                        60;
+                      const topOffsetPx =
+                        ((entry.start_time - GRID_START_MINS) / 30) *
+                        ROW_HEIGHT_PX;
+                      const heightPx = Math.max(
+                        ROW_HEIGHT_PX,
+                        (durationMins / 30) * ROW_HEIGHT_PX,
+                      );
+
+                      const isConflict = hasEntryConflict(entry);
+                      const isFatigue = checkFatigueRisk(entry);
+                      const isLabType =
+                        entry.type?.toLowerCase() === "laboratory";
+
+                      const matchesDirectFilter =
+                        (selectedTimetableSection === "ALL" ||
+                          entry.section === selectedTimetableSection) &&
+                        (selectedTimetableRoom === "ALL" ||
+                          entry.room_name === selectedTimetableRoom);
+                      const isGhost = !matchesDirectFilter;
+
+                      let blockStyle =
+                        "bg-blue-50/90 text-blue-950 border-blue-300 dark:bg-blue-950/80 dark:text-blue-200 dark:border-blue-700";
+                      let zIndexClass = "z-10";
+
+                      if (isConflict) {
+                        blockStyle =
+                          "bg-red-100 text-red-950 border-red-500 dark:bg-red-950/90 dark:text-red-100 dark:border-red-600 shadow-lg";
+                        zIndexClass = "z-20";
+                      } else if (isFatigue) {
+                        blockStyle =
+                          "bg-amber-100 text-amber-950 border-amber-400 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700";
+                      } else if (isLabType) {
+                        blockStyle =
+                          "bg-emerald-50/90 text-emerald-950 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700";
+                      }
+
+                      if (isGhost) {
+                        blockStyle =
+                          "bg-gray-100 text-gray-500 border-gray-300 opacity-50 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700";
+                        zIndexClass = "z-5";
+                      }
+
+                      return (
+                        <div
+                          key={entry.schedule_entry_id}
+                          className={`absolute flex flex-col overflow-hidden rounded border p-2 backdrop-blur-xs ${zIndexClass} ${blockStyle}`}
+                          style={{
+                            top: `${topOffsetPx + 45}px`,
+                            left: `calc(96px + (${dayIndex} * ((100% - 96px) / 6)))`,
+                            width: `calc((100% - 96px) / 6 - 6px)`,
+                            height: `${heightPx - 4}px`,
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="truncate text-xs font-bold">
+                              {generateSubjectAbv(entry.course_name)}
                             </div>
-                          )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-            </tbody>
-          </table>
-          </div>
-        </div>
+                          </div>
+                          <div className="truncate text-[10px] font-medium opacity-90">
+                            {entry.course_name}{" "}
+                            {isGhost ? "(Other Section/Room)" : ""}
+                          </div>
+                          <div className="mt-auto space-y-0.5 text-[10px] font-semibold opacity-90">
+                            <div className={"text-xs"}>
+                              Teacher: {entry.teacher_code || "Unassigned"}
+                            </div>
+                            <div className={"text-xs"}>
+                              Sec: {entry.section}
+                            </div>
+                            <div className={"text-xs"}>
+                              Room: {entry.room_name || "TBA"}
+                            </div>
+                            <div className="font-mono">
+                              {formatTime(entry.start_time)} -{" "}
+                              {formatTime(entry.end_time)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                <table
+                  className="pointer-events-auto w-full border-collapse text-left text-xs"
+                  style={{ tableLayout: "fixed" }}
+                >
+                  <thead>
+                    <tr className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                      <th className="sticky left-0 z-5 w-24 border-r border-b bg-gray-100 p-3 text-center font-bold dark:bg-gray-800">
+                        Time
+                      </th>
+                      {daysOfWeek.map((day) => (
+                        <th
+                          key={day}
+                          className="min-w-30 border-r border-b p-3 text-center font-bold"
+                        >
+                          <span className="sm:hidden">
+                            {day.substring(0, 3).toUpperCase()}
+                          </span>
+                          <span className="hidden sm:inline">
+                            {day.toUpperCase()}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timeSlotsGrid.map((timeSlot, tIdx) => {
+                      const slotTotalMins = timeStrToMinutes(timeSlot);
+
+                      return (
+                        <tr
+                          key={tIdx}
+                          className="h-11 border-b dark:border-gray-800"
+                        >
+                          <td className="sticky left-0 z-5 w-24 border-r bg-gray-50 p-2 text-center font-mono text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                            {timeSlot}
+                          </td>
+                          {daysOfWeek.map((day) => {
+                            const matchedBreak = expandedBreaks.find((bp) => {
+                              if (bp.day.toLowerCase() !== day.toLowerCase())
+                                return false;
+                              return (
+                                slotTotalMins >= bp.start_time &&
+                                slotTotalMins < bp.end_time
+                              );
+                            });
+
+                            return (
+                              <td
+                                key={day}
+                                className={`relative border-r p-1 text-center transition-colors ${
+                                  matchedBreak
+                                    ? "border-violet-200 bg-violet-50/80 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
+                                    : "text-gray-300 dark:border-gray-800"
+                                }`}
+                              >
+                                {matchedBreak &&
+                                  slotTotalMins === matchedBreak.start_time && (
+                                    <div
+                                      className="absolute inset-1.5 z-5 flex flex-col items-center justify-center overflow-hidden rounded bg-violet-100/90 p-1 text-center shadow-xs dark:bg-violet-900/80"
+                                      style={{
+                                        height: `${((matchedBreak.end_time - matchedBreak.start_time) / 30) * ROW_HEIGHT_PX - 12}px`,
+                                      }}
+                                    >
+                                      <div className="flex w-full justify-center space-x-2 truncate text-[10px] font-bold text-violet-900 dark:text-violet-100">
+                                        <GiCoffeeCup />
+                                        <div>
+                                          {matchedBreak.break_description}
+                                        </div>
+                                      </div>
+                                      <div className="font-mono text-[9px] text-violet-700 dark:text-violet-300">
+                                        {formatTime(matchedBreak.start_time)} -{" "}
+                                        {formatTime(matchedBreak.end_time)}
+                                      </div>
+                                    </div>
+                                  )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Schedule Not Found Modal */}

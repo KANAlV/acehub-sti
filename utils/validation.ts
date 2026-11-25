@@ -127,6 +127,12 @@ export const filterCourseName = (str: string): string =>
         .replace(/\s+/g, " ")
         .trim();
 
+export const filterCourseNameWithoutTrim = (str: string): string =>
+    str
+        .replace(/[^a-zA-Z0-9 ()\-,.:&\/\[\]']/g, "")
+        .replace(/[()\-,.:&\/\[\]']{2,}/g, (match: string): string => match[0])
+        .replace(/\s+/g, " ");
+
 /**
  * Validates a Year/Semester short code format (e.g. "11-1", "1-2", "12-3", "4-2").
  * SHS: year must be 11 or 12, term must be 1, 2, or 3.

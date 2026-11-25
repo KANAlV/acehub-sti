@@ -2,6 +2,7 @@
 import sql from "@/lib/database";
 import { cookies } from "next/headers";
 import { LocalTimetableEntry } from "@/components/schedules/ScheduleTimetable";
+import { isValidReservationDate } from "@/utils/reservationDates";
 
 /*************
  * DASHBOARD *
@@ -18,13 +19,16 @@ export async function fetchActiveScheduleName() {
 
     return {
       success: true,
-      data: scheduleName
+      data: scheduleName,
     };
   } catch (error: unknown) {
     console.error("Failed to fetch active schedule name:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred."
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
     };
   }
 }
@@ -54,7 +58,7 @@ export interface TimetableEntryRecord {
 }
 
 export async function fetchTimetableEntriesByScheduleId(
-    scheduleId: string
+  scheduleId: string,
 ): Promise<{
   success: boolean;
   data?: TimetableEntryRecord[];
@@ -104,9 +108,7 @@ export interface SubjectUnitsRecord {
   lab_type: string;
 }
 
-export async function fetchSubjectsUnitsByIds(
-  subjectIds: string[]
-): Promise<{
+export async function fetchSubjectsUnitsByIds(subjectIds: string[]): Promise<{
   success: boolean;
   data?: SubjectUnitsRecord[];
   error?: string;
@@ -134,9 +136,7 @@ export async function fetchSubjectsUnitsByIds(
   }
 }
 
-export async function fetchSubjectRequirementById(
-  subjectId: string
-): Promise<{
+export async function fetchSubjectRequirementById(subjectId: string): Promise<{
   success: boolean;
   data: SubjectRequirementRecord | null;
   error?: string;
@@ -162,7 +162,7 @@ export async function fetchSubjectRequirementById(
 }
 
 export async function fetchSubjectRequirementByCode(
-  courseCode: string
+  courseCode: string,
 ): Promise<{
   success: boolean;
   data: SubjectRequirementRecord | null;
@@ -192,7 +192,7 @@ export async function fetchSubjectRequirementByCode(
 
 export async function saveScheduleEntries(
   scheduleId: string,
-  entries: LocalTimetableEntry[]
+  entries: LocalTimetableEntry[],
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const formattedEntries = entries.map((e) => ({
@@ -207,7 +207,11 @@ export async function saveScheduleEntries(
       type: e.type || "Lecture",
     }));
 
-    await createLog("", "UPDATE", `Updated timetable entries for schedule ID: ${scheduleId}`);
+    await createLog(
+      "",
+      "UPDATE",
+      `Updated timetable entries for schedule ID: ${scheduleId}`,
+    );
 
     // Use sql.json() if your driver supports it, or pass as standard JSON parameter string
     await sql`
@@ -304,7 +308,7 @@ export interface FetchTeachersWithAqFcceAndPreferencesResponse {
 }
 
 export async function fetchTeachersWithAqFcceAndPreferences(
-  search: string | null = null
+  search: string | null = null,
 ): Promise<FetchTeachersWithAqFcceAndPreferencesResponse> {
   try {
     const cleanSearch = search?.trim() ? search.trim() : null;
@@ -331,11 +335,12 @@ export async function fetchTeachersWithAqFcceAndPreferences(
     // Helper: convert numeric-keyed objects (from PostgreSQL JSONB arrays) to proper arrays
     function normalizeArray(value: unknown): unknown {
       if (Array.isArray(value)) return value;
-      if (value !== null && typeof value === 'object') {
+      if (value !== null && typeof value === "object") {
         const obj = value as Record<string, unknown>;
         const keys = Object.keys(obj);
         // Check if all keys are numeric indices
-        const isNumericArray = keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
+        const isNumericArray =
+          keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
         if (isNumericArray) {
           const maxIdx = Math.max(...keys.map((k) => parseInt(k, 10)));
           const arr: unknown[] = new Array(maxIdx + 1);
@@ -356,13 +361,13 @@ export async function fetchTeachersWithAqFcceAndPreferences(
 
     // Helper: safely parse JSON string, handling double-quoted strings from PostgreSQL JSONB
     function safeJsonParse(value: unknown): unknown {
-      if (typeof value === 'string') {
+      if (typeof value === "string") {
         // Check if it's a double-quoted string (e.g. "\"{}\"")
         if (value.startsWith('"') && value.endsWith('"')) {
           try {
             // First unquote
             const unquoted = JSON.parse(value);
-            if (typeof unquoted === 'string') {
+            if (typeof unquoted === "string") {
               // Second parse for the inner JSON
               return JSON.parse(unquoted);
             }
@@ -381,69 +386,85 @@ export async function fetchTeachersWithAqFcceAndPreferences(
     }
 
     // Return raw rows - frontend will handle all JSON parsing for consistency
-    const parsedRows: TeacherWithAqFcceAndPreferences[] = (rowsRaw ?? []).map((row) => {
-      // Return preferences as raw value for frontend to parse
-      const prefsRaw = row.preferences;
-      let prefs: TeacherPreferences = {
-        preferred_rooms: [],
-        preferred_times: [],
-        preferred_year: [],
-        preferred_subjects: [],
-      };
-
-      // Try to parse preferences
-      const parsedPrefs = safeJsonParse(prefsRaw);
-      if (typeof parsedPrefs === 'object' && parsedPrefs !== null && !Array.isArray(parsedPrefs)) {
-        const prefsObj = parsedPrefs as Record<string, unknown>;
-        prefs = {
-          preferred_rooms: (normalizeArray(prefsObj.preferred_rooms) as string[]) || [],
-          preferred_times: (normalizeArray(prefsObj.preferred_times) as TimePreference[]) || [],
-          preferred_year: (normalizeArray(prefsObj.preferred_year) as string[]) || [],
-          preferred_subjects: (normalizeArray(prefsObj.preferred_subjects) as string[]) || [],
+    const parsedRows: TeacherWithAqFcceAndPreferences[] = (rowsRaw ?? []).map(
+      (row) => {
+        // Return preferences as raw value for frontend to parse
+        const prefsRaw = row.preferences;
+        let prefs: TeacherPreferences = {
+          preferred_rooms: [],
+          preferred_times: [],
+          preferred_year: [],
+          preferred_subjects: [],
         };
-      }
 
-      // Parse aqs
-      const aqsRaw = row.aqs;
-      let aqs: TeacherAqItem[] = [];
-      const parsedAqs = safeJsonParse(aqsRaw);
-      if (Array.isArray(parsedAqs)) {
-        aqs = parsedAqs as TeacherAqItem[];
-      } else if (typeof parsedAqs === 'object' && parsedAqs !== null) {
-        aqs = normalizeArray(parsedAqs) as TeacherAqItem[] || [];
-      }
+        // Try to parse preferences
+        const parsedPrefs = safeJsonParse(prefsRaw);
+        if (
+          typeof parsedPrefs === "object" &&
+          parsedPrefs !== null &&
+          !Array.isArray(parsedPrefs)
+        ) {
+          const prefsObj = parsedPrefs as Record<string, unknown>;
+          prefs = {
+            preferred_rooms:
+              (normalizeArray(prefsObj.preferred_rooms) as string[]) || [],
+            preferred_times:
+              (normalizeArray(prefsObj.preferred_times) as TimePreference[]) ||
+              [],
+            preferred_year:
+              (normalizeArray(prefsObj.preferred_year) as string[]) || [],
+            preferred_subjects:
+              (normalizeArray(prefsObj.preferred_subjects) as string[]) || [],
+          };
+        }
 
-      // Parse fcces
-      const fccesRaw = row.fcces;
-      let fcces: TeacherFcceItem[] = [];
-      const parsedFcces = safeJsonParse(fccesRaw);
-      if (Array.isArray(parsedFcces)) {
-        fcces = parsedFcces as TeacherFcceItem[];
-      } else if (typeof parsedFcces === 'object' && parsedFcces !== null) {
-        fcces = normalizeArray(parsedFcces) as TeacherFcceItem[] || [];
-      }
+        // Parse aqs
+        const aqsRaw = row.aqs;
+        let aqs: TeacherAqItem[] = [];
+        const parsedAqs = safeJsonParse(aqsRaw);
+        if (Array.isArray(parsedAqs)) {
+          aqs = parsedAqs as TeacherAqItem[];
+        } else if (typeof parsedAqs === "object" && parsedAqs !== null) {
+          aqs = (normalizeArray(parsedAqs) as TeacherAqItem[]) || [];
+        }
 
-      return {
-        teacher_id: String(row.teacher_id || ''),
-        pscs_id: row.pscs_id ? String(row.pscs_id) : null,
-        email: row.email ? String(row.email) : null,
-        full_name: String(row.full_name || ''),
-        teacher_code: row.teacher_code ? String(row.teacher_code) : null,
-        department: row.department ? String(row.department) : null,
-        employment_type: row.employment_type ? String(row.employment_type) : null,
-        status: row.status ? String(row.status) : null,
-        preferences: prefs,
-        aqs,
-        fcces,
-      };
-    });
+        // Parse fcces
+        const fccesRaw = row.fcces;
+        let fcces: TeacherFcceItem[] = [];
+        const parsedFcces = safeJsonParse(fccesRaw);
+        if (Array.isArray(parsedFcces)) {
+          fcces = parsedFcces as TeacherFcceItem[];
+        } else if (typeof parsedFcces === "object" && parsedFcces !== null) {
+          fcces = (normalizeArray(parsedFcces) as TeacherFcceItem[]) || [];
+        }
+
+        return {
+          teacher_id: String(row.teacher_id || ""),
+          pscs_id: row.pscs_id ? String(row.pscs_id) : null,
+          email: row.email ? String(row.email) : null,
+          full_name: String(row.full_name || ""),
+          teacher_code: row.teacher_code ? String(row.teacher_code) : null,
+          department: row.department ? String(row.department) : null,
+          employment_type: row.employment_type
+            ? String(row.employment_type)
+            : null,
+          status: row.status ? String(row.status) : null,
+          preferences: prefs,
+          aqs,
+          fcces,
+        };
+      },
+    );
 
     return {
       success: true,
       data: parsedRows,
     };
   } catch (error) {
-    console.error("Failed to fetch teachers with AQ, FCCE, and preferences:", error);
+    console.error(
+      "Failed to fetch teachers with AQ, FCCE, and preferences:",
+      error,
+    );
     return {
       success: false,
       data: [],
@@ -456,15 +477,14 @@ export async function fetchTeachersWithAqFcceAndPreferences(
 export async function fetchSchedules(params: {
   search?: string | null;
   sortBy?: string;
-  sortDir?: 'ASC' | 'DESC';
+  sortDir?: "ASC" | "DESC";
   page?: number;
   limit?: number;
-})
-{
+}) {
   const {
     search = null,
-    sortBy = 'schedule_name',
-    sortDir = 'ASC',
+    sortBy = "schedule_name",
+    sortDir = "ASC",
     page = 1,
     limit = 10,
   } = params;
@@ -484,7 +504,7 @@ export async function fetchSchedules(params: {
 
     // Parse generation_config if it's returned as a string
     const parsedData = (data || []).map((row: Record<string, unknown>) => {
-      if (typeof row.generation_config === 'string') {
+      if (typeof row.generation_config === "string") {
         try {
           return {
             ...row,
@@ -522,19 +542,19 @@ export interface RoomForGeneration {
 /* Rooms */
 export async function fetchLecRoomID() {
   try {
-    const res = await sql`Select * FROM get_lecture_room_id()`
+    const res = await sql`Select * FROM get_lecture_room_id()`;
 
     return {
       success: true,
-      data: res
+      data: res,
     };
   } catch (error) {
-    console.error('Fetching room id Error:', error)
+    console.error("Fetching room id Error:", error);
     return {
       success: false,
       data: [],
-      error: (error as Error).message || 'Failed to fetch Lecture Room ID',
-    }
+      error: (error as Error).message || "Failed to fetch Lecture Room ID",
+    };
   }
 }
 
@@ -542,8 +562,7 @@ export async function getRoomsForGeneration(): Promise<{
   success: boolean;
   data: RoomForGeneration[];
   error?: string;
-}>
-{
+}> {
   try {
     const data = await sql`
       SELECT * FROM get_rooms_for_generation();
@@ -551,25 +570,31 @@ export async function getRoomsForGeneration(): Promise<{
 
     return {
       success: true,
-      data: ((data as unknown) as RoomForGeneration[]) || [],
+      data: (data as unknown as RoomForGeneration[]) || [],
     };
   } catch (error) {
-    console.error('Detailed getRoomsForGeneration Error:', error);
+    console.error("Detailed getRoomsForGeneration Error:", error);
     return {
       success: false,
       data: [],
-      error: (error as Error).message || 'Failed to fetch rooms for generation.',
+      error:
+        (error as Error).message || "Failed to fetch rooms for generation.",
     };
   }
 }
 
 /* Subjects */
 export async function fetchSubjectRequirements(
-  curricula: string[] | null
-): Promise<{ success: boolean; data: SubjectRequirementRecord[]; error?: string }> {
+  curricula: string[] | null,
+): Promise<{
+  success: boolean;
+  data: SubjectRequirementRecord[];
+  error?: string;
+}> {
   try {
     // Format parameters
-    const formattedCurricula = curricula && curricula.length > 0 ? curricula : null;
+    const formattedCurricula =
+      curricula && curricula.length > 0 ? curricula : null;
 
     const data = await sql`
       SELECT * FROM subject_requirements_read(
@@ -579,14 +604,15 @@ export async function fetchSubjectRequirements(
 
     return {
       success: true,
-      data: ((data as unknown) as SubjectRequirementRecord[]) || [],
+      data: (data as unknown as SubjectRequirementRecord[]) || [],
     };
   } catch (error) {
-    console.error('Detailed fetchSubjectRequirements Error:', error);
+    console.error("Detailed fetchSubjectRequirements Error:", error);
     return {
       success: false,
       data: [],
-      error: (error as Error).message || 'Failed to fetch subject requirements.',
+      error:
+        (error as Error).message || "Failed to fetch subject requirements.",
     };
   }
 }
@@ -594,8 +620,7 @@ export async function fetchSubjectRequirements(
 // Teachers
 export async function getTeachersWithAqAndFcce(params: {
   search?: string | null;
-})
-{
+}) {
   const { search = null } = params;
 
   try {
@@ -609,12 +634,12 @@ export async function getTeachersWithAqAndFcce(params: {
     console.error("Failed to fetch teachers with AQ and FCCE:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch teacher qualifications.",
+      error:
+        (error as Error).message || "Failed to fetch teacher qualifications.",
       data: [],
     };
   }
 }
-
 
 /** --- POST GENERATED SCHEDULE --- **/
 
@@ -631,8 +656,7 @@ export async function saveGeneratedSchedule(payload: {
     end_time: number;
     type: string;
   }[];
-}): Promise<SaveScheduleResult>
-{
+}): Promise<SaveScheduleResult> {
   try {
     const { scheduleName, generationConfig, entries } = payload;
 
@@ -656,9 +680,9 @@ export async function saveGeneratedSchedule(payload: {
     }
 
     await createLog(
-        null,
-        "create_schedule",
-        `schedule_name: '${scheduleName}'`,
+      null,
+      "create_schedule",
+      `schedule_name: '${scheduleName}'`,
     );
 
     return {
@@ -684,7 +708,7 @@ export async function deleteScheduleUsingID(schedule_id: string) {
       SELECT delete_schedule(${schedule_id});
     `;
 
-    await createLog(null, "delete_schedule", schedule_id)
+    await createLog(null, "delete_schedule", schedule_id);
     return {
       success: true,
     };
@@ -692,7 +716,10 @@ export async function deleteScheduleUsingID(schedule_id: string) {
     console.error("Failed to delete schedule name:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred."
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
     };
   }
 }
@@ -760,7 +787,7 @@ export interface FetchScheduleConflictsCountResponse {
 }
 
 export async function fetchScheduleConflictsCount(
-    scheduleId: string
+  scheduleId: string,
 ): Promise<FetchScheduleConflictsCountResponse> {
   try {
     const [row] = await sql<ScheduleConflictsCount[]>`
@@ -813,7 +840,10 @@ export async function fetchScheduleByName(scheduleName: string) {
     console.error("Failed to fetch schedule by name:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred."
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
     };
   }
 }
@@ -832,13 +862,16 @@ export async function fetchScheduleEntriesSummary(scheduleId: string) {
 
     return {
       success: true,
-      data: rows[0]
+      data: rows[0],
     };
   } catch (error: unknown) {
     console.error("Failed to fetch schedule summary:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred."
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
     };
   }
 }
@@ -857,13 +890,16 @@ export async function fetchScheduleDetailedSummary(scheduleId: string) {
 
     return {
       success: true,
-      data: rows[0]
+      data: rows[0],
     };
   } catch (error: unknown) {
     console.error("Failed to fetch detailed schedule summary:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred."
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
     };
   }
 }
@@ -882,13 +918,16 @@ export async function fetchScheduleUsageSummary(scheduleId: string) {
 
     return {
       success: true,
-      data: rows[0]
+      data: rows[0],
     };
   } catch (error: unknown) {
     console.error("Failed to fetch schedule usage summary:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred."
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
     };
   }
 }
@@ -907,8 +946,8 @@ export async function fetchScheduleTeacherMetricsSummary(scheduleId: string) {
         data: {
           overloaded: 0,
           on_leave_count: 0,
-          teachers: []
-        }
+          teachers: [],
+        },
       };
     }
 
@@ -936,13 +975,16 @@ export async function fetchScheduleTeacherMetricsSummary(scheduleId: string) {
         overloaded,
         on_leave_count: onLeaveCount,
         teachers,
-      }
+      },
     };
   } catch (error: unknown) {
     console.error("Failed to fetch schedule teacher metrics summary:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred."
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
     };
   }
 }
@@ -954,16 +996,23 @@ export async function updateActiveSchedule(scheduleId: string | null) {
       SELECT update_active_schedule(${scheduleId});
     `;
 
-    await createLog("", "update_active_schedule", `scheduleId: '${scheduleId}'`);
+    await createLog(
+      "",
+      "update_active_schedule",
+      `scheduleId: '${scheduleId}'`,
+    );
     return {
       success: true,
-      message: "Active schedule successfully updated."
+      message: "Active schedule successfully updated.",
     };
   } catch (error: unknown) {
     console.error("Failed to update active schedule:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred."
+      error:
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.",
     };
   }
 }
@@ -990,7 +1039,9 @@ export type TeacherMetricRow = {
 /**
  * 1. Fetch global summary metrics (overloaded, on leave, total teachers, and active count) for a schedule.
  */
-export async function fetchScheduleTeacherMetricsComputation(scheduleId: string): Promise<{
+export async function fetchScheduleTeacherMetricsComputation(
+  scheduleId: string,
+): Promise<{
   success: boolean;
   data?: {
     overloaded: number;
@@ -999,8 +1050,7 @@ export async function fetchScheduleTeacherMetricsComputation(scheduleId: string)
     active_count: number;
   };
   error?: string;
-}>
-{
+}> {
   try {
     const result = await sql`
       SELECT * FROM get_schedule_teacher_metrics_computation(${scheduleId}::uuid)
@@ -1018,10 +1068,15 @@ export async function fetchScheduleTeacherMetricsComputation(scheduleId: string)
 
     return { success: true, data: metrics };
   } catch (error) {
-    console.error("Failed to fetch schedule teacher metrics computation:", error);
+    console.error(
+      "Failed to fetch schedule teacher metrics computation:",
+      error,
+    );
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch schedule teacher metrics computation.",
+      error:
+        (error as Error).message ||
+        "Failed to fetch schedule teacher metrics computation.",
     };
   }
 }
@@ -1043,8 +1098,7 @@ export async function fetchScheduleTeacherMetricsTable(params: {
   success: boolean;
   data?: TeacherMetricRow[];
   error?: string;
-}>
-{
+}> {
   try {
     const {
       scheduleId,
@@ -1093,7 +1147,9 @@ export async function fetchScheduleTeacherMetricsTable(params: {
     console.error("Failed to fetch schedule teacher metrics table:", error);
     return {
       success: false,
-      error: (error as Error).message || "Failed to fetch schedule teacher metrics table.",
+      error:
+        (error as Error).message ||
+        "Failed to fetch schedule teacher metrics table.",
     };
   }
 }
@@ -1108,8 +1164,7 @@ export async function fetchScheduleTeacherMetricsCount(params: {
   success: boolean;
   count: number;
   error?: string;
-}>
-{
+}> {
   try {
     const {
       scheduleId,
@@ -1130,7 +1185,8 @@ export async function fetchScheduleTeacherMetricsCount(params: {
     `;
 
     const rawRows = result as unknown as Array<Record<string, unknown>>;
-    const count = rawRows && rawRows.length > 0 ? Number(rawRows[0].count) || 0 : 0;
+    const count =
+      rawRows && rawRows.length > 0 ? Number(rawRows[0].count) || 0 : 0;
 
     return { success: true, count };
   } catch (error) {
@@ -1138,7 +1194,9 @@ export async function fetchScheduleTeacherMetricsCount(params: {
     return {
       success: false,
       count: 0,
-      error: (error as Error).message || "Failed to fetch schedule teacher metrics count.",
+      error:
+        (error as Error).message ||
+        "Failed to fetch schedule teacher metrics count.",
     };
   }
 }
@@ -1176,7 +1234,7 @@ export interface TeacherScheduleEntryRow {
 
 export async function fetchTeacherDetailedMetrics(
   scheduleName: string,
-  pscsId: string
+  pscsId: string,
 ): Promise<{
   success: boolean;
   teacher?: TeacherDetailedInfo;
@@ -1187,7 +1245,7 @@ export async function fetchTeacherDetailedMetrics(
     // Fetch info and entries concurrently using non-prepared raw execution to clear cached plan issues
     const [infoRows, entryRows] = await Promise.all([
       sql`SELECT * FROM get_teacher_schedule_info(${scheduleName}, ${pscsId})`,
-      sql`SELECT * FROM get_teacher_schedule_entries(${scheduleName}, ${pscsId})`
+      sql`SELECT * FROM get_teacher_schedule_entries(${scheduleName}, ${pscsId})`,
     ]);
 
     const rawTeacher = (infoRows as unknown as Record<string, unknown>[])[0];
@@ -1211,7 +1269,9 @@ export async function fetchTeacherDetailedMetrics(
       load_status: String(rawTeacher.load_status ?? "Normal Load"),
     };
 
-    const entries: TeacherScheduleEntryRow[] = (entryRows as unknown as Record<string, unknown>[]).map((row) => ({
+    const entries: TeacherScheduleEntryRow[] = (
+      entryRows as unknown as Record<string, unknown>[]
+    ).map((row) => ({
       day: String(row.day ?? ""),
       subject_id: String(row.subject_id ?? ""),
       subject_name: String(row.subject_name ?? ""),
@@ -1226,10 +1286,12 @@ export async function fetchTeacherDetailedMetrics(
     return { success: true, teacher, entries };
   } catch (error) {
     console.error("Failed to fetch teacher detailed metrics:", error);
-    return { success: false, error: (error as Error).message || "Failed to fetch teacher details." };
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch teacher details.",
+    };
   }
 }
-
 
 /**************
  * CURRICULUM *
@@ -1458,6 +1520,245 @@ export async function deleteAcademicYear(actor: string, aySem: string) {
     return {
       success: false,
       error: (error as Error).message || "Failed to delete academic year.",
+    };
+  }
+}
+
+/****************
+ * RESERVATIONS *
+ ****************/
+
+export interface ReservationRecord {
+  reservation_id: string;
+  room_id: string | null;
+  description: string;
+  type: string;
+  day: string;
+  start_time: number | null;
+  end_time: number | null;
+  created_at: string;
+}
+
+export interface ReservationInput {
+  room_id: string | null;
+  description: string;
+  type: string;
+  day: string;
+  start_time: number | null;
+  end_time: number | null;
+}
+
+export async function fetchReservations(
+  search: string | null = null,
+  sortBy: string = "created_at",
+  sortDir: string = "DESC",
+  limit: number = 10,
+  offset: number = 0,
+) {
+  try {
+    const data = await sql<ReservationRecord[]>`
+      SELECT * FROM reservations_read(
+        ${search},
+        ${sortBy},
+        ${sortDir},
+        ${limit},
+        ${offset}
+      );
+    `;
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to fetch reservations:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to fetch reservations.",
+      data: [],
+    };
+  }
+}
+
+export async function fetchReservationsCount(
+  search: string | null = null,
+  roomId: string | null = null,
+  type: string | null = null,
+  dayOfWeek: string | null = null,
+) {
+  try {
+    const [result] = await sql<{ reservations_count: number }[]>`
+      SELECT reservations_count(
+        ${search},
+        ${roomId}::UUID,
+        ${type},
+        ${dayOfWeek}
+      );
+    `;
+
+    return { success: true, count: result?.reservations_count ?? 0 };
+  } catch (error) {
+    console.error("Failed to count reservations:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to count reservations.",
+      count: 0,
+    };
+  }
+}
+
+export async function createReservations(inputs: ReservationInput[]) {
+  if (!Array.isArray(inputs) || inputs.length === 0 || inputs.length > 50) {
+    return {
+      success: false,
+      error: "Provide between 1 and 50 reservations.",
+    };
+  }
+
+  const normalizedInputs = inputs.map((input) => ({
+    ...input,
+    description: input.description.trim(),
+    type: input.type.trim(),
+    day: input.day.trim(),
+  }));
+
+  for (const input of normalizedInputs) {
+    if (!input.description || !input.type) {
+      return {
+        success: false,
+        error: "Description and type are required.",
+      };
+    }
+    if (!isValidReservationDate(input.day)) {
+      return { success: false, error: "Choose a valid reservation date." };
+    }
+    const hasUnassignedReschedulePlacement =
+      input.type.toLowerCase() === "reschedule" &&
+      input.room_id === null &&
+      input.start_time === null &&
+      input.end_time === null;
+    const hasCompletePlacement =
+      input.start_time !== null &&
+      input.end_time !== null &&
+      Number.isInteger(input.start_time) &&
+      Number.isInteger(input.end_time) &&
+      input.start_time >= 7 * 60 &&
+      input.end_time <= 22 * 60 &&
+      input.end_time > input.start_time;
+
+    if (!hasUnassignedReschedulePlacement && !hasCompletePlacement) {
+      return {
+        success: false,
+        error: "Choose a valid reservation time range.",
+      };
+    }
+  }
+
+  try {
+    const data = await sql.begin(async (transaction) => {
+      const created: ReservationRecord[] = [];
+
+      for (const input of normalizedInputs) {
+        const [record] = await transaction<ReservationRecord[]>`
+          INSERT INTO "reservations" (
+            "room_id",
+            "description",
+            "type",
+            "day",
+            "start_time",
+            "end_time"
+          ) VALUES (
+            ${input.room_id}::UUID,
+            ${input.description},
+            ${input.type},
+            ${input.day},
+            ${input.start_time},
+            ${input.end_time}
+          )
+          RETURNING
+            "reservation_id",
+            "room_id",
+            "description",
+            "type",
+            "day",
+            "start_time",
+            "end_time",
+            "created_at";
+        `;
+
+        if (!record) throw new Error("Reservation could not be created.");
+        created.push(record);
+      }
+
+      return created;
+    });
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failed to create reservations:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to create reservations.",
+    };
+  }
+}
+
+export async function createReservation(input: ReservationInput) {
+  const result = await createReservations([input]);
+  if (!result.success) return result;
+
+  const record = result.data?.[0];
+  if (!record) {
+    return { success: false, error: "Reservation could not be created." };
+  }
+
+  return { success: true, data: record };
+}
+
+export async function updateReservation(
+  reservationId: string,
+  input: Partial<ReservationInput>,
+) {
+  if (input.day !== undefined && !isValidReservationDate(input.day)) {
+    return { success: false, error: "Choose a valid reservation date." };
+  }
+
+  try {
+    const [result] = await sql<{ reservations_update: boolean }[]>`
+      SELECT reservations_update(
+        ${reservationId}::UUID,
+        ${input.room_id ?? null}::UUID,
+        ${input.description ?? null},
+        ${input.type ?? null},
+        ${input.day ?? null},
+        ${input.start_time ?? null},
+        ${input.end_time ?? null}
+      );
+    `;
+
+    return result?.reservations_update
+      ? { success: true }
+      : { success: false, error: "Reservation was not found." };
+  } catch (error) {
+    console.error("Failed to update reservation:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to update reservation.",
+    };
+  }
+}
+
+export async function deleteReservation(reservationId: string) {
+  try {
+    const [result] = await sql<{ reservations_delete: boolean }[]>`
+      SELECT reservations_delete(${reservationId}::UUID);
+    `;
+
+    return result?.reservations_delete
+      ? { success: true }
+      : { success: false, error: "Reservation was not found." };
+  } catch (error) {
+    console.error("Failed to delete reservation:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to delete reservation.",
     };
   }
 }
@@ -1879,7 +2180,7 @@ export async function fetchSubjectsDistinct(
 
     return {
       success: true,
-      data: ((data as unknown) as SubjectRecord[]) || [],
+      data: (data as unknown as SubjectRecord[]) || [],
     };
   } catch (error) {
     console.error("Failed to fetch subjects:", error);
@@ -1929,7 +2230,6 @@ export async function fetchSubjects(
     };
   }
 }
-
 
 /* READ DISTINCT - FETCH SUBJECTS */
 export async function fetchDistinctCourseNames(
@@ -2501,14 +2801,19 @@ export interface CurriculumRecord {
 }
 
 /* COUNT W/O ASSIGNEMNT */
-export async function getTeachersWithoutPreassignmentCount(preassignmentName: string) {
+export async function getTeachersWithoutPreassignmentCount(
+  preassignmentName: string,
+) {
   try {
     const result = await sql`
       SELECT teachers_without_preassignment_count(${preassignmentName}) AS count;
     `;
     return { success: true, count: result[0]?.count || 0 };
   } catch (error) {
-    console.error("Failed to fetch teachers without preassignment count:", error);
+    console.error(
+      "Failed to fetch teachers without preassignment count:",
+      error,
+    );
     return { success: false, error: (error as Error).message, count: 0 };
   }
 }
@@ -3875,12 +4180,12 @@ export async function fetchBreakPeriods(
 
 // Update Break Period
 export async function updateBreakPeriod(
-    user: string,
-    breakId: string,
-    description: string,
-    dayOfWeek: number,
-    startTime: string,
-    endTime: string,
+  user: string,
+  breakId: string,
+  description: string,
+  dayOfWeek: number,
+  startTime: string,
+  endTime: string,
 ) {
   try {
     await sql`
@@ -3894,9 +4199,9 @@ export async function updateBreakPeriod(
     `;
 
     await createLog(
-        user,
-        "update_break_period",
-        `break_period_id: '${breakId}' | description: '${description}' | day: '${dayOfWeek}' | start: '${startTime}' | end: '${endTime}'`,
+      user,
+      "update_break_period",
+      `break_period_id: '${breakId}' | description: '${description}' | day: '${dayOfWeek}' | start: '${startTime}' | end: '${endTime}'`,
     );
 
     return {
@@ -5036,9 +5341,9 @@ export async function fetchLogList(
 
 // Create Logs
 export async function createLog(
-    userEmailArg: string | null | undefined,
-    action: string,
-    details?: string | null,
+  userEmailArg: string | null | undefined,
+  action: string,
+  details?: string | null,
 ): Promise<void> {
   try {
     const cookieStore = await cookies();

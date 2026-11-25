@@ -13,9 +13,15 @@ import {
   SubjectRequirementRecord,
 } from "@/app/actions/system";
 import sql from "@/lib/database";
-
-// For Debugging Only
-const testMode = false;
+import {
+  findPreferredRoom,
+  getTeacherPreferenceMatchScore,
+} from "@/utils/autoSchedulePreferences";
+import {
+  formatGeneratedScheduleValidationError,
+  validateGeneratedSchedule,
+} from "@/utils/autoScheduleValidation";
+import { repairGeneratedSchedule } from "@/utils/autoScheduleRepair";
 
 /** --- INTERFACES --- **/
 
@@ -89,8 +95,10 @@ export interface TeacherRecord {
   fcces?: unknown;
   preferences?: {
     preferred_rooms?: string[];
-    preferred_times?: string[];
-    preferred_years?: string[];
+    preferred_times?: Array<
+      string | { day: string; start_time: string; end_time: string }
+    >;
+    preferred_year?: string[];
     preferred_subjects?: string[];
   };
 }
@@ -124,7 +132,8 @@ export async function fetchSubjectsForGeneration(
 
     // Parse tertiary term digit (1-2) from "Semester 1" / "Semester 2"
     const tertiaryTermNum = parseInt(tertiaryTerm.replace(/[^0-9]/g, "")) || 1;
-    const tertiaryTermDigit = tertiaryTermNum > 2 ? 2 : tertiaryTermNum < 1 ? 1 : tertiaryTermNum;
+    const tertiaryTermDigit =
+      tertiaryTermNum > 2 ? 2 : tertiaryTermNum < 1 ? 1 : tertiaryTermNum;
 
     // Parse SHS term digit (1-4)
     const shsTermNum = parseInt(shsTerm.replace(/[^0-9]/g, "")) || 1;
@@ -133,7 +142,7 @@ export async function fetchSubjectsForGeneration(
     // Filter subjects by term/semester: both tertiary and SHS subjects must match
     const filteredSubjects = allSubjects.filter((subject) => {
       const yt = (subject.year_term || "").toLowerCase().trim();
-      
+
       // Subjects without term/semester info are removed
       const hasTermInfo = yt.includes("term") || yt.includes("semester");
       if (!hasTermInfo) {
@@ -144,11 +153,17 @@ export async function fetchSubjectsForGeneration(
 
       if (isSubjectSHS) {
         // SHS subjects: filter by selected SHS term
-        return yt.includes(`term ${shsTermDigit}`) || yt.includes(`semester ${shsTermDigit}`);
+        return (
+          yt.includes(`term ${shsTermDigit}`) ||
+          yt.includes(`semester ${shsTermDigit}`)
+        );
       }
 
       // Tertiary subjects: filter by selected semester
-      return yt.includes(`semester ${tertiaryTermDigit}`) || yt.includes(`term ${tertiaryTermDigit}`);
+      return (
+        yt.includes(`semester ${tertiaryTermDigit}`) ||
+        yt.includes(`term ${tertiaryTermDigit}`)
+      );
     });
 
     return { success: true, data: filteredSubjects };
@@ -168,6 +183,7 @@ export async function generateProgramSections(
   _curricula: string[],
   tertiaryTerm: string,
   shsTerm: string = "Term 1",
+  subjectProgramCodes?: string[],
 ): Promise<{ success: boolean; sections: string[]; error?: string }> {
   try {
     const configResult = await fetchFacultyLoadConfig();
@@ -191,12 +207,21 @@ export async function generateProgramSections(
     );
     const programs: ProgramRecord[] =
       programsResponse?.data || programsResponse || [];
+    const allowedProgramCodes =
+      subjectProgramCodes === undefined
+        ? null
+        : new Set(
+            subjectProgramCodes.map((programCode) =>
+              programCode.trim().toUpperCase(),
+            ),
+          );
 
     const generatedSections: string[] = [];
 
     // Parse tertiary term
     const tertiaryTermLower = tertiaryTerm.toLowerCase();
-    const isTertiaryFirstTerm = tertiaryTermLower.includes("1") || tertiaryTermLower.includes("1st");
+    const isTertiaryFirstTerm =
+      tertiaryTermLower.includes("1") || tertiaryTermLower.includes("1st");
     const tertiaryTermOffset = isTertiaryFirstTerm ? 1 : 2;
 
     // Parse SHS term (supports Term 1-4)
@@ -205,6 +230,12 @@ export async function generateProgramSections(
 
     for (const prog of programs) {
       const progCode = prog.program_code.trim();
+      if (
+        allowedProgramCodes &&
+        !allowedProgramCodes.has(progCode.toUpperCase())
+      ) {
+        continue;
+      }
       const yearLevelType = prog.year_level;
       const rawStudents = prog.students;
 
@@ -271,17 +302,23 @@ export async function assignSubjectsToSections(
   error?: string;
 }> {
   try {
+    const allSubjects: SubjectRequirementRecord[] = precomputedSubjects || [];
     let sections = precomputedSections;
 
     if (!sections || sections.length === 0) {
-      const sectionResult = await generateProgramSections(_name, [], tertiaryTerm, shsTerm);
+      const sectionResult = await generateProgramSections(
+        _name,
+        [],
+        tertiaryTerm,
+        shsTerm,
+        allSubjects.map((subject) => subject.program_code || ""),
+      );
       if (!sectionResult.success || !sectionResult.sections) {
         throw new Error(sectionResult.error || "Failed to generate sections.");
       }
       sections = sectionResult.sections;
     }
 
-    const allSubjects: SubjectRequirementRecord[] = precomputedSubjects || [];
     if (allSubjects.length === 0) {
       throw new Error(
         "No precomputed subject requirements provided for section assignment.",
@@ -503,9 +540,14 @@ export async function generateRoomAndClassSchedules(
     // so their active days are the least crowded ones.
     const sectionSubjectCount = new Map<string, number>();
     for (const assignment of sectionAssignments) {
-      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(assignment.sectionCode);
+      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(
+        assignment.sectionCode,
+      );
       if (!isShsSection) {
-        sectionSubjectCount.set(assignment.sectionCode, assignment.subjects.length);
+        sectionSubjectCount.set(
+          assignment.sectionCode,
+          assignment.subjects.length,
+        );
       }
     }
 
@@ -554,7 +596,9 @@ export async function generateRoomAndClassSchedules(
 
       if (maxLoadDays.length > 0) {
         // Among days with max load, prefer unused vacant days for variety
-        const unusedMaxDays = maxLoadDays.filter((d) => !usedVacantDaysForTier.has(d));
+        const unusedMaxDays = maxLoadDays.filter(
+          (d) => !usedVacantDaysForTier.has(d),
+        );
         if (unusedMaxDays.length > 0) {
           chosenVacantDay = unusedMaxDays[0];
         } else if (usedVacantDaysForTier.size < days.length) {
@@ -584,7 +628,10 @@ export async function generateRoomAndClassSchedules(
     const scheduleEntries: ScheduleEntry[] = [];
 
     // Track scheduled components for same-day pairing: key = "sectionCode_subjectId_componentType"
-    const scheduledComponents = new Map<string, { day: string; startIndex: number; endIndex: number }>();
+    const scheduledComponents = new Map<
+      string,
+      { day: string; startIndex: number; endIndex: number }
+    >();
 
     // Initialize day subject count map for each section
     for (const assignment of sectionAssignments) {
@@ -663,7 +710,8 @@ export async function generateRoomAndClassSchedules(
       const hasLab = labUnits > 0;
 
       // Kitchen labs always schedule independently to avoid sharing the same room
-      const isKitchenLab = subject.lab_type && kitchenRoomTypeIds.has(subject.lab_type);
+      const isKitchenLab =
+        subject.lab_type && kitchenRoomTypeIds.has(subject.lab_type);
 
       let scheduledDay: string | null = null;
 
@@ -781,14 +829,30 @@ export async function generateRoomAndClassSchedules(
       const lecSlotsNeeded = Math.ceil((lecHours * 60) / 30);
       const labSlotsNeeded = Math.ceil((labHours * 60) / 30);
       const activeDays = sectionActiveDays.get(sectionCode)!;
-      const prioritizedDays = getDaysSortedBySubjectCount(sectionCode, preferredVacantDay);
+      const prioritizedDays = getDaysSortedBySubjectCount(
+        sectionCode,
+        preferredVacantDay,
+      );
 
-      const labRooms = getFilteredRooms("LABORATORY", rooms, subject.lab_type, null);
-      const lecRooms = getFilteredRooms("LECTURE", rooms, subject.lab_type, lectureRoomTypeId);
+      const labRooms = getFilteredRooms(
+        "LABORATORY",
+        rooms,
+        subject.lab_type,
+        null,
+      );
+      const lecRooms = getFilteredRooms(
+        "LECTURE",
+        rooms,
+        subject.lab_type,
+        lectureRoomTypeId,
+      );
 
       // Helper to find the earliest available lab start slot on a given day.
       // Scans from the beginning, skipping occupied blocks and break periods.
-      function findEarliestLabSlot(day: string, checkBefore6PM: boolean): number | null {
+      function findEarliestLabSlot(
+        day: string,
+        checkBefore6PM: boolean,
+      ): number | null {
         for (let i = 0; i <= sectionTimeSlots.length - labSlotsNeeded; i++) {
           const labSlots = sectionTimeSlots.slice(i, i + labSlotsNeeded);
 
@@ -811,7 +875,9 @@ export async function generateRoomAndClassSchedules(
             const slot = labSlots[j];
             if (
               occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
-              occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+              occupiedSubjectTimeSlots.has(
+                `${subject.course_code}_${day}_${slot}`,
+              )
             ) {
               occupied = true;
               i = i + j;
@@ -821,8 +887,11 @@ export async function generateRoomAndClassSchedules(
           if (occupied) continue;
 
           // Check lab course conflict
-          const labFree = labSlots.every((slot) =>
-            !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`)
+          const labFree = labSlots.every(
+            (slot) =>
+              !occupiedCourseSlots.has(
+                `${subject.course_code}_LABORATORY_${day}_${slot}`,
+              ),
           );
           if (!labFree) {
             i = i + labSlotsNeeded - 1;
@@ -847,7 +916,12 @@ export async function generateRoomAndClassSchedules(
 
       // For each day, find earliest lab slot, then check if lecture can pair immediately after
       for (const day of prioritizedDays) {
-        if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
+        if (
+          day === preferredVacantDay &&
+          activeDays.size < 5 &&
+          activeDays.size > 0
+        )
+          continue;
         if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
         const labStart = findEarliestLabSlot(day, preferBefore6PM);
@@ -858,23 +932,32 @@ export async function generateRoomAndClassSchedules(
         const labStartMinutes = timeToMinutes(labStartTime);
         if (labStartMinutes >= 18 * 60) continue;
 
-        const labSlots = sectionTimeSlots.slice(labStart, labStart + labSlotsNeeded);
+        const labSlots = sectionTimeSlots.slice(
+          labStart,
+          labStart + labSlotsNeeded,
+        );
         const lecStart = labStart + labSlotsNeeded;
 
         // Check if lecture fits within the time slots
         if (lecStart + lecSlotsNeeded > sectionTimeSlots.length) continue;
 
-        const lecSlots = sectionTimeSlots.slice(lecStart, lecStart + lecSlotsNeeded);
+        const lecSlots = sectionTimeSlots.slice(
+          lecStart,
+          lecStart + lecSlotsNeeded,
+        );
 
         // Check if lecture hits a break — if so, skip pairing for this day
-        if (lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods))) continue;
+        if (lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods)))
+          continue;
 
         // Check if lecture slots are occupied by section or subject
         let lecOccupied = false;
         for (const slot of lecSlots) {
           if (
             occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
-            occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            occupiedSubjectTimeSlots.has(
+              `${subject.course_code}_${day}_${slot}`,
+            )
           ) {
             lecOccupied = true;
             break;
@@ -883,8 +966,11 @@ export async function generateRoomAndClassSchedules(
         if (lecOccupied) continue;
 
         // Check lecture course conflict
-        const lecFree = lecSlots.every((slot) =>
-          !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`)
+        const lecFree = lecSlots.every(
+          (slot) =>
+            !occupiedCourseSlots.has(
+              `${subject.course_code}_LECTURE_${day}_${slot}`,
+            ),
         );
         if (!lecFree) continue;
 
@@ -893,13 +979,23 @@ export async function generateRoomAndClassSchedules(
         let lecRoom: RoomForGeneration | null = null;
 
         for (const room of labRooms) {
-          if (labSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+          if (
+            labSlots.every(
+              (slot) =>
+                !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+            )
+          ) {
             labRoom = room;
             break;
           }
         }
         for (const room of lecRooms) {
-          if (lecSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+          if (
+            lecSlots.every(
+              (slot) =>
+                !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+            )
+          ) {
             lecRoom = room;
             break;
           }
@@ -910,8 +1006,12 @@ export async function generateRoomAndClassSchedules(
           labSlots.forEach((slot) => {
             occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
             occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
-            occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
-            occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+            occupiedCourseSlots.add(
+              `${subject.course_code}_LABORATORY_${day}_${slot}`,
+            );
+            occupiedSubjectTimeSlots.add(
+              `${subject.course_code}_${day}_${slot}`,
+            );
           });
           activeDays.add(day);
 
@@ -933,16 +1033,25 @@ export async function generateRoomAndClassSchedules(
             teacherId: null,
             teacherName: null,
           });
-          scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
-            day, startIndex: labStart, endIndex: labStart + labSlotsNeeded
-          });
+          scheduledComponents.set(
+            `${sectionCode}_${subject.subject_id}_LABORATORY`,
+            {
+              day,
+              startIndex: labStart,
+              endIndex: labStart + labSlotsNeeded,
+            },
+          );
 
           // Schedule Lecture immediately after
           lecSlots.forEach((slot) => {
             occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
             occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
-            occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
-            occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+            occupiedCourseSlots.add(
+              `${subject.course_code}_LECTURE_${day}_${slot}`,
+            );
+            occupiedSubjectTimeSlots.add(
+              `${subject.course_code}_${day}_${slot}`,
+            );
           });
 
           const lecStartTime = lecSlots[0].split(" - ")[0];
@@ -963,9 +1072,14 @@ export async function generateRoomAndClassSchedules(
             teacherId: null,
             teacherName: null,
           });
-          scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
-            day, startIndex: lecStart, endIndex: lecStart + lecSlotsNeeded
-          });
+          scheduledComponents.set(
+            `${sectionCode}_${subject.subject_id}_LECTURE`,
+            {
+              day,
+              startIndex: lecStart,
+              endIndex: lecStart + lecSlotsNeeded,
+            },
+          );
 
           return true;
         }
@@ -974,7 +1088,12 @@ export async function generateRoomAndClassSchedules(
       // If preferBefore6PM failed, retry without the constraint
       if (preferBefore6PM) {
         for (const day of prioritizedDays) {
-          if (day === preferredVacantDay && activeDays.size < 5 && activeDays.size > 0) continue;
+          if (
+            day === preferredVacantDay &&
+            activeDays.size < 5 &&
+            activeDays.size > 0
+          )
+            continue;
           if (!activeDays.has(day) && activeDays.size >= 5) continue;
 
           // Find earliest lab slot without before-6-PM constraint
@@ -999,7 +1118,9 @@ export async function generateRoomAndClassSchedules(
               const slot = labSlots[j];
               if (
                 occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
-                occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+                occupiedSubjectTimeSlots.has(
+                  `${subject.course_code}_${day}_${slot}`,
+                )
               ) {
                 occupied = true;
                 i = i + j;
@@ -1008,8 +1129,11 @@ export async function generateRoomAndClassSchedules(
             }
             if (occupied) continue;
 
-            const labFree = labSlots.every((slot) =>
-              !occupiedCourseSlots.has(`${subject.course_code}_LABORATORY_${day}_${slot}`)
+            const labFree = labSlots.every(
+              (slot) =>
+                !occupiedCourseSlots.has(
+                  `${subject.course_code}_LABORATORY_${day}_${slot}`,
+                ),
             );
             if (!labFree) {
               i = i + labSlotsNeeded - 1;
@@ -1027,21 +1151,30 @@ export async function generateRoomAndClassSchedules(
           const labStartMinutes = timeToMinutes(labStartTime);
           if (labStartMinutes >= 18 * 60) continue;
 
-          const labSlots = sectionTimeSlots.slice(labStart, labStart + labSlotsNeeded);
+          const labSlots = sectionTimeSlots.slice(
+            labStart,
+            labStart + labSlotsNeeded,
+          );
           const lecStart = labStart + labSlotsNeeded;
 
           if (lecStart + lecSlotsNeeded > sectionTimeSlots.length) continue;
 
-          const lecSlots = sectionTimeSlots.slice(lecStart, lecStart + lecSlotsNeeded);
+          const lecSlots = sectionTimeSlots.slice(
+            lecStart,
+            lecStart + lecSlotsNeeded,
+          );
 
           // Check if lecture hits a break — skip pairing
-          if (lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods))) continue;
+          if (lecSlots.some((slot) => isBreakTime(day, slot, breakPeriods)))
+            continue;
 
           let lecOccupied = false;
           for (const slot of lecSlots) {
             if (
               occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
-              occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+              occupiedSubjectTimeSlots.has(
+                `${subject.course_code}_${day}_${slot}`,
+              )
             ) {
               lecOccupied = true;
               break;
@@ -1049,8 +1182,11 @@ export async function generateRoomAndClassSchedules(
           }
           if (lecOccupied) continue;
 
-          const lecFree = lecSlots.every((slot) =>
-            !occupiedCourseSlots.has(`${subject.course_code}_LECTURE_${day}_${slot}`)
+          const lecFree = lecSlots.every(
+            (slot) =>
+              !occupiedCourseSlots.has(
+                `${subject.course_code}_LECTURE_${day}_${slot}`,
+              ),
           );
           if (!lecFree) continue;
 
@@ -1058,13 +1194,23 @@ export async function generateRoomAndClassSchedules(
           let lecRoom: RoomForGeneration | null = null;
 
           for (const room of labRooms) {
-            if (labSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+            if (
+              labSlots.every(
+                (slot) =>
+                  !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+              )
+            ) {
               labRoom = room;
               break;
             }
           }
           for (const room of lecRooms) {
-            if (lecSlots.every((slot) => !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`))) {
+            if (
+              lecSlots.every(
+                (slot) =>
+                  !occupiedRoomSlots.has(`${room.room_id}_${day}_${slot}`),
+              )
+            ) {
               lecRoom = room;
               break;
             }
@@ -1074,43 +1220,75 @@ export async function generateRoomAndClassSchedules(
             labSlots.forEach((slot) => {
               occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
               occupiedRoomSlots.add(`${labRoom.room_id}_${day}_${slot}`);
-              occupiedCourseSlots.add(`${subject.course_code}_LABORATORY_${day}_${slot}`);
-              occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+              occupiedCourseSlots.add(
+                `${subject.course_code}_LABORATORY_${day}_${slot}`,
+              );
+              occupiedSubjectTimeSlots.add(
+                `${subject.course_code}_${day}_${slot}`,
+              );
             });
             activeDays.add(day);
 
             scheduleEntries.push({
-              sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
-              courseName: subject.course_name, componentType: "LABORATORY", units: subject.lab_units,
-              roomId: labRoom.room_id, roomName: labRoom.room_name || "Unassigned Room",
-              day, startTime: labSlots[0].split(" - ")[0], endTime: labSlots[labSlots.length - 1].split(" - ")[1],
+              sectionCode,
+              subjectId: subject.subject_id,
+              courseCode: subject.course_code,
+              courseName: subject.course_name,
+              componentType: "LABORATORY",
+              units: subject.lab_units,
+              roomId: labRoom.room_id,
+              roomName: labRoom.room_name || "Unassigned Room",
+              day,
+              startTime: labSlots[0].split(" - ")[0],
+              endTime: labSlots[labSlots.length - 1].split(" - ")[1],
               type: "laboratory",
               teacherId: null,
               teacherName: null,
             });
-            scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LABORATORY`, {
-              day, startIndex: labStart, endIndex: labStart + labSlotsNeeded
-            });
+            scheduledComponents.set(
+              `${sectionCode}_${subject.subject_id}_LABORATORY`,
+              {
+                day,
+                startIndex: labStart,
+                endIndex: labStart + labSlotsNeeded,
+              },
+            );
 
             lecSlots.forEach((slot) => {
               occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
               occupiedRoomSlots.add(`${lecRoom.room_id}_${day}_${slot}`);
-              occupiedCourseSlots.add(`${subject.course_code}_LECTURE_${day}_${slot}`);
-              occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+              occupiedCourseSlots.add(
+                `${subject.course_code}_LECTURE_${day}_${slot}`,
+              );
+              occupiedSubjectTimeSlots.add(
+                `${subject.course_code}_${day}_${slot}`,
+              );
             });
 
             scheduleEntries.push({
-              sectionCode, subjectId: subject.subject_id, courseCode: subject.course_code,
-              courseName: subject.course_name, componentType: "LECTURE", units: subject.lecture_units,
-              roomId: lecRoom.room_id, roomName: lecRoom.room_name || "Unassigned Room",
-              day, startTime: lecSlots[0].split(" - ")[0], endTime: lecSlots[lecSlots.length - 1].split(" - ")[1],
+              sectionCode,
+              subjectId: subject.subject_id,
+              courseCode: subject.course_code,
+              courseName: subject.course_name,
+              componentType: "LECTURE",
+              units: subject.lecture_units,
+              roomId: lecRoom.room_id,
+              roomName: lecRoom.room_name || "Unassigned Room",
+              day,
+              startTime: lecSlots[0].split(" - ")[0],
+              endTime: lecSlots[lecSlots.length - 1].split(" - ")[1],
               type: "lecture",
               teacherId: null,
               teacherName: null,
             });
-            scheduledComponents.set(`${sectionCode}_${subject.subject_id}_LECTURE`, {
-              day, startIndex: lecStart, endIndex: lecStart + lecSlotsNeeded
-            });
+            scheduledComponents.set(
+              `${sectionCode}_${subject.subject_id}_LECTURE`,
+              {
+                day,
+                startIndex: lecStart,
+                endIndex: lecStart + lecSlotsNeeded,
+              },
+            );
 
             return true;
           }
@@ -1125,7 +1303,9 @@ export async function generateRoomAndClassSchedules(
     const tertiaryAssignments: SectionSubjectAssignment[] = [];
 
     for (const assignment of sectionAssignments) {
-      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(assignment.sectionCode);
+      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(
+        assignment.sectionCode,
+      );
       if (isShsSection) {
         shsAssignments.push(assignment);
       } else {
@@ -1143,7 +1323,13 @@ export async function generateRoomAndClassSchedules(
       for (const subject of subjects) {
         const labUnits = subject.lab_units || 0;
         if (labUnits > 0) {
-          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay, false);
+          scheduleSubject(
+            subject,
+            sectionCode,
+            sectionTimeSlots,
+            preferredVacantDay,
+            false,
+          );
         }
       }
     }
@@ -1158,7 +1344,13 @@ export async function generateRoomAndClassSchedules(
       for (const subject of subjects) {
         const labUnits = subject.lab_units || 0;
         if (labUnits > 0) {
-          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay, true);
+          scheduleSubject(
+            subject,
+            sectionCode,
+            sectionTimeSlots,
+            preferredVacantDay,
+            true,
+          );
         }
       }
     }
@@ -1174,7 +1366,13 @@ export async function generateRoomAndClassSchedules(
         const labUnits = subject.lab_units || 0;
         const lectureUnits = subject.lecture_units || 0;
         if (labUnits === 0 && lectureUnits > 0) {
-          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay, false);
+          scheduleSubject(
+            subject,
+            sectionCode,
+            sectionTimeSlots,
+            preferredVacantDay,
+            false,
+          );
         }
       }
     }
@@ -1190,7 +1388,13 @@ export async function generateRoomAndClassSchedules(
         const labUnits = subject.lab_units || 0;
         const lectureUnits = subject.lecture_units || 0;
         if (labUnits === 0 && lectureUnits > 0) {
-          scheduleSubject(subject, sectionCode, sectionTimeSlots, preferredVacantDay, true);
+          scheduleSubject(
+            subject,
+            sectionCode,
+            sectionTimeSlots,
+            preferredVacantDay,
+            true,
+          );
         }
       }
     }
@@ -1222,20 +1426,45 @@ export async function generateRoomAndClassSchedulesWithTeachers(
   _name: string,
   _curricula: string[],
   tertiaryTerm: string,
+  teachersForGeneration: TeacherRecord[],
   precomputedSections?: string[],
   precomputedSubjects?: SubjectRequirementRecord[],
   shsTerm: string = "Term 1",
+  testMode: boolean = false,
 ): Promise<ScheduleAssignmentResult> {
   try {
-    // 1. Fetch teachers with AQ and FCCE data
-    const teachersResult = await getTeachersWithAqAndFcce({ search: null });
-    const allTeachers: TeacherRecord[] =
-      (teachersResult.success && teachersResult.data
-        ? (teachersResult.data as TeacherRecord[])
-        : []) || [];
+    if (testMode) {
+      const teacherDebugData = teachersForGeneration.map(
+        ({
+          teacher_id,
+          full_name,
+          teacher_code,
+          department,
+          employment_type,
+          status,
+          aqs,
+          fcces,
+          preferences,
+        }) => ({
+          teacher_id,
+          full_name,
+          teacher_code,
+          department,
+          employment_type,
+          status,
+          aqs,
+          fcces,
+          preferences,
+        }),
+      );
+
+      console.log(
+        `[AutoScheduleGeneration] Received ${teacherDebugData.length} teachers with preferences:\n${JSON.stringify(teacherDebugData, null, 2)}`,
+      );
+    }
 
     // Filter active teachers
-    const activeTeachers = allTeachers.filter(
+    const activeTeachers = teachersForGeneration.filter(
       (t) => !t.status || t.status.toLowerCase() !== "inactive",
     );
 
@@ -1295,6 +1524,48 @@ export async function generateRoomAndClassSchedulesWithTeachers(
       }
     }
 
+    const requirementsResult = await assignSubjectsToSections(
+      _name,
+      tertiaryTerm,
+      precomputedSections,
+      subjectsForMapping,
+      shsTerm,
+    );
+    if (!requirementsResult.success || !requirementsResult.assignments) {
+      throw new Error(
+        requirementsResult.error ||
+          "Failed to resolve required section subject components.",
+      );
+    }
+
+    if (testMode) {
+      const sectionRequirements = requirementsResult.assignments.map(
+        ({ sectionCode, subjects }) => ({
+          sectionCode,
+          subjectCount: subjects.length,
+          requiredComponents: subjects.reduce(
+            (count, subject) =>
+              count +
+              Number(subject.lecture_units > 0) +
+              Number(subject.lab_units > 0),
+            0,
+          ),
+          subjects: subjects.map(
+            ({ course_code, year_term, lecture_units, lab_units }) => ({
+              course_code,
+              year_term,
+              lecture_units,
+              lab_units,
+            }),
+          ),
+        }),
+      );
+
+      console.log(
+        `[AutoScheduleGeneration] Resolved requirements for ${sectionRequirements.length} sections:\n${JSON.stringify(sectionRequirements, null, 2)}`,
+      );
+    }
+
     if (subjectsForMapping) {
       // Helper functions for teacher matching
       function getFacultyLoadLimit(employmentType?: string): number {
@@ -1346,7 +1617,9 @@ export async function generateRoomAndClassSchedulesWithTeachers(
           ? (teacher.fcces as Array<Record<string, unknown>>)
           : [];
         return teacherFcces.some((f) => {
-          const fCourse = String(f.course_name ?? "").trim().toLowerCase();
+          const fCourse = String(f.course_name ?? "")
+            .trim()
+            .toLowerCase();
           return fCourse === courseNameLower && f.pass === true;
         });
       }
@@ -1377,11 +1650,26 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         const courseName = subject.course_name || "";
         const courseCode = subject.course_code || "";
         const requiredAqs = subject.required_aqs || [];
+        const preferenceRankedTeachers = [...activeTeachers].sort(
+          (a, b) =>
+            getTeacherPreferenceMatchScore(
+              b.preferences,
+              courseName,
+              courseCode,
+              subject.year_term,
+            ) -
+            getTeacherPreferenceMatchScore(
+              a.preferences,
+              courseName,
+              courseCode,
+              subject.year_term,
+            ),
+        );
 
         let bestTeacher: TeacherRecord | null = null;
 
         // First pass: AQ + FCCE + preference match
-        for (const teacher of activeTeachers) {
+        for (const teacher of preferenceRankedTeachers) {
           const loadLimit = getFacultyLoadLimit(teacher.employment_type);
           const absoluteMax = loadLimit + overloadMax;
           const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
@@ -1389,21 +1677,26 @@ export async function generateRoomAndClassSchedulesWithTeachers(
           if (!teacherPrefersSubject(teacher, courseName, courseCode)) continue;
           if (!teacherAqMatches(teacher, requiredAqs)) continue;
           if (!teacherFcceMatches(teacher, courseName)) continue;
-          if (teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id)) continue;
+          if (teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id))
+            continue;
           bestTeacher = teacher;
           break;
         }
 
         // Second pass: AQ + preference match only
         if (!bestTeacher) {
-          for (const teacher of activeTeachers) {
+          for (const teacher of preferenceRankedTeachers) {
             const loadLimit = getFacultyLoadLimit(teacher.employment_type);
             const absoluteMax = loadLimit + overloadMax;
             const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
             if (currentLoad + totalUnits > absoluteMax) continue;
-            if (!teacherPrefersSubject(teacher, courseName, courseCode)) continue;
+            if (!teacherPrefersSubject(teacher, courseName, courseCode))
+              continue;
             if (!teacherAqMatches(teacher, requiredAqs)) continue;
-            if (teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id)) continue;
+            if (
+              teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id)
+            )
+              continue;
             bestTeacher = teacher;
             break;
           }
@@ -1411,13 +1704,17 @@ export async function generateRoomAndClassSchedulesWithTeachers(
 
         // Third pass: preference match only
         if (!bestTeacher) {
-          for (const teacher of activeTeachers) {
+          for (const teacher of preferenceRankedTeachers) {
             const loadLimit = getFacultyLoadLimit(teacher.employment_type);
             const absoluteMax = loadLimit + overloadMax;
             const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
             if (currentLoad + totalUnits > absoluteMax) continue;
-            if (!teacherPrefersSubject(teacher, courseName, courseCode)) continue;
-            if (teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id)) continue;
+            if (!teacherPrefersSubject(teacher, courseName, courseCode))
+              continue;
+            if (
+              teacherSubjects.get(teacher.teacher_id)?.has(subject.subject_id)
+            )
+              continue;
             bestTeacher = teacher;
             break;
           }
@@ -1461,7 +1758,9 @@ export async function generateRoomAndClassSchedulesWithTeachers(
     }
 
     // Helper: get employment type category
-    function getEmploymentCategory(teacher: TeacherRecord): "full_time" | "part_time_full_load" | "part_time" {
+    function getEmploymentCategory(
+      teacher: TeacherRecord,
+    ): "full_time" | "part_time_full_load" | "part_time" {
       const normalized = (teacher.employment_type || "full_time").toLowerCase();
       if (
         normalized.includes("part-time full load") ||
@@ -1493,15 +1792,29 @@ export async function generateRoomAndClassSchedulesWithTeachers(
     }
 
     // Helper: check if teacher prefers this time slot
-    function teacherPrefersTime(teacher: TeacherRecord, startTime: string, endTime: string): boolean {
+    function teacherPrefersTime(
+      teacher: TeacherRecord,
+      day: string,
+      startTime: string,
+      endTime: string,
+    ): boolean {
       const prefTimes = teacher.preferences?.preferred_times;
       if (!prefTimes || prefTimes.length === 0) return true;
       const slotRange = `${startTime}-${endTime}`;
       return prefTimes.some((pref) => {
+        if (typeof pref !== "string") {
+          return (
+            pref.day.toLowerCase() === day.toLowerCase() &&
+            timeToMinutes(pref.start_time) <= timeToMinutes(startTime) &&
+            timeToMinutes(pref.end_time) >= timeToMinutes(endTime)
+          );
+        }
         const prefLower = pref.toLowerCase();
-        return prefLower.includes(startTime.toLowerCase()) ||
-               prefLower.includes(endTime.toLowerCase()) ||
-               prefLower.includes(slotRange.toLowerCase());
+        return (
+          prefLower.includes(startTime.toLowerCase()) ||
+          prefLower.includes(endTime.toLowerCase()) ||
+          prefLower.includes(slotRange.toLowerCase())
+        );
       });
     }
 
@@ -1519,7 +1832,11 @@ export async function generateRoomAndClassSchedulesWithTeachers(
 
       const teacher = teacherInfoMap.get(assignedTeacherId);
       if (!teacher) {
-        finalEntries.push({ ...entry, teacherId: assignedTeacherId, teacherName: subjectTeacherNameMap.get(entry.subjectId) || null });
+        finalEntries.push({
+          ...entry,
+          teacherId: assignedTeacherId,
+          teacherName: subjectTeacherNameMap.get(entry.subjectId) || null,
+        });
         continue;
       }
 
@@ -1539,7 +1856,14 @@ export async function generateRoomAndClassSchedulesWithTeachers(
       // Part-Time: only preferred days/times, handles Saturdays
       if (category === "part_time") {
         // Check preferred times
-        if (!teacherPrefersTime(teacher, entry.startTime, entry.endTime)) {
+        if (
+          !teacherPrefersTime(
+            teacher,
+            entry.day,
+            entry.startTime,
+            entry.endTime,
+          )
+        ) {
           valid = false;
         }
       }
@@ -1547,7 +1871,14 @@ export async function generateRoomAndClassSchedulesWithTeachers(
       // Part-Time Full Load: can handle evening, but prefer preferred times
       if (category === "part_time_full_load") {
         // Can handle 6PM-10PM, but respect preferred times if set
-        if (!teacherPrefersTime(teacher, entry.startTime, entry.endTime)) {
+        if (
+          !teacherPrefersTime(
+            teacher,
+            entry.day,
+            entry.startTime,
+            entry.endTime,
+          )
+        ) {
           // For part-time full load, we still allow it but flag for potential re-scheduling
           // Only block if there are preferred times and this doesn't match
           const prefTimes = teacher.preferences?.preferred_times;
@@ -1561,23 +1892,311 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         needsReschedule.add(entry.subjectId);
       }
 
-      finalEntries.push({ ...entry, teacherId: assignedTeacherId, teacherName: subjectTeacherNameMap.get(entry.subjectId) || null });
+      finalEntries.push({
+        ...entry,
+        teacherId: assignedTeacherId,
+        teacherName: subjectTeacherNameMap.get(entry.subjectId) || null,
+      });
     }
 
-    // If no entries need re-scheduling, return with teacher assignments
-    if (needsReschedule.size === 0) {
-      return { success: true, scheduleEntries: finalEntries };
+    async function applyPreferredRooms(
+      entries: ScheduleEntry[],
+    ): Promise<ScheduleEntry[]> {
+      if (
+        !entries.some((entry) => {
+          const teacher = entry.teacherId
+            ? teacherInfoMap.get(entry.teacherId)
+            : undefined;
+          return (teacher?.preferences?.preferred_rooms?.length ?? 0) > 0;
+        })
+      ) {
+        return entries;
+      }
+
+      const roomsResult = await getRoomsForGeneration();
+      if (!roomsResult.success || !roomsResult.data) return entries;
+
+      const lecRoomTypeResult = await fetchLecRoomID();
+      const lecRoomData =
+        lecRoomTypeResult.success && lecRoomTypeResult.data
+          ? (lecRoomTypeResult.data as Array<{ room_type_id: string }>)
+          : [];
+      const lectureRoomTypeId = lecRoomData[0]?.room_type_id ?? null;
+      const subjectsById = new Map(
+        (subjectsForMapping ?? precomputedSubjects ?? []).map((subject) => [
+          subject.subject_id,
+          subject,
+        ]),
+      );
+      const result = entries.map((entry) => ({ ...entry }));
+
+      for (let index = 0; index < result.length; index++) {
+        const entry = result[index];
+        const teacher = entry.teacherId
+          ? teacherInfoMap.get(entry.teacherId)
+          : undefined;
+        const preferredRooms = teacher?.preferences?.preferred_rooms;
+        if (!preferredRooms?.length) continue;
+
+        const subject = subjectsById.get(entry.subjectId);
+        const compatibleRooms = getFilteredRooms(
+          entry.componentType,
+          roomsResult.data,
+          subject?.lab_type,
+          lectureRoomTypeId,
+        );
+        const availableRooms = compatibleRooms.filter((room) =>
+          result.every((other, otherIndex) => {
+            if (
+              otherIndex === index ||
+              other.roomId !== room.room_id ||
+              other.day !== entry.day
+            ) {
+              return true;
+            }
+
+            return (
+              timeToMinutes(entry.startTime) >= timeToMinutes(other.endTime) ||
+              timeToMinutes(entry.endTime) <= timeToMinutes(other.startTime)
+            );
+          }),
+        );
+        const preferredRoom = findPreferredRoom(availableRooms, preferredRooms);
+
+        if (preferredRoom) {
+          result[index] = {
+            ...entry,
+            roomId: preferredRoom.room_id,
+            roomName: preferredRoom.room_name || entry.roomName,
+          };
+        }
+      }
+
+      return result;
     }
 
-    // For entries that need re-scheduling, we try to adjust the time slots
-    // This is a best-effort adjustment; if we can't find valid slots, we keep the original
-    // The key constraint enforcement happens at the teacher assignment level above
-    // Full-time teachers won't be assigned to Saturday/evening subjects
-    // Part-time teachers won't be assigned to subjects they don't prefer
+    async function validateAndFinalizeSchedule(
+      entries: ScheduleEntry[],
+    ): Promise<ScheduleAssignmentResult> {
+      const preferredRoomEntries = await applyPreferredRooms(entries);
+      const initialValidation = validateGeneratedSchedule(
+        preferredRoomEntries,
+        requirementsResult.assignments,
+      );
+      const hasInitialIssues = Object.values(initialValidation).some(
+        (issues) => issues.length > 0,
+      );
 
-    return { success: true, scheduleEntries: finalEntries };
+      if (!hasInitialIssues && needsReschedule.size === 0) {
+        return { success: true, scheduleEntries: preferredRoomEntries };
+      }
+
+      const roomsResult = await getRoomsForGeneration();
+      if (!roomsResult.success || !roomsResult.data) {
+        return {
+          success: false,
+          scheduleEntries: preferredRoomEntries,
+          error:
+            roomsResult.error || "Failed to fetch rooms for schedule repair.",
+        };
+      }
+
+      const breakPeriodsResult = await fetchBreakPeriods(
+        null,
+        "day_of_week",
+        "ASC",
+        -1,
+        1,
+      );
+      const breakPeriods: BreakPeriodRecord[] =
+        (breakPeriodsResult?.data as BreakPeriodRecord[]) || [];
+      const lecRoomTypeResult = await fetchLecRoomID();
+      const lectureRoomTypeId =
+        lecRoomTypeResult.success && lecRoomTypeResult.data
+          ? ((lecRoomTypeResult.data as Array<{ room_type_id: string }>)[0]
+              ?.room_type_id ?? null)
+          : null;
+      const subjectsById = new Map(
+        requirementsResult.assignments.flatMap((assignment) =>
+          assignment.subjects.map(
+            (subject) => [subject.subject_id, subject] as const,
+          ),
+        ),
+      );
+
+      function formatRepairTime(minutes: number): string {
+        return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+      }
+
+      function makeRequiredEntry(
+        sectionCode: string,
+        subject: AssignedSubjectDetail,
+        componentType: "LECTURE" | "LABORATORY",
+      ): ScheduleEntry {
+        const units =
+          componentType === "LECTURE"
+            ? subject.lecture_units
+            : subject.lab_units;
+        const durationMinutes = Math.ceil((units * 60) / 30) * 30;
+        const startMinutes = 7 * 60;
+        const teacherId = subjectTeacherMap.get(subject.subject_id) || null;
+        return {
+          sectionCode,
+          subjectId: subject.subject_id,
+          courseCode: subject.course_code,
+          courseName: subject.course_name,
+          componentType,
+          units,
+          roomId: null,
+          roomName: "Unassigned Room",
+          day: "Monday",
+          startTime: formatRepairTime(startMinutes),
+          endTime: formatRepairTime(startMinutes + durationMinutes),
+          type: componentType.toLowerCase(),
+          teacherId,
+          teacherName: teacherId
+            ? subjectTeacherNameMap.get(subject.subject_id) || null
+            : null,
+        };
+      }
+
+      const requiredEntries = requirementsResult.assignments.flatMap(
+        ({ sectionCode, subjects }) =>
+          subjects.flatMap((subject) => [
+            ...(subject.lecture_units > 0
+              ? [makeRequiredEntry(sectionCode, subject, "LECTURE")]
+              : []),
+            ...(subject.lab_units > 0
+              ? [makeRequiredEntry(sectionCode, subject, "LABORATORY")]
+              : []),
+          ]),
+      );
+      const days = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+      ];
+      const repair = repairGeneratedSchedule(
+        preferredRoomEntries,
+        requiredEntries,
+        {
+          days,
+          dayStartMinutes: 7 * 60,
+          dayEndMinutes: 22 * 60,
+          forceMoveSubjectIds: needsReschedule,
+          isTimeAllowed: (entry, day, startTime, endTime) => {
+            const isShs = /^([A-Z]+)([12])(\d{2})$/.test(entry.sectionCode);
+            if (isShs && timeToMinutes(endTime) > 18 * 60) return false;
+
+            const teacher = entry.teacherId
+              ? teacherInfoMap.get(entry.teacherId)
+              : undefined;
+            if (!teacher) return true;
+
+            const category = getEmploymentCategory(teacher);
+            if (
+              category === "full_time" &&
+              (!isWeekday(day) || !isWithinDaytime(startTime, endTime))
+            ) {
+              return false;
+            }
+            if (
+              category === "part_time" &&
+              !teacherPrefersTime(teacher, day, startTime, endTime)
+            ) {
+              return false;
+            }
+            if (
+              category === "part_time_full_load" &&
+              (teacher.preferences?.preferred_times?.length ?? 0) > 0 &&
+              !teacherPrefersTime(teacher, day, startTime, endTime)
+            ) {
+              return false;
+            }
+            return true;
+          },
+          hasAdditionalConflict: (first, second) =>
+            !!first.courseCode && first.courseCode === second.courseCode,
+          isBreakTime: (day, startTime, endTime) => {
+            const start = timeToMinutes(startTime);
+            const end = timeToMinutes(endTime);
+            for (let slotStart = start; slotStart < end; slotStart += 30) {
+              const slotEnd = Math.min(slotStart + 30, end);
+              if (
+                isBreakTime(
+                  day,
+                  `${formatRepairTime(slotStart)} - ${formatRepairTime(slotEnd)}`,
+                  breakPeriods,
+                )
+              ) {
+                return true;
+              }
+            }
+            return false;
+          },
+          getRooms: (entry) => {
+            const subject = subjectsById.get(entry.subjectId);
+            const compatibleRooms = getFilteredRooms(
+              entry.componentType,
+              roomsResult.data as RoomForGeneration[],
+              subject?.lab_type,
+              lectureRoomTypeId,
+            );
+            const teacher = entry.teacherId
+              ? teacherInfoMap.get(entry.teacherId)
+              : undefined;
+            const preferredRoom = findPreferredRoom(
+              compatibleRooms,
+              teacher?.preferences?.preferred_rooms || [],
+            );
+            const orderedRooms = preferredRoom
+              ? [
+                  preferredRoom,
+                  ...compatibleRooms.filter(
+                    (room) => room.room_id !== preferredRoom.room_id,
+                  ),
+                ]
+              : compatibleRooms;
+            return orderedRooms.map((room) => ({
+              roomId: room.room_id,
+              roomName: room.room_name || "Unassigned Room",
+            }));
+          },
+        },
+      );
+      const validation = validateGeneratedSchedule(
+        repair.entries,
+        requirementsResult.assignments,
+      );
+      const hasValidationIssues = Object.values(validation).some(
+        (issues) => issues.length > 0,
+      );
+
+      if (!repair.complete || hasValidationIssues) {
+        return {
+          success: false,
+          scheduleEntries: repair.entries,
+          error: hasValidationIssues
+            ? formatGeneratedScheduleValidationError(validation)
+            : "Could not place every required class component after retrying the schedule.",
+        };
+      }
+
+      console.info(
+        `Schedule repair completed after retrying class placement; moved ${repair.movedEntries} entries.`,
+      );
+      return { success: true, scheduleEntries: repair.entries };
+    }
+
+    return validateAndFinalizeSchedule(finalEntries);
   } catch (error) {
-    console.error("Failed to generate room and class schedules with teachers:", error);
+    console.error(
+      "Failed to generate room and class schedules with teachers:",
+      error,
+    );
     return {
       success: false,
       scheduleEntries: [],
@@ -1619,7 +2238,11 @@ export async function assignTeachersToSchedule(
     if (!teachersResult.success || !teachersResult.data) {
       return {
         success: false,
-        scheduleEntries: scheduleEntries.map((e) => ({ ...e, teacherId: null, teacherName: null })),
+        scheduleEntries: scheduleEntries.map((e) => ({
+          ...e,
+          teacherId: null,
+          teacherName: null,
+        })),
         error: teachersResult.error || "Failed to fetch teachers.",
       };
     }
@@ -1723,7 +2346,9 @@ export async function assignTeachersToSchedule(
         : [];
 
       return teacherFcces.some((f) => {
-        const fCourse = String(f.course_name ?? "").trim().toLowerCase();
+        const fCourse = String(f.course_name ?? "")
+          .trim()
+          .toLowerCase();
         return fCourse === courseNameLower && f.pass === true;
       });
     }
@@ -1776,7 +2401,9 @@ export async function assignTeachersToSchedule(
       const hasLecture = subjectEntries.some(
         (e) => e.componentType === "LECTURE",
       );
-      const hasLab = subjectEntries.some((e) => e.componentType === "LABORATORY");
+      const hasLab = subjectEntries.some(
+        (e) => e.componentType === "LABORATORY",
+      );
 
       if (hasLecture) {
         const lecEntry = subjectEntries.find(
@@ -1807,7 +2434,14 @@ export async function assignTeachersToSchedule(
         if (currentLoad + totalUnitsForSubject > absoluteMax) continue;
 
         // Part-time teachers only teach subjects they prefer
-        if (!teacherPrefersSubject(teacher, subjectInfo.courseName, subjectInfo.courseCode)) continue;
+        if (
+          !teacherPrefersSubject(
+            teacher,
+            subjectInfo.courseName,
+            subjectInfo.courseCode,
+          )
+        )
+          continue;
 
         // Check AQ match
         if (!teacherAqMatches(teacher, subjectInfo.requiredAqs)) continue;
@@ -1830,7 +2464,14 @@ export async function assignTeachersToSchedule(
           const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
 
           if (currentLoad + totalUnitsForSubject > absoluteMax) continue;
-          if (!teacherPrefersSubject(teacher, subjectInfo.courseName, subjectInfo.courseCode)) continue;
+          if (
+            !teacherPrefersSubject(
+              teacher,
+              subjectInfo.courseName,
+              subjectInfo.courseCode,
+            )
+          )
+            continue;
           if (!teacherAqMatches(teacher, subjectInfo.requiredAqs)) continue;
           if (teacherSubjects.get(teacher.teacher_id)?.has(subjectId)) continue;
 
@@ -1847,7 +2488,14 @@ export async function assignTeachersToSchedule(
           const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
 
           if (currentLoad + totalUnitsForSubject > absoluteMax) continue;
-          if (!teacherPrefersSubject(teacher, subjectInfo.courseName, subjectInfo.courseCode)) continue;
+          if (
+            !teacherPrefersSubject(
+              teacher,
+              subjectInfo.courseName,
+              subjectInfo.courseCode,
+            )
+          )
+            continue;
           if (teacherSubjects.get(teacher.teacher_id)?.has(subjectId)) continue;
 
           bestTeacher = teacher;
@@ -1865,9 +2513,7 @@ export async function assignTeachersToSchedule(
         if (!teacherSubjects.has(bestTeacher.teacher_id)) {
           teacherSubjects.set(bestTeacher.teacher_id, new Set());
         }
-        teacherSubjects
-          .get(bestTeacher.teacher_id)!
-          .add(subjectId);
+        teacherSubjects.get(bestTeacher.teacher_id)!.add(subjectId);
       }
     }
 
@@ -1884,7 +2530,11 @@ export async function assignTeachersToSchedule(
     console.error("Failed to assign teachers to schedule:", error);
     return {
       success: false,
-      scheduleEntries: scheduleEntries.map((e) => ({ ...e, teacherId: null, teacherName: null })),
+      scheduleEntries: scheduleEntries.map((e) => ({
+        ...e,
+        teacherId: null,
+        teacherName: null,
+      })),
       error: (error as Error).message || "Failed to assign teachers.",
     };
   }
@@ -2141,9 +2791,7 @@ function scheduleSession(
   // Helper function for room-aware assignment with optional slot filter
   // Uses earliest-available-time strategy: always picks the first free contiguous block on each day,
   // jumping over breaks and occupied slots so gaps can be filled by later subjects.
-  function tryRoomAwareAssignment(
-    shouldSkipSlot: (i: number) => boolean,
-  ): {
+  function tryRoomAwareAssignment(shouldSkipSlot: (i: number) => boolean): {
     day: string;
     endSlotIndex: number;
     roomId: string | null;
@@ -2168,8 +2816,12 @@ function scheduleSession(
           const slot = timeSlots[slotIndex];
           return (
             occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
-            occupiedCourseSlots.has(`${subject.course_code}_${componentType}_${day}_${slot}`) ||
-            occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            occupiedCourseSlots.has(
+              `${subject.course_code}_${componentType}_${day}_${slot}`,
+            ) ||
+            occupiedSubjectTimeSlots.has(
+              `${subject.course_code}_${day}_${slot}`,
+            )
           );
         },
         shouldSkipSlot,
@@ -2177,7 +2829,10 @@ function scheduleSession(
 
       if (earliestSlot === -1) continue;
 
-      const sessionSlots = timeSlots.slice(earliestSlot, earliestSlot + slotsNeeded);
+      const sessionSlots = timeSlots.slice(
+        earliestSlot,
+        earliestSlot + slotsNeeded,
+      );
 
       for (const room of fallbackRooms) {
         const isRoomFree = sessionSlots.every(
@@ -2192,7 +2847,9 @@ function scheduleSession(
             occupiedCourseSlots.add(
               `${subject.course_code}_${componentType}_${day}_${slot}`,
             );
-            occupiedSubjectTimeSlots.add(`${subject.course_code}_${day}_${slot}`);
+            occupiedSubjectTimeSlots.add(
+              `${subject.course_code}_${day}_${slot}`,
+            );
           });
           activeDays.add(day);
 
@@ -2234,7 +2891,9 @@ function scheduleSession(
   // Pass 1: Room & Break Period Aware Assignment
   if (preferBefore6PM) {
     // First try: only slots ending before 6 PM
-    const result = tryRoomAwareAssignment((i) => !sessionEndsBefore6PM(i + slotsNeeded));
+    const result = tryRoomAwareAssignment(
+      (i) => !sessionEndsBefore6PM(i + slotsNeeded),
+    );
     if (result) return result;
 
     // Second try: all slots (fallback when before-6-PM slots are exhausted)
@@ -2246,9 +2905,7 @@ function scheduleSession(
 
   // Pass 2: Fallback Pass without room constraint
   // Uses earliest-available-time strategy, same as tryRoomAwareAssignment but without room constraints.
-  function tryFallbackAssignment(
-    shouldSkipSlot: (i: number) => boolean,
-  ): {
+  function tryFallbackAssignment(shouldSkipSlot: (i: number) => boolean): {
     day: string;
     endSlotIndex: number;
     roomId: string | null;
@@ -2273,8 +2930,12 @@ function scheduleSession(
           const slot = timeSlots[slotIndex];
           return (
             occupiedSectionSlots.has(`${sectionCode}_${day}_${slot}`) ||
-            occupiedCourseSlots.has(`${subject.course_code}_${componentType}_${day}_${slot}`) ||
-            occupiedSubjectTimeSlots.has(`${subject.course_code}_${day}_${slot}`)
+            occupiedCourseSlots.has(
+              `${subject.course_code}_${componentType}_${day}_${slot}`,
+            ) ||
+            occupiedSubjectTimeSlots.has(
+              `${subject.course_code}_${day}_${slot}`,
+            )
           );
         },
         shouldSkipSlot,
@@ -2282,7 +2943,10 @@ function scheduleSession(
 
       if (earliestSlot === -1) continue;
 
-      const sessionSlots = timeSlots.slice(earliestSlot, earliestSlot + slotsNeeded);
+      const sessionSlots = timeSlots.slice(
+        earliestSlot,
+        earliestSlot + slotsNeeded,
+      );
 
       sessionSlots.forEach((slot: string) => {
         occupiedSectionSlots.add(`${sectionCode}_${day}_${slot}`);
@@ -2326,7 +2990,9 @@ function scheduleSession(
 
   if (preferBefore6PM) {
     // First try: only slots ending before 6 PM
-    const result = tryFallbackAssignment((i) => !sessionEndsBefore6PM(i + slotsNeeded));
+    const result = tryFallbackAssignment(
+      (i) => !sessionEndsBefore6PM(i + slotsNeeded),
+    );
     if (result) return result;
 
     // Second try: all slots (fallback when before-6-PM slots are exhausted)
