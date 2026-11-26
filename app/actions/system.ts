@@ -1745,6 +1745,28 @@ export async function updateReservation(
   }
 }
 
+export async function returnRescheduleToSidebar(reservationId: string) {
+  try {
+    const [record] = await sql<{ reservation_id: string }[]>`
+      UPDATE "reservations"
+      SET "room_id" = NULL, "start_time" = NULL, "end_time" = NULL
+      WHERE "reservation_id" = ${reservationId}::UUID
+        AND LOWER("type") = 'reschedule'
+      RETURNING "reservation_id";
+    `;
+
+    return record
+      ? { success: true }
+      : { success: false, error: "Reschedule was not found." };
+  } catch (error) {
+    console.error("Failed to return reschedule to the sidebar:", error);
+    return {
+      success: false,
+      error: (error as Error).message || "Failed to return reschedule.",
+    };
+  }
+}
+
 export async function deleteReservation(reservationId: string) {
   try {
     const [result] = await sql<{ reservations_delete: boolean }[]>`

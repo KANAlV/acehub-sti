@@ -16,6 +16,7 @@ import {
   HiChevronUp,
   HiCheck,
   HiTrash,
+  HiXMark,
 } from "react-icons/hi2";
 import {
   createReservations,
@@ -28,6 +29,7 @@ import {
   fetchSubjectsUnitsByIds,
   fetchTimetableEntriesByScheduleId,
   getRoomsForGeneration,
+  returnRescheduleToSidebar,
   updateReservation,
   ReservationRecord,
   RoomForGeneration,
@@ -46,7 +48,6 @@ import {
 import {
   formatReservationDate,
   getRescheduledScheduleEntry,
-  getReservationsForDate,
   isScheduleEntryRescheduledOnDate,
   reservationDateMatches,
 } from "@/utils/reservationDates";
@@ -455,6 +456,8 @@ function WeekTimetable({
   selectedRoom,
   selectedRoomId,
   onDropReservation,
+  onReturnReschedule,
+  isSavingReservation,
   roomError,
   breakPeriods,
   isLoading,
@@ -472,6 +475,8 @@ function WeekTimetable({
     date: Date,
     startTime: number,
   ) => void;
+  onReturnReschedule: (reservationId: string) => void;
+  isSavingReservation: boolean;
   roomError: string | null;
   breakPeriods: BreakPeriodRecord[];
   isLoading: boolean;
@@ -489,7 +494,7 @@ function WeekTimetable({
     : [];
   const visibleReservations = reservations.filter(
     (reservation) =>
-      reservation.room_id === selectedRoomId || reservation.room_id === null,
+      selectedRoomId !== null && reservation.room_id === selectedRoomId,
   );
   const weekLabel = `${timetableDays[0].toLocaleDateString(undefined, {
     month: "long",
@@ -594,18 +599,20 @@ function WeekTimetable({
           Other Section / Room
         </li>
         <li className="flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded border border-fuchsia-300 bg-fuchsia-50 dark:border-fuchsia-700 dark:bg-fuchsia-950" />
+          Reservation
+        </li>
+        <li className="flex items-center gap-1.5">
           <span className="inline-block h-3 w-3 rounded border border-fuchsia-400 bg-fuchsia-200 dark:border-fuchsia-600 dark:bg-fuchsia-900" />
           Reschedule
         </li>
       </ul>
       {visibleReservations.some(
-        (reservation) =>
-          reservation.room_id === null ||
-          reservation.type.toLowerCase() === "reschedule",
+        (reservation) => reservation.type.toLowerCase() === "reschedule",
       ) && (
         <p className="mb-3 text-sm text-amber-800 dark:text-amber-300">
-          Drag an unassigned reservation from the sidebar or timetable onto a
-          time slot to place it in {selectedRoom || "this room"}.
+          Rescheduled blocks are draggable. Drag one to another time slot to
+          move it, or use its X button to return it to the sidebar.
         </p>
       )}
       {breakError && (
@@ -802,9 +809,26 @@ function WeekTimetable({
                     height: `${height - 4}px`,
                   }}
                 >
+                  {isReschedule && !isUnassigned && (
+                    <button
+                      type="button"
+                      draggable={false}
+                      onDragStart={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onReturnReschedule(reservation.reservation_id);
+                      }}
+                      disabled={isSavingReservation}
+                      aria-label={`Return ${reservationDisplayName} to the sidebar`}
+                      title="Return to sidebar"
+                      className="absolute top-1 right-1 z-10 rounded p-0.5 text-fuchsia-900 transition-colors hover:bg-fuchsia-300 focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-fuchsia-100 dark:hover:bg-fuchsia-700"
+                    >
+                      <HiXMark className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
                   {scheduleEntry ? (
                     <>
-                      <div className="truncate text-xs font-bold">
+                      <div className="truncate pr-5 text-xs font-bold">
                         {scheduleEntry.course_code || scheduleEntry.course_name}
                       </div>
                       <div className="truncate text-[10px] font-medium">
@@ -825,7 +849,7 @@ function WeekTimetable({
                     </>
                   ) : (
                     <>
-                      <div className="truncate text-xs font-bold">
+                      <div className="truncate pr-5 text-xs font-bold">
                         {reservationDisplayName}
                       </div>
                       <div className="truncate text-[10px] font-medium">
@@ -987,9 +1011,23 @@ export default function BookingPage() {
     (room) => room.room_name?.trim() === selectedRoom,
   );
   const selectedRoomId = selectedRoomRecord?.room_id ?? null;
-  const visibleReservations = getReservationsForDate(
-    reservations,
-    selectedDate,
+  const selectedWeekStart = getWeekStart(selectedDate);
+  const selectedWeekDays = Array.from(
+    { length: 6 },
+    (_, index) =>
+      new Date(
+        selectedWeekStart.getFullYear(),
+        selectedWeekStart.getMonth(),
+        selectedWeekStart.getDate() + index + 1,
+      ),
+  );
+  const visibleReservations = reservations.filter(
+    (reservation) =>
+      reservationMatchesDate(reservation, selectedDate) ||
+      (reservation.room_id === null &&
+        selectedWeekDays.some((date) =>
+          reservationMatchesDate(reservation, date),
+        )),
   );
   const reservationPageCount = Math.max(
     1,
@@ -1648,6 +1686,42 @@ export default function BookingPage() {
     setReservationReloadKey((key) => key + 1);
   }
 
+  async function handleReturnReschedule(reservationId: string) {
+    const reservation = reservations.find(
+      (entry) => entry.reservation_id === reservationId,
+    );
+    if (
+      !reservation ||
+      reservation.room_id === null ||
+      reservation.type.toLowerCase() !== "reschedule" ||
+      isSavingReservation
+    ) {
+      return;
+    }
+
+    setIsSavingReservation(true);
+    setReservationError(null);
+    try {
+      const result = await returnRescheduleToSidebar(reservationId);
+      if (!result.success) {
+        setReservationError(
+          result.error || "Reschedule could not be returned to the sidebar.",
+        );
+        return;
+      }
+
+      setReservationReloadKey((key) => key + 1);
+    } catch (error) {
+      setReservationError(
+        error instanceof Error
+          ? error.message
+          : "Reschedule could not be returned to the sidebar.",
+      );
+    } finally {
+      setIsSavingReservation(false);
+    }
+  }
+
   async function handleDeleteReservation(reservationId: string) {
     setDeletingReservationId(reservationId);
     setReservationError(null);
@@ -1821,6 +1895,10 @@ export default function BookingPage() {
                               time,
                             )
                           }
+                          onReturnReschedule={(reservationId) =>
+                            void handleReturnReschedule(reservationId)
+                          }
+                          isSavingReservation={isSavingReservation}
                           roomError={roomError}
                           breakPeriods={breakPeriods}
                           isLoading={isLoadingTimetable}
@@ -1886,7 +1964,8 @@ export default function BookingPage() {
                 </button>
               </div>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Reservations for {selectedDateLabel}.
+                Reservations for {selectedDateLabel}, including unassigned
+                reservations for the week.
               </p>
               {reservationError && !isAddingReservation && (
                 <p
@@ -1923,6 +2002,9 @@ export default function BookingPage() {
                       const reservationRoomName = rooms
                         .find((room) => room.room_id === reservation.room_id)
                         ?.room_name?.trim();
+                      const reservationWeekDate = selectedWeekDays.find(
+                        (date) => reservationMatchesDate(reservation, date),
+                      );
                       const reservationDisplayName = getReservationDisplayName(
                         reservation,
                         timetableEntries,
@@ -1978,12 +2060,30 @@ export default function BookingPage() {
                                   ? "Unassigned room"
                                   : `Room: ${reservationRoomName || "Unknown room"}`}
                               </p>
-                              <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-                                {displayStartTime !== undefined &&
-                                displayEndTime !== undefined
-                                  ? `${formatTime(displayStartTime)} – ${formatTime(displayEndTime)}`
-                                  : "Time not assigned"}
-                              </p>
+                              {reservation.room_id === null &&
+                                reservationWeekDate && (
+                                  <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                                    Date:{" "}
+                                    {reservationWeekDate.toLocaleDateString(
+                                      undefined,
+                                      {
+                                        weekday: "long",
+                                        month: "short",
+                                        day: "numeric",
+                                      },
+                                    )}
+                                  </p>
+                                )}
+                              {!(
+                                isReschedule && reservation.room_id === null
+                              ) && (
+                                <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                                  {displayStartTime !== undefined &&
+                                  displayEndTime !== undefined
+                                    ? `${formatTime(displayStartTime)} – ${formatTime(displayEndTime)}`
+                                    : "Time not assigned"}
+                                </p>
+                              )}
                               {canDrag && (
                                 <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">
                                   {reservation.room_id === null
