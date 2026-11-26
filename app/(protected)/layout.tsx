@@ -399,7 +399,7 @@ export default function ProtectedLayout({
                       outline
                       color="alternative"
                       onClick={() => redirectPage(`/user`)}
-                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/user") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.personal_schedule && permissions.schedules ? "" : "hidden"}`}
+                      className={`w-full justify-start hover:bg-gray-500/20 ${isActive("/user") ? "bg-gray-500/20" : "cursor-pointer"} ${permissions?.personal_schedule ? "" : "hidden"}`}
                     >
                       <HiUser className="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" />
                       {!collapsed && (

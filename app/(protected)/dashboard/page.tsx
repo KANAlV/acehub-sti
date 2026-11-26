@@ -66,8 +66,6 @@ export default function Dashboard() {
     );
   } else if (permissions?.schedules) {
     return <ScheduleDashboard />
-  } else if (permissions?.personal_schedule) {
-    return <TeacherSchedule />;
   } else {
     return <Timetable />;
   }
