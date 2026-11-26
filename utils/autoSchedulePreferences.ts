@@ -66,6 +66,15 @@ export function getTeacherPreferenceMatchScore(
 export function findPreferredRoom<
   Room extends { room_id: string; room_name: string | null },
 >(rooms: Room[], preferredRooms: string[] | undefined): Room | undefined {
+  return findPreferredRooms(rooms, preferredRooms)[0];
+}
+
+export function findPreferredRooms<
+  Room extends { room_id: string; room_name: string | null },
+>(rooms: Room[], preferredRooms: string[] | undefined): Room[] {
+  const matchedRooms: Room[] = [];
+  const matchedRoomIds = new Set<string>();
+
   for (const preferredRoom of preferredRooms ?? []) {
     const normalizedPreference = normalizeText(preferredRoom);
     const room = rooms.find(
@@ -74,8 +83,11 @@ export function findPreferredRoom<
         (candidate.room_name !== null &&
           normalizeText(candidate.room_name) === normalizedPreference),
     );
-    if (room) return room;
+    if (room && !matchedRoomIds.has(room.room_id)) {
+      matchedRooms.push(room);
+      matchedRoomIds.add(room.room_id);
+    }
   }
 
-  return undefined;
+  return matchedRooms;
 }

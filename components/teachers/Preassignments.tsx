@@ -20,13 +20,13 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
-  Pagination,
   Spinner,
   Toast,
   ToastToggle,
   Progress,
   Tooltip,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { HiSearch, HiX, HiCheck, HiExclamation, HiPlus } from "react-icons/hi";
 import { FaSortUp, FaSortDown } from "react-icons/fa";
 import { useMsal } from "@azure/msal-react";
@@ -220,8 +220,6 @@ export default function PreassignmentTemplatesManagement() {
     });
   };
 
-  const totalPages = Math.ceil(totalCount / maxRow) || 1;
-
   return (
     <div className="space-y-4 p-4">
       {/* Page Header & Actions Bar */}
@@ -350,16 +348,13 @@ export default function PreassignmentTemplatesManagement() {
       </div>
 
       {/* Pagination Footer */}
-      {!isLoading && totalPages > 0 && (
-        <div className="flex w-full justify-center">
-          <Pagination
-            layout="pagination"
-            currentPage={currentPage || 1}
-            totalPages={totalPages}
-            onPageChange={(p) => setCurrentPage(p)}
-            showIcons
-          />
-        </div>
+      {!isLoading && (
+        <TablePaginationFooter
+          currentPage={currentPage || 1}
+          pageSize={maxRow}
+          totalCount={totalCount}
+          onPageChange={(p) => setCurrentPage(p)}
+        />
       )}
 
       {/* --- CREATE MODAL --- */}

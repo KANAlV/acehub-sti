@@ -9,7 +9,6 @@ import {
   TableHeadCell,
   TableRow,
   TextInput,
-  Pagination,
   Spinner,
   Toast,
   ToastToggle,
@@ -22,6 +21,7 @@ import {
   Label,
   FileInput,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   HiSearch,
   HiChevronUp,
@@ -46,8 +46,10 @@ import {
   MaqRecord,
 } from "@/app/actions/system";
 import {
+  filterMAQQualification,
   filterAlphanumericDashUnderscoreComma,
-  filterAlphaUnderscore,
+  isValidMAQQualification,
+  MAQ_QUALIFICATION_MAX_LENGTH,
 } from "@/utils/validation";
 import { useMsal } from "@azure/msal-react";
 import ExcelJS from "exceljs";
@@ -221,14 +223,19 @@ export default function MatrixOfAcademicQualificationPage() {
 
   // Submit Add MAQ
   const handleCreate = useCallback(async () => {
-    if (!aqInput.trim()) {
-      setAqError("Academic Qualification name is required.");
+    const trimmedAq = aqInput.trim();
+    if (!isValidMAQQualification(trimmedAq)) {
+      setAqError(
+          trimmedAq
+              ? `Use letters, numbers, spaces, and supported punctuation (up to ${MAQ_QUALIFICATION_MAX_LENGTH} characters).`
+              : "Academic Qualification name is required.",
+      );
       return;
     }
 
     setIsSubmitting(true);
 
-    const res = await createMaq(actor, aqInput.trim());
+    const res = await createMaq(actor, trimmedAq);
 
     setOpenAddModal(false);
 
@@ -440,15 +447,16 @@ export default function MatrixOfAcademicQualificationPage() {
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
         const rawVal = String(row.getCell(aqCol).value || "").trim();
-        const filteredVal = filterAlphaUnderscore(rawVal).trim();
-
-        if (!filteredVal || filteredVal !== rawVal || /\s/.test(rawVal)) {
-          logs.push(`Row ${rowNumber} (${rawVal}): Failed. Invalid format, symbols, or blank spaces detected.`);
+        if (!isValidMAQQualification(rawVal)) {
+          logs.push(`Row ${rowNumber} (${rawVal}): Failed. Invalid or empty Academic Qualification.`);
           failCount++;
           return;
         }
 
-        rowsToProcess.push({ rowNum: rowNumber, aqVal: filteredVal });
+        rowsToProcess.push({
+          rowNum: rowNumber,
+          aqVal: filterMAQQualification(rawVal).trim(),
+        });
       });
 
       for (const item of rowsToProcess) {
@@ -478,8 +486,6 @@ export default function MatrixOfAcademicQualificationPage() {
       setIsImporting(false);
     }
   }, [importFile, actor, triggerToast, loadData]);
-
-  const totalPages = useMemo(() => Math.ceil(totalCount / pageSize) || 1, [totalCount, pageSize]);
 
   return (
       <div className="space-y-4 p-4">
@@ -608,33 +614,13 @@ export default function MatrixOfAcademicQualificationPage() {
         </div>
 
         {/* Pagination Footer */}
-        {!loading && totalCount > 0 && (
-            <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            Showing{" "}
-            <span className="font-semibold text-gray-900 dark:text-white">
-              {(currentPage - 1) * pageSize + 1}
-            </span>{" "}
-            to{" "}
-            <span className="font-semibold text-gray-900 dark:text-white">
-              {Math.min(currentPage * pageSize, totalCount)}
-            </span>{" "}
-            of{" "}
-            <span className="font-semibold text-gray-900 dark:text-white">
-              {totalCount}
-            </span>{" "}
-            entries
-          </span>
-
-              {totalPages > 1 && (
-                  <Pagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      onPageChange={(page) => setCurrentPage(page)}
-                      showIcons
-                  />
-              )}
-            </div>
+        {!loading && (
+          <TablePaginationFooter
+            currentPage={currentPage}
+            pageSize={pageSize}
+            totalCount={totalCount}
+            onPageChange={(page) => setCurrentPage(page)}
+          />
         )}
 
         {/* MODAL: EXCEL OPERATIONS */}
@@ -723,7 +709,7 @@ export default function MatrixOfAcademicQualificationPage() {
 
                     <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
                       <span className="font-semibold uppercase tracking-wide">Format Standard:</span> Header must strictly contain{" "}
-                      <b>Academic Qualification</b> (no spaces, symbols, or invalid characters).
+                      <b>Academic Qualification</b>. Names may include spaces and common punctuation.
                     </div>
 
                     {formatError && (
@@ -818,18 +804,18 @@ export default function MatrixOfAcademicQualificationPage() {
                   <div className="mb-1 flex items-center justify-between">
                     <Label htmlFor="aq_name">Academic Qualification</Label>
                     <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {aqInput.length}/50
+                  {aqInput.length}/{MAQ_QUALIFICATION_MAX_LENGTH}
                 </span>
                   </div>
                   <TextInput
                       id="aq_name"
-                      placeholder="e.g. BSCS"
+                      placeholder="e.g. BSCS or Food Technology"
                       value={aqInput}
-                      maxLength={50}
+                      maxLength={MAQ_QUALIFICATION_MAX_LENGTH}
                       onChange={(e) => {
-                        const filtered = filterAlphaUnderscore(e.target.value).slice(
+                        const filtered = filterMAQQualification(e.target.value).slice(
                             0,
-                            50,
+                            MAQ_QUALIFICATION_MAX_LENGTH,
                         );
                         setAqInput(filtered);
                         setAqError("");

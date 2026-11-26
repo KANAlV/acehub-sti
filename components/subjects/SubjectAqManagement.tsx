@@ -22,7 +22,6 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
-  Pagination,
   Spinner,
   Toast,
   ToastToggle,
@@ -32,6 +31,7 @@ import {
   useThemeMode,
   ToggleSwitch, // Imported ToggleSwitch from flowbite-react
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   HiSearch,
   HiX,
@@ -509,8 +509,6 @@ export default function SubjectAqManagement() {
     });
   };
 
-  const totalPages = Math.ceil(totalCount / maxRow) || 1;
-
   return (
     <div className="space-y-4 p-4">
       {/* Page Header & Filters Bar */}
@@ -741,16 +739,13 @@ export default function SubjectAqManagement() {
       </div>
 
       {/* Pagination Footer */}
-      {!isLoading && totalPages > 0 && (
-        <div className="flex w-full justify-center">
-          <Pagination
-            layout="pagination"
-            currentPage={currentPage || 1}
-            totalPages={totalPages}
-            onPageChange={(p) => setCurrentPage(p)}
-            showIcons
-          />
-        </div>
+      {!isLoading && (
+        <TablePaginationFooter
+          currentPage={currentPage || 1}
+          pageSize={maxRow}
+          totalCount={totalCount}
+          onPageChange={(p) => setCurrentPage(p)}
+        />
       )}
 
       {/* --- MODAL: SYNC SUBJECT AQ (Structured Section Dropdown Layout) --- */}
@@ -937,7 +932,7 @@ export default function SubjectAqManagement() {
                                     : ""
                                 }
                               >
-                                <span className="inline-flex items-center gap-1.5 py-0.5 text-white">
+                                <span className="inline-flex items-center gap-1.5 py-0.5">
                                   {isCluster ? (
                                     <MdFolderCopy className="h-3.5 w-3.5 shrink-0 text-white" />
                                   ) : (

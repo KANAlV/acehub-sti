@@ -8,7 +8,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Progress,
   Spinner,
   Table,
@@ -23,6 +22,7 @@ import {
   Radio,
   Select,
   Badge,
+  Checkbox,
   Accordion,
   AccordionPanel,
   AccordionTitle,
@@ -30,18 +30,21 @@ import {
   ToggleSwitch,
   Tooltip,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   filterAlphanumericDashUnderscore,
   filterAlphanumericDashUnderscoreComma,
 } from "@/utils/validation";
 import { FaPlus, FaSortDown, FaSortUp } from "react-icons/fa6";
 import { HiCheck, HiExclamation, HiX, HiSearch } from "react-icons/hi";
+import { MdContentCopy } from "react-icons/md";
 import {
   useEffect,
   useState,
   ChangeEvent,
   useCallback,
   startTransition,
+  useMemo,
 } from "react";
 import { HiChevronRight } from "react-icons/hi2";
 import { useRouter } from "next/navigation";
@@ -52,6 +55,8 @@ import {
   ProgramRecord,
   saveGeneratedSchedule,
   SubjectRequirementRecord,
+  fetchTimetableEntriesByScheduleId,
+  TimetableEntryRecord,
   fetchTeachersWithAqFcceAndPreferences,
   TimePreference,
 } from "@/app/actions/system";
@@ -66,11 +71,21 @@ import {
   ScheduleEntry,
   fetchSubjectsForGeneration,
   TeacherRecord as GenerationTeacherRecord,
+  type CurriculumGenerationSelection,
 } from "@/app/actions/AutoScheduleGeneration";
 import Image from "next/image";
+import { getTeacherPreferenceMatchScore } from "@/utils/autoSchedulePreferences";
+import { getCurriculumYearCoverageStatus } from "@/utils/curriculumYearCoverage";
+import {
+  buildScheduleCopyTree,
+  getCopySelectionState,
+  getScheduleCopySubjectKey,
+  toggleScheduleCopySelection,
+  type ScheduleCopyProgramNode,
+} from "@/utils/scheduleCopySelection";
 
 // For Debugging Only (Developer-controlled code flag)
-const testMode = false;
+const testMode = true;
 
 // --- Types matching database statement schema --- //
 export interface ScheduleRecord {
@@ -97,6 +112,21 @@ interface SaveScheduleEntryPayload {
   type: string; // Added type field
 }
 
+function toSaveScheduleEntryPayload(
+  entry: TimetableEntryRecord,
+): SaveScheduleEntryPayload {
+  return {
+    subject_id: entry.subject_id || null,
+    teacher_id: entry.teacher_id || null,
+    room_id: entry.room_id || null,
+    section: entry.section,
+    day: entry.day,
+    start_time: entry.start_time,
+    end_time: entry.end_time,
+    type: entry.type,
+  };
+}
+
 export default function ScheduleManagement() {
   const router = useRouter();
   const [isLoading, setLoading] = useState(true);
@@ -110,6 +140,18 @@ export default function ScheduleManagement() {
   // --- Modal States & Wizard Steps --- //
   const [openAddModal, setOpenAddModal] = useState(false);
   const [addStep, setAddStep] = useState<"selection" | "form">("selection");
+  const [isCopyFlow, setIsCopyFlow] = useState(false);
+  const [openCopySelectionModal, setOpenCopySelectionModal] = useState(false);
+  const [copySourceSchedule, setCopySourceSchedule] =
+    useState<ScheduleRecord | null>(null);
+  const [copySourceEntries, setCopySourceEntries] = useState<
+    TimetableEntryRecord[]
+  >([]);
+  const [copySelection, setCopySelection] = useState<Set<string>>(new Set());
+  const [copyEntriesToCarry, setCopyEntriesToCarry] = useState<
+    TimetableEntryRecord[]
+  >([]);
+  const [isLoadingCopyEntries, setIsLoadingCopyEntries] = useState(false);
   const [creationMode, setCreationMode] = useState<
     "auto" | "semi-auto" | "template"
   >("auto");
@@ -121,6 +163,9 @@ export default function ScheduleManagement() {
   const [curricula, setCurricula] = useState<CurriculumRecord[]>([]);
   const [curriculaSearch, setCurriculaSearch] = useState("");
   const [curriculumAdd, setCurriculumAdd] = useState<CurriculumRecord[]>([]);
+  const [curriculumYearSelections, setCurriculumYearSelections] = useState<
+    Record<string, string[]>
+  >({});
   const [isCurriculaSearching, setIsCurriculaSearching] =
     useState<boolean>(false);
   const [selectedCurriculumFilter, setSelectedCurriculumFilter] =
@@ -141,6 +186,7 @@ export default function ScheduleManagement() {
     curriculumIds: string[];
     tertiaryTerm: string;
     shsTerm: string;
+    curriculumSelections: CurriculumGenerationSelection[];
   } | null>(null);
 
   // --- Testing State: Preview generated data modals --- //
@@ -279,7 +325,10 @@ export default function ScheduleManagement() {
   const handleCloseModals = () => {
     setScheduleNameError("");
     setOpenAddModal(false);
+    setOpenCopySelectionModal(false);
     setOpenAqWarningModal(false);
+    setIsCopyFlow(false);
+    setCopyEntriesToCarry([]);
     setAddStep("selection");
     setCreationMode("auto");
     setAutoAssignRoom(false);
@@ -289,6 +338,7 @@ export default function ScheduleManagement() {
     setSelectedShsTerm("Term 1");
     setSelectedTemplate("");
     setCurriculumAdd([]);
+    setCurriculumYearSelections({});
     setCurriculaSearch("");
     setIsCurriculaSearching(false);
     setSelectedCurriculumFilter("ALL");
@@ -354,19 +404,58 @@ export default function ScheduleManagement() {
     setCurriculaSearch("");
     setCurricula([]);
     setCurriculumAdd((prev) => [...prev, input]);
+    setCurriculumYearSelections((prev) => ({
+      ...prev,
+      [input.curriculum_id]:
+        prev[input.curriculum_id] ||
+        (isShsCurriculum(input) ? ["11", "12"] : ["1", "2", "3", "4"]),
+    }));
+  };
+
+  const handleRemoveCurriculum = (input: CurriculumRecord) => {
+    setCurriculumAdd((prev) =>
+      prev.filter(
+        (curriculum) => curriculum.curriculum_id !== input.curriculum_id,
+      ),
+    );
+    setCurriculumYearSelections((prev) => {
+      const next = { ...prev };
+      delete next[input.curriculum_id];
+      return next;
+    });
+    if (selectedCurriculumFilter !== "ALL") {
+      setCurriculaSearch(selectedCurriculumFilter);
+    }
   };
 
   // --- Step 1: Trigger Auto Generation & Run Subject Check First --- //
   async function handleAutoGenerationSubmit() {
+    const canCopyWithoutNewCurricula =
+      isCopyFlow && copyEntriesToCarry.length > 0;
     if (
       !addScheduleName.trim() ||
       !!scheduleNameError ||
-      curriculumAdd.length === 0
+      (curriculumAdd.length === 0 && !canCopyWithoutNewCurricula) ||
+      (curriculumAdd.length > 0 && !hasSelectedCurriculumYear)
     )
       return;
 
     const scheduleNameTrimmed = addScheduleName.trim();
     const curriculumIds = curriculumAdd.map((item) => item.curriculum_id);
+    const curriculumSelections = getCurriculumGenerationSelections();
+
+    if (curriculumIds.length === 0 && canCopyWithoutNewCurricula) {
+      setOpenAddModal(false);
+      await executeAutoGenerationPipeline(
+        scheduleNameTrimmed,
+        [],
+        selectedTertiaryTerm,
+        creationMode === "auto" ? [] : undefined,
+        [],
+        selectedShsTerm,
+      );
+      return;
+    }
 
     // Close wizard modal and show quick status or proceed directly
     setOpenAddModal(false);
@@ -380,6 +469,7 @@ export default function ScheduleManagement() {
       curriculumIds,
       selectedTertiaryTerm,
       selectedShsTerm,
+      curriculumSelections,
     );
     if (testMode) {console.log("=== SUBJECTS FOR GENERATION RESPONSE ===", subjectRes);}
     if (!subjectRes.success || !subjectRes.data) {
@@ -394,6 +484,27 @@ export default function ScheduleManagement() {
     }
 
     const allSubjects = subjectRes.data;
+    if (allSubjects.length === 0) {
+      if (canCopyWithoutNewCurricula) {
+        await executeAutoGenerationPipeline(
+          scheduleNameTrimmed,
+          [],
+          selectedTertiaryTerm,
+          creationMode === "auto" ? [] : undefined,
+          [],
+          selectedShsTerm,
+        );
+        return;
+      }
+      setIsSubmittingAutoGeneration(false);
+      setOpenLoadingModal(false);
+      setToastMessage(
+        "No subjects match the selected curricula, grade/year levels, and terms.",
+      );
+      setToastType("error");
+      setShowToast(true);
+      return;
+    }
 
     // 2. Check for subjects without AQ entries (required_aqs is null, undefined, or empty array)
     const missingAqSubjects = allSubjects.filter((sub) => {
@@ -409,6 +520,7 @@ export default function ScheduleManagement() {
         curriculumIds,
         tertiaryTerm: selectedTertiaryTerm,
         shsTerm: selectedShsTerm,
+        curriculumSelections,
       });
       setOpenLoadingModal(false);
       setIsSubmittingAutoGeneration(false);
@@ -428,6 +540,9 @@ export default function ScheduleManagement() {
         scheduleNameTrimmed,
         curriculumIds,
         selectedTertiaryTerm,
+        undefined,
+        curriculumSelections,
+        selectedShsTerm,
       );
     }
   }
@@ -437,6 +552,9 @@ export default function ScheduleManagement() {
     curriculumIds: string[],
     tertiaryTerm: string,
     teachersForGeneration?: GenerationTeacherRecord[],
+    curriculumSelections: CurriculumGenerationSelection[] =
+      getCurriculumGenerationSelections(),
+    shsTerm: string = selectedShsTerm,
   ) {
     setOpenAqWarningModal(false);
     setOpenLoadingModal(true);
@@ -444,12 +562,40 @@ export default function ScheduleManagement() {
     setGenerationProgress(20);
     setGenerationStatusText("Fetching subject requirements...");
 
-    const shsTerm = selectedShsTerm;
+    if (isCopyFlow && curriculumIds.length === 0 && copyEntriesToCarry.length > 0) {
+      setGenerationStatusText("Saving copied schedule entries...");
+      const saveRes = await saveGeneratedSchedule({
+        scheduleName,
+        generationConfig: {
+          description:
+            addScheduleDescription.trim() || "Copied selected schedule entries",
+        },
+        entries: copyEntriesToCarry.map(toSaveScheduleEntryPayload),
+      });
+      setGenerationProgress(100);
+      setIsSubmittingAutoGeneration(false);
+      setOpenLoadingModal(false);
+
+      if (saveRes.success) {
+        router.push(`/schedules/${encodeURIComponent(scheduleName)}`);
+        setToastMessage("Copied schedule entries saved successfully.");
+        setToastType("success");
+        toastTimer();
+        void getScheduleRecords();
+      } else {
+        setToastMessage(saveRes.error || "Failed to save copied schedule entries.");
+        setToastType("error");
+        setShowToast(true);
+      }
+      return;
+    }
+
     // 1. Fetch subjects here so they are available to both branches
     const subjectRes = await fetchSubjectsForGeneration(
       curriculumIds,
       tertiaryTerm,
       shsTerm,
+      curriculumSelections,
     );
     if (!subjectRes.success || !subjectRes.data) {
       setIsSubmittingAutoGeneration(false);
@@ -462,6 +608,16 @@ export default function ScheduleManagement() {
       return;
     }
     const allSubjects = subjectRes.data;
+    if (allSubjects.length === 0) {
+      setIsSubmittingAutoGeneration(false);
+      setOpenLoadingModal(false);
+      setToastMessage(
+        "No subjects match the selected curricula, grade/year levels, and terms.",
+      );
+      setToastType("error");
+      setShowToast(true);
+      return;
+    }
 
     // Step A: Run section generation
     setGenerationProgress(40);
@@ -496,6 +652,33 @@ export default function ScheduleManagement() {
     let isSuccess = false;
     let errorMessage = "";
     let entriesPayload: SaveScheduleEntryPayload[] = [];
+    const copiedSectionSubjectKeys = new Set(
+      copyEntriesToCarry.map(
+        (entry) =>
+          `${entry.section.trim().toUpperCase()}::${entry.subject_id.trim().toUpperCase()}`,
+      ),
+    );
+    const copiedSectionCourseKeys = new Set(
+      copyEntriesToCarry.map(
+        (entry) =>
+          `${entry.section.trim().toUpperCase()}::${entry.course_code.trim().toUpperCase()}`,
+      ),
+    );
+    const isCopiedSubject = (
+      sectionCode: string,
+      subjectId: string,
+      courseCode: string,
+    ) => {
+      const normalizedSection = sectionCode.trim().toUpperCase();
+      return (
+        copiedSectionSubjectKeys.has(
+          `${normalizedSection}::${subjectId.trim().toUpperCase()}`,
+        ) ||
+        copiedSectionCourseKeys.has(
+          `${normalizedSection}::${courseCode.trim().toUpperCase()}`,
+        )
+      );
+    };
 
     if (autoAssignRoom && creationMode === "auto") {
       setGenerationStatusText(
@@ -512,15 +695,129 @@ export default function ScheduleManagement() {
         shsTerm,
         testMode,
       );
-      console.log("=== ROOM & CLASS SCHEDULE ENTRIES (WITH TEACHERS) ===", roomScheduleRes);
+      console.log(
+        "=== ROOM & CLASS SCHEDULE ENTRIES (WITH TEACHERS) ===",
+        roomScheduleRes,
+      );
+      if (testMode) {
+        const teachersById = new Map(
+          (teachersForGeneration ?? []).map((teacher) => [
+            teacher.teacher_id,
+            teacher,
+          ]),
+        );
+        const subjectsById = new Map(
+          allSubjects.map((subject) => [subject.subject_id, subject]),
+        );
+        const normalizePreference = (value: string) =>
+          value.trim().toLowerCase().replace(/\s+/g, " ");
+        const timeToMinutes = (time: string) => {
+          const [hours, minutes] = time.split(":").map(Number);
+          return hours * 60 + minutes;
+        };
+
+        const preferenceAudit = roomScheduleRes.scheduleEntries.map((entry) => {
+          const teacher = entry.teacherId
+            ? teachersById.get(entry.teacherId)
+            : undefined;
+          const preferences = teacher?.preferences;
+          const subject = subjectsById.get(entry.subjectId);
+          const preferredTimes = preferences?.preferred_times ?? [];
+          const preferredRooms = preferences?.preferred_rooms ?? [];
+          const preferredSubjects = preferences?.preferred_subjects ?? [];
+          const preferredYears = preferences?.preferred_year ?? [];
+          const actualRoomValues = [entry.roomId, entry.roomName]
+            .filter((value): value is string => Boolean(value))
+            .map(normalizePreference);
+          const timeMatches = preferredTimes.some((preference) => {
+            if (typeof preference !== "string") {
+              return (
+                preference.day.toLowerCase() === entry.day.toLowerCase() &&
+                timeToMinutes(preference.start_time) <=
+                  timeToMinutes(entry.startTime) &&
+                timeToMinutes(preference.end_time) >=
+                  timeToMinutes(entry.endTime)
+              );
+            }
+            const normalizedPreference = preference.toLowerCase();
+            const slotRange =
+              `${entry.startTime}-${entry.endTime}`.toLowerCase();
+            return (
+              normalizedPreference.includes(entry.startTime.toLowerCase()) ||
+              normalizedPreference.includes(entry.endTime.toLowerCase()) ||
+              normalizedPreference.includes(slotRange)
+            );
+          });
+          const subjectMatches = preferredSubjects.some((preference) => {
+            const normalizedPreference = normalizePreference(preference);
+            return (
+              normalizedPreference === normalizePreference(entry.courseName) ||
+              normalizedPreference === normalizePreference(entry.courseCode)
+            );
+          });
+          const yearMatchScore = getTeacherPreferenceMatchScore(
+            { preferred_year: preferredYears },
+            "",
+            "",
+            subject?.year_term,
+          );
+
+          return {
+            teacher: entry.teacherName || "Unassigned",
+            employmentType: teacher?.employment_type || "Unknown",
+            section: entry.sectionCode,
+            subject: `${entry.courseCode} - ${entry.courseName}`,
+            day: entry.day,
+            time: `${entry.startTime}-${entry.endTime}`,
+            room: entry.roomName,
+            roomPreference: preferredRooms.length
+              ? actualRoomValues.some((room) =>
+                  preferredRooms.some(
+                    (preference) => normalizePreference(preference) === room,
+                  ),
+                )
+                ? "MATCH"
+                : "NO MATCH"
+              : "NOT SET",
+            timePreference: preferredTimes.length
+              ? timeMatches
+                ? "MATCH"
+                : "NO MATCH"
+              : "NOT SET",
+            subjectPreference: preferredSubjects.length
+              ? subjectMatches
+                ? "MATCH"
+                : "NO MATCH"
+              : "NOT SET",
+            yearPreference: preferredYears.length
+              ? !subject?.year_term
+                ? "NO SUBJECT TERM"
+                : yearMatchScore > 0
+                  ? "MATCH"
+                  : "NO MATCH"
+              : "NOT SET",
+            configuredPreferences: JSON.stringify(preferences ?? {}),
+          };
+        });
+
+        console.log("=== TEACHER PREFERENCE AUDIT (WITH TEACHERS) ===");
+        console.table(preferenceAudit);
+        console.log(
+          "Preference matches compare selected values with each generated assignment; they do not imply every preference is a hard constraint. Full-time preferred rooms are strictly enforced, while room and subject/year preference behavior varies by teacher category.",
+        );
+      }
 
       isSuccess = roomScheduleRes.success;
       errorMessage = roomScheduleRes.error || "";
 
-      if (isSuccess && roomScheduleRes.scheduleEntries.length > 0) {
+      const newScheduleEntries = roomScheduleRes.scheduleEntries.filter(
+        (entry) =>
+          !isCopiedSubject(entry.sectionCode, entry.subjectId, entry.courseCode),
+      );
+      if (isSuccess && newScheduleEntries.length > 0) {
         // Teachers are already assigned by generateRoomAndClassSchedulesWithTeachers
         setGenerationStatusText(
-          `Scheduled ${roomScheduleRes.scheduleEntries.length} entries with teachers assigned.`,
+          `Scheduled ${newScheduleEntries.length} entries with teachers assigned.`,
         );
         setGenerationProgress(80);
 
@@ -529,7 +826,7 @@ export default function ScheduleManagement() {
           return hours * 60 + minutes;
         }
 
-        entriesPayload = roomScheduleRes.scheduleEntries.map((entry) => ({
+        entriesPayload = newScheduleEntries.map((entry) => ({
           subject_id: entry.subjectId || null,
           teacher_id: entry.teacherId || null,
           room_id: entry.roomId || null,
@@ -541,10 +838,10 @@ export default function ScheduleManagement() {
         }));
 
         startTransition(() => {
-          setScheduleEntriesResult(roomScheduleRes.scheduleEntries);
+          setScheduleEntriesResult(newScheduleEntries);
           setSelectedTimetableSection("ALL");
           const rooms = Array.from(
-            new Set(roomScheduleRes.scheduleEntries.map((e) => e.roomName)),
+            new Set(newScheduleEntries.map((e) => e.roomName)),
           );
           setSelectedTimetableRoom(rooms.length > 0 ? rooms[0] : "ALL");
         });
@@ -567,9 +864,13 @@ export default function ScheduleManagement() {
       isSuccess = roomScheduleRes.success;
       errorMessage = roomScheduleRes.error || "";
 
-      if (isSuccess && roomScheduleRes.scheduleEntries.length > 0) {
+      const newScheduleEntries = roomScheduleRes.scheduleEntries.filter(
+        (entry) =>
+          !isCopiedSubject(entry.sectionCode, entry.subjectId, entry.courseCode),
+      );
+      if (isSuccess && newScheduleEntries.length > 0) {
         setGenerationStatusText(
-          `Scheduled ${roomScheduleRes.scheduleEntries.length} entries (teachers not assigned).`,
+          `Scheduled ${newScheduleEntries.length} entries (teachers not assigned).`,
         );
         setGenerationProgress(80);
 
@@ -578,7 +879,7 @@ export default function ScheduleManagement() {
           return hours * 60 + minutes;
         }
 
-        entriesPayload = roomScheduleRes.scheduleEntries.map((entry) => ({
+        entriesPayload = newScheduleEntries.map((entry) => ({
           subject_id: entry.subjectId || null,
           teacher_id: null,
           room_id: entry.roomId || null,
@@ -590,10 +891,10 @@ export default function ScheduleManagement() {
         }));
 
         startTransition(() => {
-          setScheduleEntriesResult(roomScheduleRes.scheduleEntries);
+          setScheduleEntriesResult(newScheduleEntries);
           setSelectedTimetableSection("ALL");
           const rooms = Array.from(
-            new Set(roomScheduleRes.scheduleEntries.map((e) => e.roomName)),
+            new Set(newScheduleEntries.map((e) => e.roomName)),
           );
           setSelectedTimetableRoom(rooms.length > 0 ? rooms[0] : "ALL");
         });
@@ -616,7 +917,18 @@ export default function ScheduleManagement() {
       errorMessage = assignRes.error || "";
 
       if (isSuccess && assignRes.assignments) {
-        entriesPayload = assignRes.assignments.flatMap((assignment) =>
+        const newAssignments = assignRes.assignments.map((assignment) => ({
+          ...assignment,
+          subjects: assignment.subjects.filter(
+            (subject) =>
+              !isCopiedSubject(
+                assignment.sectionCode,
+                subject.subject_id,
+                subject.course_code,
+              ),
+          ),
+        }));
+        entriesPayload = newAssignments.flatMap((assignment) =>
           assignment.subjects.flatMap((subj: AssignedSubjectDetail) => {
             const lectureUnits = subj.lecture_units || 0;
             const labUnits = subj.lab_units || 0;
@@ -681,13 +993,20 @@ export default function ScheduleManagement() {
         );
 
         startTransition(() => {
-          setAssignedSectionsResult(assignRes.assignments);
+          setAssignedSectionsResult(newAssignments);
         });
       }
     }
 
+    if (isCopyFlow) {
+      entriesPayload = [
+        ...entriesPayload,
+        ...copyEntriesToCarry.map(toSaveScheduleEntryPayload),
+      ];
+    }
+
     // --- PERSISTENCE STEP ---
-    if (isSuccess && !testMode && entriesPayload.length > 0) {
+    if (isSuccess && (!testMode || isCopyFlow) && entriesPayload.length > 0) {
       setGenerationProgress(85);
       setGenerationStatusText(
         "Posting and saving generated schedule to database...",
@@ -717,11 +1036,11 @@ export default function ScheduleManagement() {
     setOpenLoadingModal(false);
 
     if (isSuccess) {
-      if (!testMode) {
+      if (!testMode || isCopyFlow) {
         router.push(`/schedules/${encodeURIComponent(scheduleName)}`);
       }
 
-      if (testMode) {
+      if (testMode && !isCopyFlow) {
         if (autoAssignRoom) {
           setOpenTimetableModal(true);
         } else {
@@ -839,7 +1158,8 @@ export default function ScheduleManagement() {
   const isAutoFormInvalid =
     !addScheduleName.trim() ||
     !!scheduleNameError ||
-    curriculumAdd.length === 0;
+    (curriculumAdd.length === 0 &&
+      !(isCopyFlow && copyEntriesToCarry.length > 0));
 
   // timetable helper constants & functions
   const daysOfWeek = [
@@ -916,6 +1236,47 @@ export default function ScheduleManagement() {
     });
   };
 
+  const getCurriculumYearOptions = (curriculum: CurriculumRecord) =>
+    isShsCurriculum(curriculum)
+      ? [
+          { value: "11", label: "Grade 11" },
+          { value: "12", label: "Grade 12" },
+        ]
+      : [
+          { value: "1", label: "First Year" },
+          { value: "2", label: "Second Year" },
+          { value: "3", label: "Third Year" },
+          { value: "4", label: "Fourth Year" },
+        ];
+
+  const getSelectedCurriculumYears = (curriculum: CurriculumRecord) => {
+    const availableYears = getCurriculumYearOptions(curriculum).map(
+      (option) => option.value,
+    );
+    const selectedYears = curriculumYearSelections[curriculum.curriculum_id];
+    if (selectedYears === undefined) return availableYears;
+
+    const validSelectedYears = selectedYears.filter((year) =>
+      availableYears.includes(year),
+    );
+    return selectedYears.length > 0 && validSelectedYears.length === 0
+      ? availableYears
+      : validSelectedYears;
+  };
+
+  const hasSelectedCurriculumYear = curriculumAdd.some(
+    (curriculum) => getSelectedCurriculumYears(curriculum).length > 0,
+  );
+  const isCurriculumSelectionInvalid =
+    curriculumAdd.length > 0 && !hasSelectedCurriculumYear;
+
+  const getCurriculumGenerationSelections = (): CurriculumGenerationSelection[] =>
+    curriculumAdd.map((curriculum) => ({
+      curriculumId: curriculum.curriculum_id,
+      curriculumVersion: curriculum.curriculum_version,
+      selectedYearLevels: getSelectedCurriculumYears(curriculum),
+    }));
+
   // Helper to count how many curricula are assigned to a program (by checking if curriculum_version contains program_code)
   const programCurriculumCount = (programCode: string): number => {
     const codeUpper = programCode.trim().toUpperCase();
@@ -933,6 +1294,18 @@ export default function ScheduleManagement() {
       const versionUpper = curriculum.curriculum_version?.trim().toUpperCase();
       return versionUpper && versionUpper.includes(codeUpper);
     });
+  };
+
+  const getProgramCurriculumStatus = (program: ProgramRecord) => {
+    const assignedCurricula = getCurriculaForProgram(program.program_code);
+    const expectedYearLevels =
+      program.year_level?.toLowerCase() === "tertiary"
+        ? ["1", "2", "3", "4"]
+        : ["11", "12"];
+    return getCurriculumYearCoverageStatus(
+      expectedYearLevels,
+      assignedCurricula.map(getSelectedCurriculumYears),
+    );
   };
 
   // --- Teacher Preferences Helpers --- //
@@ -1209,7 +1582,11 @@ export default function ScheduleManagement() {
 
   // Handle Next Step from setup -> teachers
   function handleNextToTeachers() {
-    if (isAutoFormInvalid) return;
+    if (isAutoFormInvalid || isCurriculumSelectionInvalid) return;
+    if (curriculumAdd.length === 0 && isCopyFlow) {
+      void handleAutoGenerationSubmit();
+      return;
+    }
     setAutoStep("teachers");
     setTeacherTab("All");
     setTeacherSearchQuery("");
@@ -1227,15 +1604,138 @@ export default function ScheduleManagement() {
   // Modified generation that includes teacher info
   async function handleAutoGenerationSubmitWithTeachers() {
     const scheduleNameTrimmed = addScheduleName.trim();
-    const curriculumIds = curriculumAdd.map((item) => item.curriculum_id);
+    const curriculumIds =
+      pendingAutoPayload?.curriculumIds ??
+      curriculumAdd.map((item) => item.curriculum_id);
 
     setOpenAddModal(false);
     await executeAutoGenerationPipeline(
-      scheduleNameTrimmed,
+      pendingAutoPayload?.scheduleName ?? scheduleNameTrimmed,
       curriculumIds,
-      selectedTertiaryTerm,
+      pendingAutoPayload?.tertiaryTerm ?? selectedTertiaryTerm,
       getTeachersForGeneration(),
+      pendingAutoPayload?.curriculumSelections ??
+        getCurriculumGenerationSelections(),
+      pendingAutoPayload?.shsTerm ?? selectedShsTerm,
     );
+  }
+
+  const scheduleCopyTree = useMemo(
+    () => buildScheduleCopyTree(copySourceEntries, programs),
+    [copySourceEntries, programs],
+  );
+
+  const getCopyKeysForProgram = (program: ScheduleCopyProgramNode) =>
+    program.sections.flatMap((section) =>
+      section.subjects.map((subject) => subject.key),
+    );
+
+  const getCopyKeysForCategory = (category: "SHS" | "TERTIARY") =>
+    scheduleCopyTree[category].flatMap(getCopyKeysForProgram);
+
+  function renderCopySelectionCheckbox(label: string, keys: string[]) {
+    const state = getCopySelectionState(keys, copySelection);
+
+    return (
+      <label
+        className="inline-flex cursor-pointer items-center gap-2"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <input
+          type="checkbox"
+          checked={state === "checked"}
+          ref={(element) => {
+            if (element) element.indeterminate = state === "partial";
+          }}
+          onChange={() =>
+            setCopySelection((current) =>
+              toggleScheduleCopySelection(keys, current),
+            )
+          }
+          className="h-4 w-4 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          aria-label={label}
+        />
+        <span>{label}</span>
+      </label>
+    );
+  }
+
+  async function handleOpenScheduleCopy(schedule: ScheduleRecord) {
+    setCopySourceSchedule(schedule);
+    setCopySourceEntries([]);
+    setCopySelection(new Set());
+    setIsLoadingCopyEntries(true);
+    setOpenCopySelectionModal(true);
+
+    try {
+      const [entriesResult, programsResult] = await Promise.all([
+        fetchTimetableEntriesByScheduleId(schedule.schedule_id),
+        programs.length > 0
+          ? Promise.resolve({ success: true, data: programs })
+          : fetchPrograms(null, "all", "program_code", "ASC", 0),
+      ]);
+
+      if (!entriesResult.success || !entriesResult.data) {
+        throw new Error(entriesResult.error || "Failed to load schedule entries.");
+      }
+      if (!programsResult.success || !programsResult.data) {
+        const programsError =
+          "error" in programsResult &&
+          typeof programsResult.error === "string"
+            ? programsResult.error
+            : "Failed to load programs.";
+        throw new Error(
+          programsError,
+        );
+      }
+
+      setPrograms(programsResult.data);
+      setCopySourceEntries(entriesResult.data);
+    } catch (error) {
+      setOpenCopySelectionModal(false);
+      setToastMessage(
+        error instanceof Error ? error.message : "Failed to load schedule entries.",
+      );
+      setToastType("error");
+      setShowToast(true);
+    } finally {
+      setIsLoadingCopyEntries(false);
+    }
+  }
+
+  function handleContinueWithCopiedEntries() {
+    const selectedEntries = copySourceEntries.filter((entry) =>
+      copySelection.has(
+        getScheduleCopySubjectKey(
+          entry.section,
+          entry.subject_id,
+          entry.course_code,
+        ),
+      ),
+    );
+    if (selectedEntries.length === 0) return;
+
+    setCopyEntriesToCarry(selectedEntries);
+    setIsCopyFlow(true);
+    setCopySourceSchedule(null);
+    setCopySourceEntries([]);
+    setCopySelection(new Set());
+    setAddStep("selection");
+    setCreationMode("auto");
+    setAutoStep("setup");
+    setAutoAssignRoom(true);
+    setAddScheduleName("");
+    setScheduleNameError("");
+    setAddScheduleDescription("");
+    setSelectedTertiaryTerm("Semester 1");
+    setSelectedShsTerm("Term 1");
+    setSelectedTemplate("");
+    setCurriculumAdd([]);
+    setCurriculumYearSelections({});
+    setCurriculaSearch("");
+    setSelectedCurriculumFilter("ALL");
+    setOpenCopySelectionModal(false);
+    setOpenAddModal(true);
   }
 
   return (
@@ -1306,6 +1806,8 @@ export default function ScheduleManagement() {
           <Button
             className="mb-2 w-full whitespace-nowrap sm:w-auto"
             onClick={() => {
+              setIsCopyFlow(false);
+              setCopyEntriesToCarry([]);
               setAddStep("selection");
               setOpenAddModal(true);
             }}
@@ -1397,7 +1899,21 @@ export default function ScheduleManagement() {
                         : "N/A"}
                     </TableCell>
                     <TableCell>
-                      <HiChevronRight className="h-5 w-5 cursor-pointer text-gray-500 hover:text-gray-700 dark:text-gray-400" />
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          aria-label={`Copy schedule entries from ${item.schedule_name || "schedule"}`}
+                          title="Copy schedule entries"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleOpenScheduleCopy(item);
+                          }}
+                          className="cursor-pointer text-gray-500 hover:text-blue-600 focus:outline-none dark:text-gray-400 dark:hover:text-blue-300"
+                        >
+                          <MdContentCopy className="h-5 w-5" />
+                        </button>
+                        <HiChevronRight className="h-5 w-5 cursor-pointer text-gray-500 hover:text-gray-700 dark:text-gray-400" />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -1407,15 +1923,170 @@ export default function ScheduleManagement() {
         </div>
 
         {/* Pagination Controls */}
-        <div className="flex items-center justify-center pt-4">
-          <Pagination
-            currentPage={currentSchedulePage}
-            totalPages={Math.ceil(records.length / maxRowSchedule) || 1}
-            onPageChange={onPageChangeSchedule}
-            showIcons
-          />
-        </div>
+        <TablePaginationFooter
+          className="pt-4"
+          currentPage={currentSchedulePage}
+          pageSize={maxRowSchedule}
+          totalCount={records.length}
+          onPageChange={onPageChangeSchedule}
+        />
       </div>
+
+      <Modal
+        show={openCopySelectionModal}
+        onClose={() => {
+          setOpenCopySelectionModal(false);
+          setCopySourceSchedule(null);
+          setCopySourceEntries([]);
+          setCopySelection(new Set());
+        }}
+        size="5xl"
+      >
+        <ModalHeader>
+          Copy Schedule Entries
+          {copySourceSchedule?.schedule_name
+            ? ` — ${copySourceSchedule.schedule_name}`
+            : ""}
+        </ModalHeader>
+        <ModalBody className="max-h-[70vh] overflow-y-auto">
+          {isLoadingCopyEntries ? (
+            <div className="flex justify-center py-10">
+              <Spinner size="lg" />
+            </div>
+          ) : copySourceEntries.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-500">
+              This schedule has no entries to copy.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Select the schedule entries to carry into the new schedule.
+              </p>
+              <Accordion alwaysOpen className="space-y-2 border-0 divide-y-0">
+                {(["SHS", "TERTIARY"] as const).map((category) => {
+                  const programsInCategory = scheduleCopyTree[category];
+                  const categoryKeys = getCopyKeysForCategory(category);
+
+                  return (
+                    <AccordionPanel key={category}>
+                      <AccordionTitle>
+                        <div className="flex items-center gap-3">
+                          {renderCopySelectionCheckbox(category, categoryKeys)}
+                        </div>
+                      </AccordionTitle>
+                      <AccordionContent>
+                        {programsInCategory.length === 0 ? (
+                          <p className="py-2 text-sm text-gray-500">
+                            No {category} entries.
+                          </p>
+                        ) : (
+                          <Accordion
+                            alwaysOpen
+                            className="space-y-2 border-0 divide-y-0"
+                          >
+                            {programsInCategory.map((program) => {
+                              const programKeys = getCopyKeysForProgram(program);
+                              return (
+                                <AccordionPanel key={program.programCode}>
+                                  <AccordionTitle>
+                                    <div className="flex items-center gap-3">
+                                      {renderCopySelectionCheckbox(
+                                        `${program.programName} (${program.programCode})`,
+                                        programKeys,
+                                      )}
+                                    </div>
+                                  </AccordionTitle>
+                                  <AccordionContent>
+                                    <Accordion
+                                      alwaysOpen
+                                      className="space-y-2 border-0 divide-y-0"
+                                    >
+                                      {program.sections.map((section) => {
+                                        const sectionKeys =
+                                          section.subjects.map(
+                                            (subject) => subject.key,
+                                          );
+                                        return (
+                                          <AccordionPanel
+                                            key={section.sectionCode}
+                                          >
+                                            <AccordionTitle>
+                                              <div className="flex items-center gap-3">
+                                                {renderCopySelectionCheckbox(
+                                                  section.sectionCode,
+                                                  sectionKeys,
+                                                )}
+                                              </div>
+                                            </AccordionTitle>
+                                            <AccordionContent>
+                                              <div className="space-y-2">
+                                                {section.subjects.map(
+                                                  (subject) => (
+                                                    <div
+                                                      key={subject.key}
+                                                      className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700"
+                                                    >
+                                                      {renderCopySelectionCheckbox(
+                                                        `${subject.courseCode} — ${subject.courseName}`,
+                                                        [subject.key],
+                                                      )}
+                                                      <span className="shrink-0 text-xs text-gray-500">
+                                                        {subject.entries.length}{" "}
+                                                        {subject.entries.length ===
+                                                        1
+                                                          ? "entry"
+                                                          : "entries"}
+                                                      </span>
+                                                    </div>
+                                                  ),
+                                                )}
+                                              </div>
+                                            </AccordionContent>
+                                          </AccordionPanel>
+                                        );
+                                      })}
+                                    </Accordion>
+                                  </AccordionContent>
+                                </AccordionPanel>
+                              );
+                            })}
+                          </Accordion>
+                        )}
+                      </AccordionContent>
+                    </AccordionPanel>
+                  );
+                })}
+              </Accordion>
+            </div>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <div className="flex w-full items-center justify-between gap-3">
+            <span className="text-sm text-gray-500">
+              {copySelection.size} subject{copySelection.size === 1 ? "" : "s"} selected
+            </span>
+            <div className="flex gap-2">
+              <Button
+                color="alternative"
+                onClick={() => {
+                  setOpenCopySelectionModal(false);
+                  setCopySourceSchedule(null);
+                  setCopySourceEntries([]);
+                  setCopySelection(new Set());
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleContinueWithCopiedEntries}
+                disabled={copySelection.size === 0 || isLoadingCopyEntries}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </ModalFooter>
+      </Modal>
 
       {/* --- ADD MODAL --- */}
       <Modal show={openAddModal} onClose={handleCloseModals} size="xl">
@@ -1431,11 +2102,19 @@ export default function ScheduleManagement() {
                   : "Use Template Setup"}
         </ModalHeader>
         <ModalBody className={"scrollbar-thumb-gray-400 scrollbar-track-transparent dark:scrollbar-thumb-gray-600"}>
+          {isCopyFlow && addStep === "form" && (
+            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+              Add only the subjects that still need to be generated to the
+              selected curricula. The copied subjects will carry over into this
+              schedule and will not be rescheduled.
+            </div>
+          )}
           {addStep === "selection" ? (
             <div className="space-y-4 select-none">
               <p className="text-sm text-gray-600 dark:text-gray-300">
-                Please select how you would like to generate or create this
-                schedule:
+                {isCopyFlow
+                  ? "Choose how to generate the remaining subjects for this copied schedule:"
+                  : "Please select how you would like to generate or create this schedule:"}
               </p>
               <div className="space-y-3">
                 <div className="flex cursor-pointer items-center gap-3 rounded-lg p-3">
@@ -1449,11 +2128,12 @@ export default function ScheduleManagement() {
                   />
                   <Label htmlFor="mode-auto" className="cursor-pointer">
                     <span className="block font-semibold">
-                      Auto Assign / Generation
+                      {isCopyFlow ? "Full Auto" : "Auto Assign / Generation"}
                     </span>
                     <span className="text-xs text-gray-500">
-                      Automatically map teachers and generate time slots based on system
-                      rules and constraints.
+                      {isCopyFlow
+                        ? "Automatically assign teachers and generate time slots for the remaining subjects."
+                        : "Automatically map teachers and generate time slots based on system rules and constraints."}
                     </span>
                   </Label>
                 </div>
@@ -1469,7 +2149,9 @@ export default function ScheduleManagement() {
                   />
                   <Label htmlFor="mode-semi-auto" className="cursor-pointer">
                     <span className="block font-semibold">
-                      Semi-Auto (Sections and Subject Assignment)
+                      {isCopyFlow
+                        ? "Semi Auto"
+                        : "Semi-Auto (Sections and Subject Assignment)"}
                     </span>
                     <span className="text-xs text-gray-500">
                       Generate sections and assign subjects with optional room
@@ -1478,23 +2160,25 @@ export default function ScheduleManagement() {
                   </Label>
                 </div>
 
-                <div className="flex cursor-pointer items-center gap-3 rounded-lg p-3">
-                  <Radio
-                    id="mode-template"
-                    name="creationMode"
-                    value="template"
-                    checked={creationMode === "template"}
-                    onChange={() => setCreationMode("template")}
-                    className="shrink-0"
-                  />
-                  <Label htmlFor="mode-template" className="cursor-pointer">
-                    <span className="block font-semibold">Use Template</span>
-                    <span className="text-xs text-gray-500">
-                      Create a schedule by selecting and applying a pre-existing
-                      template.
-                    </span>
-                  </Label>
-                </div>
+                {!isCopyFlow && (
+                  <div className="flex cursor-pointer items-center gap-3 rounded-lg p-3">
+                    <Radio
+                      id="mode-template"
+                      name="creationMode"
+                      value="template"
+                      checked={creationMode === "template"}
+                      onChange={() => setCreationMode("template")}
+                      className="shrink-0"
+                    />
+                    <Label htmlFor="mode-template" className="cursor-pointer">
+                      <span className="block font-semibold">Use Template</span>
+                      <span className="text-xs text-gray-500">
+                        Create a schedule by selecting and applying a pre-existing
+                        template.
+                      </span>
+                    </Label>
+                  </div>
+                )}
               </div>
             </div>
           ) : creationMode === "auto" && autoStep === "teachers" ? (
@@ -1816,37 +2500,109 @@ export default function ScheduleManagement() {
                               selectedCurriculumFilter,
                             );
                             return filteredCurricula.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {filteredCurricula.map(
-                                  (item: CurriculumRecord) => (
-                                    <Badge
-                                      key={item.curriculum_id}
-                                      className="items-center"
-                                      color={`${isShsCurriculum(item) ? "warning" : "info"}`}
-                                    >
-                                      <span className="inline-flex items-center gap-1.5">
+                              <Accordion
+                                alwaysOpen
+                                className="flex flex-col gap-3 border-0 divide-y-0"
+                              >
+                                {filteredCurricula.map((item: CurriculumRecord) => {
+                                  const yearOptions =
+                                    getCurriculumYearOptions(item);
+                                  const selectedYears =
+                                    getSelectedCurriculumYears(item);
+
+                                  return (
+                                    <AccordionPanel key={item.curriculum_id}>
+                                      <AccordionTitle className={`${isShsCurriculum(item)? "bg-yellow-400 text-black":"bg-blue-600 text-white"} h-8  text-sm font-semibold`}>
                                         {item.curriculum_version}
-                                        <HiX
-                                          className="h-4 w-4 cursor-pointer text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400"
-                                          onClick={() => {
-                                            setCurriculumAdd((prev) =>
-                                              prev.filter(
-                                                (curriculum: CurriculumRecord) =>
-                                                  curriculum.curriculum_id !==
-                                                  item.curriculum_id,
-                                              ),
-                                            );
-                                            // If inside a course tab, put the program code back in search
-                                            if (selectedCurriculumFilter !== "ALL") {
-                                              setCurriculaSearch(selectedCurriculumFilter);
-                                            }
-                                          }}
-                                        />
-                                      </span>
-                                    </Badge>
-                                  ),
-                                )}
-                              </div>
+                                      </AccordionTitle>
+                                      <AccordionContent>
+                                        <div className="space-y-3">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                              {isShsCurriculum(item)
+                                                ? "Select grade levels"
+                                                : "Select year levels"}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleRemoveCurriculum(item)
+                                              }
+                                              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400"
+                                              aria-label={`Remove ${item.curriculum_version}`}
+                                            >
+                                              <HiX className="h-4 w-4" />
+                                              Remove
+                                            </button>
+                                          </div>
+                                          <div className="flex flex-col gap-2">
+                                            {yearOptions.map((option) => (
+                                              <label
+                                                key={option.value}
+                                                htmlFor={`curriculum-${item.curriculum_id}-${option.value}`}
+                                                className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 dark:border-gray-600 dark:text-gray-200"
+                                              >
+                                                <Checkbox
+                                                  id={`curriculum-${item.curriculum_id}-${option.value}`}
+                                                  checked={selectedYears.includes(
+                                                    option.value,
+                                                  )}
+                                                  onChange={(event) => {
+                                                    const checked =
+                                                      event.target.checked;
+                                                    setCurriculumYearSelections(
+                                                      (previous) => {
+                                                        const availableYears =
+                                                          yearOptions.map(
+                                                            (year) =>
+                                                              year.value,
+                                                          );
+                                                        const storedYears =
+                                                          previous[
+                                                            item.curriculum_id
+                                                          ];
+                                                        const validStoredYears =
+                                                          storedYears?.filter(
+                                                            (year) =>
+                                                              availableYears.includes(
+                                                                year,
+                                                              ),
+                                                          ) ?? availableYears;
+                                                        const current =
+                                                          storedYears?.length &&
+                                                          validStoredYears.length ===
+                                                            0
+                                                            ? availableYears
+                                                            : validStoredYears;
+                                                        return {
+                                                          ...previous,
+                                                          [item.curriculum_id]: checked
+                                                            ? [
+                                                                ...new Set([
+                                                                  ...current,
+                                                                  option.value,
+                                                                ]),
+                                                              ]
+                                                            : current.filter(
+                                                                (year) =>
+                                                                  year !==
+                                                                  option.value,
+                                                              ),
+                                                        };
+                                                      },
+                                                    );
+                                                  }}
+                                                />
+                                                <span>{option.label}</span>
+                                              </label>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </AccordionContent>
+                                    </AccordionPanel>
+                                  );
+                                })}
+                              </Accordion>
                             ) : (
                               <div className="flex h-[80px] items-center justify-center text-xs text-gray-500 italic">
                                 {selectedCurriculumFilter === "ALL"
@@ -1856,6 +2612,11 @@ export default function ScheduleManagement() {
                             );
                           })()}
                         </div>
+                        {curriculumAdd.length > 0 && !hasSelectedCurriculumYear && (
+                          <p className="px-2 text-xs text-red-500">
+                            Select at least one grade or year level to continue.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1875,18 +2636,18 @@ export default function ScheduleManagement() {
                         <div className="flex items-center justify-between">
                           <span>ALL</span>
                           {(() => {
-                            const allCounts = programs.map((p) =>
-                              programCurriculumCount(p.program_code),
+                            const allStatuses = programs.map(
+                              getProgramCurriculumStatus,
                             );
-                            const allHaveOne =
-                              allCounts.length > 0 &&
-                              allCounts.every((c) => c === 1);
+                            const allComplete =
+                              allStatuses.length > 0 &&
+                              allStatuses.every((status) => status === "complete");
                             const allHaveNone =
-                              allCounts.length > 0 &&
-                              allCounts.every((c) => c === 0);
-                            if (allHaveOne)
+                              allStatuses.length > 0 &&
+                              allStatuses.every((status) => status === "missing");
+                            if (allComplete)
                               return (
-                                <Tooltip content="All courses have their curriculum">
+                                <Tooltip content="All courses have complete curricula and selected levels">
                                   <HiCheck className="h-4 w-4 text-green-400 shrink-0 cursor-help" />
                                 </Tooltip>
                               );
@@ -1897,7 +2658,7 @@ export default function ScheduleManagement() {
                                 </Tooltip>
                               );
                             return (
-                              <Tooltip content="Some courses are missing or have extra curriculum">
+                              <Tooltip content="Some courses are missing curricula or need each year level selected exactly once">
                                 <HiExclamation className="h-4 w-4 text-yellow-400 shrink-0 cursor-help" />
                               </Tooltip>
                             );
@@ -1910,6 +2671,8 @@ export default function ScheduleManagement() {
                         const curriculumCount = programCurriculumCount(
                           item.program_code,
                         );
+                        const curriculumStatus =
+                          getProgramCurriculumStatus(item);
                         const isSelected =
                           selectedCurriculumFilter === item.program_code;
                         const isTertiary = item.year_level?.toLowerCase() === "tertiary";
@@ -1934,10 +2697,16 @@ export default function ScheduleManagement() {
                           >
                             <div className="flex items-center justify-between">
                               <span className="truncate">{item.program_code}</span>
-                              {curriculumCount === 0 ? (
+                              {curriculumStatus === "missing" ? (
                                 <HiX className="h-4 w-4 text-red-400 shrink-0" />
-                              ) : curriculumCount >= 2 ? (
-                                <Tooltip content="has more than one curriculum">
+                              ) : curriculumStatus === "duplicate" ? (
+                                <Tooltip content="Each year level should be selected only once">
+                                  <HiExclamation className="h-4 w-4 text-yellow-400 shrink-0 cursor-help" />
+                                </Tooltip>
+                              ) : curriculumStatus === "incomplete" ? (
+                                <Tooltip
+                                  content={`Select all ${isTertiary ? 4 : 2} ${isTertiary ? "year levels" : "grade levels"}`}
+                                >
                                   <HiExclamation className="h-4 w-4 text-yellow-400 shrink-0 cursor-help" />
                                 </Tooltip>
                               ) : (
@@ -2018,7 +2787,11 @@ export default function ScheduleManagement() {
                 Back
               </Button>
               <Button
-                disabled={isAutoFormInvalid || isSubmittingAutoGeneration}
+                disabled={
+                  isAutoFormInvalid ||
+                  isCurriculumSelectionInvalid ||
+                  isSubmittingAutoGeneration
+                }
                 onClick={handleNextToTeachers}
               >
                 Next Step
@@ -2062,7 +2835,11 @@ export default function ScheduleManagement() {
                 Back
               </Button>
               <Button
-                disabled={isAutoFormInvalid || isSubmittingAutoGeneration}
+                disabled={
+                  isAutoFormInvalid ||
+                  isCurriculumSelectionInvalid ||
+                  isSubmittingAutoGeneration
+                }
                 onClick={handleAutoGenerationSubmit}
               >
                 Generate Sections
@@ -2147,6 +2924,9 @@ export default function ScheduleManagement() {
                     pendingAutoPayload.scheduleName,
                     pendingAutoPayload.curriculumIds,
                     pendingAutoPayload.tertiaryTerm,
+                    undefined,
+                    pendingAutoPayload.curriculumSelections,
+                    pendingAutoPayload.shsTerm,
                   );
                 }
               }

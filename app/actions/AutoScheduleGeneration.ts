@@ -15,13 +15,20 @@ import {
 import sql from "@/lib/database";
 import {
   findPreferredRoom,
+  findPreferredRooms,
   getTeacherPreferenceMatchScore,
 } from "@/utils/autoSchedulePreferences";
 import {
   formatGeneratedScheduleValidationError,
   validateGeneratedSchedule,
 } from "@/utils/autoScheduleValidation";
-import { repairGeneratedSchedule } from "@/utils/autoScheduleRepair";
+import {
+  getFatigueRiskEntries,
+  repairGeneratedSchedule,
+  trySwapSectionScheduleDays,
+  type RepairScheduleOptions,
+} from "@/utils/autoScheduleRepair";
+import { parseSubjectYearTerm } from "@/utils/subjectYearTerm";
 
 /** --- INTERFACES --- **/
 
@@ -34,6 +41,11 @@ export interface AssignedSubjectDetail {
   lab_type: string | null;
   year_term: string | null;
   required_aqs: string[];
+}
+export interface CurriculumGenerationSelection {
+  curriculumId: string;
+  curriculumVersion: string;
+  selectedYearLevels: string[];
 }
 export interface ProgramRecord {
   program_code: string;
@@ -115,6 +127,7 @@ export async function fetchSubjectsForGeneration(
   curricula: string[],
   tertiaryTerm: string,
   shsTerm: string = "Term 1",
+  curriculumSelections?: CurriculumGenerationSelection[],
 ): Promise<{
   success: boolean;
   data: SubjectRequirementRecord[];
@@ -139,31 +152,30 @@ export async function fetchSubjectsForGeneration(
     const shsTermNum = parseInt(shsTerm.replace(/[^0-9]/g, "")) || 1;
     const shsTermDigit = shsTermNum > 4 ? 4 : shsTermNum < 1 ? 1 : shsTermNum;
 
-    // Filter subjects by term/semester: both tertiary and SHS subjects must match
+    // Filter subjects by selected curriculum levels and term/semester.
     const filteredSubjects = allSubjects.filter((subject) => {
-      const yt = (subject.year_term || "").toLowerCase().trim();
+      const yearTerm = parseSubjectYearTerm(subject.year_term);
+      if (!yearTerm?.term) return false;
 
-      // Subjects without term/semester info are removed
-      const hasTermInfo = yt.includes("term") || yt.includes("semester");
-      if (!hasTermInfo) {
-        return false;
-      }
-
-      const isSubjectSHS = yt.includes("shs") || yt.includes("grade");
-
-      if (isSubjectSHS) {
-        // SHS subjects: filter by selected SHS term
-        return (
-          yt.includes(`term ${shsTermDigit}`) ||
-          yt.includes(`semester ${shsTermDigit}`)
+      if (curriculumSelections) {
+        const curriculum = curriculumSelections.find(
+          (selection) =>
+            selection.curriculumId === subject.curriculum ||
+            selection.curriculumVersion.trim().toLowerCase() ===
+              (subject.curriculum || "").trim().toLowerCase(),
         );
+        if (
+          !curriculum ||
+          !curriculum.selectedYearLevels.includes(yearTerm.yearLevel)
+        ) {
+          return false;
+        }
       }
 
-      // Tertiary subjects: filter by selected semester
-      return (
-        yt.includes(`semester ${tertiaryTermDigit}`) ||
-        yt.includes(`term ${tertiaryTermDigit}`)
-      );
+      const selectedTerm = yearTerm.isShs
+        ? shsTermDigit
+        : tertiaryTermDigit;
+      return yearTerm.term === String(selectedTerm);
     });
 
     return { success: true, data: filteredSubjects };
@@ -333,7 +345,10 @@ export async function assignSubjectsToSections(
       const matchedSubjects = allSubjects.filter((subject) => {
         const subProg = (subject.program_code || "").trim().toUpperCase();
         const yt = (subject.year_term || "").toLowerCase().trim();
-        const isSubjectSHS = yt.includes("shs") || yt.includes("grade");
+        const parsedYearTerm = parseSubjectYearTerm(subject.year_term);
+        const isSubjectSHS =
+          parsedYearTerm?.isShs ??
+          (yt.includes("shs") || yt.includes("grade"));
 
         // Helper: try matching as a tertiary section
         function tryTertiaryMatch(): boolean {
@@ -376,7 +391,9 @@ export async function assignSubjectsToSections(
 
           // Use regex word boundary to match the year ordinal exactly
           const yearRegex = new RegExp(`\\b${yearWord}\\b`, "i");
-          const yearMatched = yearRegex.test(yt);
+          const yearMatched =
+            parsedYearTerm?.yearLevel === String(targetYearNum) ||
+            yearRegex.test(yt);
 
           // Tertiary year_term only stores the year (e.g. "1st Year"), not the term.
           // The term is already encoded in the section code, so we only match by year.
@@ -394,7 +411,9 @@ export async function assignSubjectsToSections(
             const targetGradeNum = gradeIndicator === "2" ? "12" : "11";
             // Use word boundary to avoid "11" matching inside other numbers
             const gradeRegex = new RegExp(`\\b${targetGradeNum}\\b`, "i");
-            const gradeMatches = gradeRegex.test(yt);
+            const gradeMatches =
+              parsedYearTerm?.yearLevel === targetGradeNum ||
+              gradeRegex.test(yt);
 
             return gradeMatches;
           }
@@ -404,6 +423,8 @@ export async function assignSubjectsToSections(
           return tryTertiaryMatch();
         }
       });
+
+      if (matchedSubjects.length === 0) continue;
 
       const structuredSubjects: AssignedSubjectDetail[] = matchedSubjects.map(
         (subject) => ({
@@ -1914,7 +1935,21 @@ export async function generateRoomAndClassSchedulesWithTeachers(
       }
 
       const roomsResult = await getRoomsForGeneration();
-      if (!roomsResult.success || !roomsResult.data) return entries;
+      if (!roomsResult.success || !roomsResult.data) {
+        entries.forEach((entry) => {
+          const teacher = entry.teacherId
+            ? teacherInfoMap.get(entry.teacherId)
+            : undefined;
+          if (
+            teacher &&
+            getEmploymentCategory(teacher) === "full_time" &&
+            (teacher.preferences?.preferred_rooms?.length ?? 0) > 0
+          ) {
+            needsReschedule.add(entry.subjectId);
+          }
+        });
+        return entries;
+      }
 
       const lecRoomTypeResult = await fetchLecRoomID();
       const lecRoomData =
@@ -1969,6 +2004,8 @@ export async function generateRoomAndClassSchedulesWithTeachers(
             roomId: preferredRoom.room_id,
             roomName: preferredRoom.room_name || entry.roomName,
           };
+        } else if (teacher && getEmploymentCategory(teacher) === "full_time") {
+          needsReschedule.add(entry.subjectId);
         }
       }
 
@@ -1986,8 +2023,14 @@ export async function generateRoomAndClassSchedulesWithTeachers(
       const hasInitialIssues = Object.values(initialValidation).some(
         (issues) => issues.length > 0,
       );
+      const hasInitialFatigueRisk =
+        getFatigueRiskEntries(preferredRoomEntries).length > 0;
 
-      if (!hasInitialIssues && needsReschedule.size === 0) {
+      if (
+        !hasInitialIssues &&
+        needsReschedule.size === 0 &&
+        !hasInitialFatigueRisk
+      ) {
         return { success: true, scheduleEntries: preferredRoomEntries };
       }
 
@@ -2079,116 +2122,200 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         "Friday",
         "Saturday",
       ];
-      const repair = repairGeneratedSchedule(
-        preferredRoomEntries,
-        requiredEntries,
-        {
-          days,
-          dayStartMinutes: 7 * 60,
-          dayEndMinutes: 22 * 60,
-          forceMoveSubjectIds: needsReschedule,
-          isTimeAllowed: (entry, day, startTime, endTime) => {
-            const isShs = /^([A-Z]+)([12])(\d{2})$/.test(entry.sectionCode);
-            if (isShs && timeToMinutes(endTime) > 18 * 60) return false;
+      const isRepairTimeAllowed = (
+        entry: ScheduleEntry,
+        day: string,
+        startTime: string,
+        endTime: string,
+      ): boolean => {
+        const isShs = /^([A-Z]+)([12])(\d{2})$/.test(entry.sectionCode);
+        if (isShs && timeToMinutes(endTime) > 18 * 60) return false;
 
-            const teacher = entry.teacherId
-              ? teacherInfoMap.get(entry.teacherId)
-              : undefined;
-            if (!teacher) return true;
+        const teacher = entry.teacherId
+          ? teacherInfoMap.get(entry.teacherId)
+          : undefined;
+        if (!teacher) return true;
 
-            const category = getEmploymentCategory(teacher);
+        const category = getEmploymentCategory(teacher);
+        if (
+          category === "full_time" &&
+          (!isWeekday(day) || !isWithinDaytime(startTime, endTime))
+        ) {
+          return false;
+        }
+        if (
+          category === "part_time" &&
+          !teacherPrefersTime(teacher, day, startTime, endTime)
+        ) {
+          return false;
+        }
+        if (
+          category === "part_time_full_load" &&
+          (teacher.preferences?.preferred_times?.length ?? 0) > 0 &&
+          !teacherPrefersTime(teacher, day, startTime, endTime)
+        ) {
+          return false;
+        }
+        return true;
+      };
+      const createRepairOptions = (
+        ignoreConfiguredBreaks: boolean,
+        ignoreFatigue: boolean,
+      ): RepairScheduleOptions<ScheduleEntry> => ({
+        days,
+        dayStartMinutes: 7 * 60,
+        dayEndMinutes: 22 * 60,
+        forceMoveSubjectIds: needsReschedule,
+        isTimeAllowed: isRepairTimeAllowed,
+        hasAdditionalConflict: (first, second) =>
+          !!first.courseCode && first.courseCode === second.courseCode,
+        hasAdditionalEntryConflict: ignoreFatigue
+          ? undefined
+          : (candidate, occupied) =>
+              getFatigueRiskEntries([...occupied, candidate]).includes(
+                candidate,
+              ),
+        getAdditionalConflictEntries: ignoreFatigue
+          ? undefined
+          : getFatigueRiskEntries,
+        isBreakTime: (day, startTime, endTime) => {
+          if (ignoreConfiguredBreaks) return false;
+
+          const start = timeToMinutes(startTime);
+          const end = timeToMinutes(endTime);
+          for (let slotStart = start; slotStart < end; slotStart += 30) {
+            const slotEnd = Math.min(slotStart + 30, end);
             if (
-              category === "full_time" &&
-              (!isWeekday(day) || !isWithinDaytime(startTime, endTime))
+              isBreakTime(
+                day,
+                `${formatRepairTime(slotStart)} - ${formatRepairTime(slotEnd)}`,
+                breakPeriods,
+              )
             ) {
-              return false;
+              return true;
             }
-            if (
-              category === "part_time" &&
-              !teacherPrefersTime(teacher, day, startTime, endTime)
-            ) {
-              return false;
-            }
-            if (
-              category === "part_time_full_load" &&
-              (teacher.preferences?.preferred_times?.length ?? 0) > 0 &&
-              !teacherPrefersTime(teacher, day, startTime, endTime)
-            ) {
-              return false;
-            }
-            return true;
-          },
-          hasAdditionalConflict: (first, second) =>
-            !!first.courseCode && first.courseCode === second.courseCode,
-          isBreakTime: (day, startTime, endTime) => {
-            const start = timeToMinutes(startTime);
-            const end = timeToMinutes(endTime);
-            for (let slotStart = start; slotStart < end; slotStart += 30) {
-              const slotEnd = Math.min(slotStart + 30, end);
-              if (
-                isBreakTime(
-                  day,
-                  `${formatRepairTime(slotStart)} - ${formatRepairTime(slotEnd)}`,
-                  breakPeriods,
-                )
-              ) {
-                return true;
-              }
-            }
-            return false;
-          },
-          getRooms: (entry) => {
-            const subject = subjectsById.get(entry.subjectId);
-            const compatibleRooms = getFilteredRooms(
-              entry.componentType,
-              roomsResult.data as RoomForGeneration[],
-              subject?.lab_type,
-              lectureRoomTypeId,
-            );
-            const teacher = entry.teacherId
-              ? teacherInfoMap.get(entry.teacherId)
-              : undefined;
-            const preferredRoom = findPreferredRoom(
-              compatibleRooms,
-              teacher?.preferences?.preferred_rooms || [],
-            );
-            const orderedRooms = preferredRoom
-              ? [
-                  preferredRoom,
-                  ...compatibleRooms.filter(
-                    (room) => room.room_id !== preferredRoom.room_id,
-                  ),
-                ]
-              : compatibleRooms;
-            return orderedRooms.map((room) => ({
-              roomId: room.room_id,
-              roomName: room.room_name || "Unassigned Room",
-            }));
-          },
+          }
+          return false;
         },
-      );
-      const validation = validateGeneratedSchedule(
-        repair.entries,
-        requirementsResult.assignments,
-      );
-      const hasValidationIssues = Object.values(validation).some(
-        (issues) => issues.length > 0,
-      );
+        getRooms: (entry) => {
+          const subject = subjectsById.get(entry.subjectId);
+          const compatibleRooms = getFilteredRooms(
+            entry.componentType,
+            roomsResult.data as RoomForGeneration[],
+            subject?.lab_type,
+            lectureRoomTypeId,
+          );
+          const teacher = entry.teacherId
+            ? teacherInfoMap.get(entry.teacherId)
+            : undefined;
+          const preferredRooms = teacher?.preferences?.preferred_rooms || [];
+          const category = teacher ? getEmploymentCategory(teacher) : null;
+          const orderedRooms =
+            category === "full_time" && preferredRooms.length > 0
+              ? findPreferredRooms(compatibleRooms, preferredRooms)
+              : (() => {
+                  const preferredRoom = findPreferredRoom(
+                    compatibleRooms,
+                    preferredRooms,
+                  );
+                  return preferredRoom
+                    ? [
+                        preferredRoom,
+                        ...compatibleRooms.filter(
+                          (room) => room.room_id !== preferredRoom.room_id,
+                        ),
+                      ]
+                    : compatibleRooms;
+                })();
+          return orderedRooms.map((room) => ({
+            roomId: room.room_id,
+            roomName: room.room_name || "Unassigned Room",
+          }));
+        },
+      });
 
-      if (!repair.complete || hasValidationIssues) {
-        return {
-          success: false,
-          scheduleEntries: repair.entries,
-          error: hasValidationIssues
-            ? formatGeneratedScheduleValidationError(validation)
-            : "Could not place every required class component after retrying the schedule.",
-        };
+      const repairStages = [
+        {
+          description: "configured breaks and fatigue limits",
+          ignoreConfiguredBreaks: false,
+          ignoreFatigue: false,
+        },
+        {
+          description: "without configured breaks",
+          ignoreConfiguredBreaks: true,
+          ignoreFatigue: false,
+        },
+        {
+          description: "without configured breaks or fatigue limits",
+          ignoreConfiguredBreaks: true,
+          ignoreFatigue: true,
+        },
+      ];
+      let lastRepair: {
+        entries: ScheduleEntry[];
+        complete: boolean;
+        movedEntries: number;
+      } | null = null;
+      let lastValidation = initialValidation;
+
+      for (const stage of repairStages) {
+        const repair = repairGeneratedSchedule(
+          preferredRoomEntries,
+          requiredEntries,
+          createRepairOptions(
+            stage.ignoreConfiguredBreaks,
+            stage.ignoreFatigue,
+          ),
+        );
+        const validation = validateGeneratedSchedule(
+          repair.entries,
+          requirementsResult.assignments,
+        );
+        const hasValidationIssues = Object.values(validation).some(
+          (issues) => issues.length > 0,
+        );
+        lastRepair = repair;
+        lastValidation = validation;
+
+        if (repair.complete && !hasValidationIssues) {
+          console.info(
+            `Schedule repair succeeded ${stage.description}; moved ${repair.movedEntries} entries.`,
+          );
+          return { success: true, scheduleEntries: repair.entries };
+        }
       }
 
-      console.info(
-        `Schedule repair completed after retrying class placement; moved ${repair.movedEntries} entries.`,
+      const swappedEntries = trySwapSectionScheduleDays(
+        lastRepair?.entries || preferredRoomEntries,
+        days,
+        isRepairTimeAllowed,
+        (candidate) => {
+          const validation = validateGeneratedSchedule(
+            candidate,
+            requirementsResult.assignments,
+          );
+          return Object.values(validation).every(
+            (issues) => issues.length === 0,
+          );
+        },
+        (first, second) =>
+          !!first.courseCode && first.courseCode === second.courseCode,
       );
-      return { success: true, scheduleEntries: repair.entries };
+
+      if (swappedEntries) {
+        console.info(
+          "Schedule repair succeeded after swapping days within a section.",
+        );
+        return { success: true, scheduleEntries: swappedEntries };
+      }
+
+      return {
+        success: false,
+        scheduleEntries: lastRepair?.entries || preferredRoomEntries,
+        error: Object.values(lastValidation).some((issues) => issues.length > 0)
+          ? formatGeneratedScheduleValidationError(lastValidation)
+          : "Could not place every required class component after retrying with relaxed break and fatigue constraints.",
+      };
     }
 
     return validateAndFinalizeSchedule(finalEntries);

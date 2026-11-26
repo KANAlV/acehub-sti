@@ -10,7 +10,6 @@ import {
     ModalBody,
     ModalFooter,
     ModalHeader,
-    Pagination,
     Progress,
     Select,
     Spinner,
@@ -24,6 +23,7 @@ import {
     Toast,
     ToastToggle,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
     createRoom,
     deleteRoom,
@@ -926,21 +926,14 @@ export default function RoomsManagement() {
                 </Card>
 
                 {/* Pagination Container */}
-                <div
-                    className={`mt-4 ${
-                        isLoading
-                            ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed"
-                            : ""
-                    } flex w-full justify-center`}
-                >
-                    <Pagination
-                        layout="pagination"
-                        currentPage={currentRoomPage || 1}
-                        totalPages={Math.ceil(roomsCount / MAX_ROW_ROOM) || 1}
-                        onPageChange={onPageChangeRooms}
-                        showIcons
-                    />
-                </div>
+                <TablePaginationFooter
+                    className="mt-4"
+                    currentPage={currentRoomPage || 1}
+                    pageSize={MAX_ROW_ROOM}
+                    totalCount={roomsCount}
+                    onPageChange={onPageChangeRooms}
+                    isLoading={isLoading}
+                />
             </div>
 
             {/* Modal: Consolidated Excel Operations */}

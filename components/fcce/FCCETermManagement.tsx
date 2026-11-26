@@ -10,7 +10,6 @@ import {
   TableRow,
   TableCell,
   TextInput,
-  Pagination,
   Spinner,
   Card,
   Button,
@@ -26,6 +25,7 @@ import {
   ToastToggle,
   Progress,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { HiSearch, HiX, HiChevronRight, HiCheck, HiExclamation } from "react-icons/hi";
 import { FaSortUp, FaSortDown, FaPlus } from "react-icons/fa6";
 import { useMsal } from "@azure/msal-react";
@@ -429,15 +429,13 @@ export default function FCCETermManagement() {
         </Table>
       </Card>
 
-      <div className="mt-4 flex justify-center">
-        <Pagination
-          layout="pagination"
-          currentPage={currentPage}
-          totalPages={Math.ceil(academicYears.length / maxRow) || 1}
-          onPageChange={(p) => setCurrentPage(p)}
-          showIcons
-        />
-      </div>
+      <TablePaginationFooter
+        className="mt-4"
+        currentPage={currentPage}
+        pageSize={maxRow}
+        totalCount={academicYears.length}
+        onPageChange={(p) => setCurrentPage(p)}
+      />
 
       {/* --- MODAL: ADD ACADEMIC YEAR --- */}
       <Modal show={openAddAyModal} onClose={handleCloseModals}>

@@ -9,7 +9,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Select,
   Spinner,
   Table,
@@ -25,6 +24,7 @@ import {
   FileInput,
   Progress,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { useEffect, useRef, useState } from "react";
 import {
   FaGraduationCap,
@@ -601,8 +601,6 @@ export default function TeacherAQs() {
 
     return matchesEmployment && matchesSearch;
   });
-
-  const totalPages = Math.ceil(teachersCount / limit) || 1;
 
   function closeAqAddModal() {
     setIsAddAQOpen(false);
@@ -1692,14 +1690,13 @@ export default function TeacherAQs() {
               )}
             </div>
 
-            <div className="flex items-center justify-center pt-4">
-              <Pagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={(p) => setCurrentPage(p)}
-                showIcons
-              />
-            </div>
+            <TablePaginationFooter
+              className="pt-4"
+              currentPage={currentPage}
+              pageSize={limit}
+              totalCount={teachersCount}
+              onPageChange={(p) => setCurrentPage(p)}
+            />
           </div>
         </div>
 

@@ -11,7 +11,6 @@ import {
   Button,
   TextInput,
   Select,
-  Pagination,
   Spinner,
   Toast,
   ToastToggle,
@@ -28,6 +27,7 @@ import {
   DropdownItem,
   useThemeMode,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   HiSearch,
   HiX,
@@ -838,8 +838,6 @@ export default function TeacherPreassignmentManagement({
     }
   }
 
-  const totalPages = Math.ceil(totalCount / maxRow) || 1;
-
   // Add Curriculum Helper
   const handleAddCurriculum = (input: CurriculumRecord) => {
     setCurriculaSearch("");
@@ -1380,16 +1378,13 @@ export default function TeacherPreassignmentManagement({
         </div>
 
         {/* Pagination Footer */}
-        {!isLoading && totalPages > 0 && (
-          <div className="flex w-full justify-center">
-            <Pagination
-              layout="pagination"
-              currentPage={currentPage || 1}
-              totalPages={totalPages}
-              onPageChange={(p) => setCurrentPage(p)}
-              showIcons
-            />
-          </div>
+        {!isLoading && (
+          <TablePaginationFooter
+            currentPage={currentPage || 1}
+            pageSize={maxRow}
+            totalCount={totalCount}
+            onPageChange={(p) => setCurrentPage(p)}
+          />
         )}
 
         {/* Toast Notification */}

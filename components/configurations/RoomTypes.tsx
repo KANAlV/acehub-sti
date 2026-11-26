@@ -8,7 +8,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Progress,
   Spinner,
   Table,
@@ -21,6 +20,7 @@ import {
   Toast,
   ToastToggle,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   RoomType,
   createRoomType,
@@ -421,22 +421,14 @@ export default function RoomTypes() {
       </Card>
 
       {/* --- Pagination --- */}
-      <div
-        className={`mt-4 ${
-          isLoading
-            ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed"
-            : ""
-        } flex w-full justify-center`}
-      >
-        <Pagination
-          layout="table"
-          currentPage={currentPage ? currentPage : 1}
-          itemsPerPage={maxRows}
-          totalItems={roomTypeCount ? roomTypeCount : 1}
-          onPageChange={onPageChange}
-          showIcons
-        />
-      </div>
+      <TablePaginationFooter
+        className="mt-4"
+        currentPage={currentPage || 1}
+        pageSize={maxRows}
+        totalCount={roomTypeCount}
+        onPageChange={onPageChange}
+        isLoading={isLoading}
+      />
 
       {/* --- Modals --- */}
       {/* --- Add Modal --- */}

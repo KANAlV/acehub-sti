@@ -9,7 +9,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Progress,
   Spinner,
   Table,
@@ -22,6 +21,7 @@ import {
   Toast,
   ToastToggle,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   createRole,
   deleteRole,
@@ -517,18 +517,14 @@ export default function RolesManagement() {
       </Card>
 
       {/* --- Pagination --- */}
-      <div
-        className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
-      >
-        <Pagination
-          layout="table"
-          currentPage={currentRolePage || 1}
-          itemsPerPage={maxRowRole}
-          totalItems={rolesCount || 1}
-          onPageChange={onPageChangeRoles}
-          showIcons
-        />
-      </div>
+      <TablePaginationFooter
+        className="mt-4"
+        currentPage={currentRolePage || 1}
+        pageSize={maxRowRole}
+        totalCount={rolesCount}
+        onPageChange={onPageChangeRoles}
+        isLoading={isLoading}
+      />
 
       {/* --- Add Role Modal --- */}
       <Modal show={openAddRoleModal} onClose={handleCloseRoleModals} size="lg">

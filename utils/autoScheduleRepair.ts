@@ -18,6 +18,8 @@ export interface RepairScheduleOptions<T extends GeneratedScheduleEntry> {
   isBreakTime: (day: string, startTime: string, endTime: string) => boolean;
   getRooms: (entry: T) => RepairRoom[];
   hasAdditionalConflict?: (first: T, second: T) => boolean;
+  hasAdditionalEntryConflict?: (candidate: T, occupied: T[]) => boolean;
+  getAdditionalConflictEntries?: (entries: T[]) => T[];
   forceMoveSubjectIds?: Set<string>;
 }
 
@@ -52,6 +54,72 @@ function componentKey(entry: GeneratedScheduleEntry): string {
   return `${entry.sectionCode}|${entry.subjectId}|${entry.componentType}`;
 }
 
+export function getFatigueRiskEntries<T extends GeneratedScheduleEntry>(
+  entries: T[],
+): T[] {
+  const entriesByTeacherAndDay = new Map<string, T[]>();
+  for (const entry of entries) {
+    if (!entry.teacherId) continue;
+    const key = `${entry.teacherId}|${entry.day.trim().toLowerCase()}`;
+    const teacherDayEntries = entriesByTeacherAndDay.get(key) || [];
+    teacherDayEntries.push(entry);
+    entriesByTeacherAndDay.set(key, teacherDayEntries);
+  }
+
+  const fatigueRiskEntries = new Set<T>();
+  for (const teacherDayEntries of entriesByTeacherAndDay.values()) {
+    const orderedEntries = teacherDayEntries
+      .map((entry) => ({
+        entry,
+        start: parseTime(entry.startTime),
+        end: parseTime(entry.endTime),
+      }))
+      .filter(
+        (timedEntry) =>
+          timedEntry.start !== null &&
+          timedEntry.end !== null &&
+          timedEntry.end > timedEntry.start,
+      )
+      .sort((first, second) => first.start! - second.start!);
+
+    let consecutiveEntries: T[] = [];
+    let consecutiveMinutes = 0;
+    let previousEnd: number | null = null;
+    for (const timedEntry of orderedEntries) {
+      const start = timedEntry.start!;
+      const end = timedEntry.end!;
+      if (previousEnd === null || start - previousEnd >= 30) {
+        consecutiveEntries = [];
+        consecutiveMinutes = 0;
+      }
+
+      consecutiveEntries.push(timedEntry.entry);
+      consecutiveMinutes += end - start;
+      if (consecutiveMinutes > 240) {
+        consecutiveEntries.forEach((entry) => fatigueRiskEntries.add(entry));
+      }
+      previousEnd = end;
+    }
+  }
+
+  return [...fatigueRiskEntries];
+}
+
+export function hasFatigueRiskForEntry<T extends GeneratedScheduleEntry>(
+  entry: T,
+  otherEntries: T[],
+): boolean {
+  if (!entry.teacherId) return false;
+  const day = entry.day.trim().toLowerCase();
+  const sameTeacherAndDay = otherEntries.filter(
+    (otherEntry) =>
+      otherEntry !== entry &&
+      otherEntry.teacherId === entry.teacherId &&
+      otherEntry.day.trim().toLowerCase() === day,
+  );
+  return getFatigueRiskEntries([...sameTeacherAndDay, entry]).includes(entry);
+}
+
 function intervalsOverlap(
   first: TimedEntry<GeneratedScheduleEntry>,
   second: TimedEntry<GeneratedScheduleEntry>,
@@ -84,6 +152,7 @@ function entriesConflict<T extends GeneratedScheduleEntry>(
 function hasScheduleConflicts<T extends GeneratedScheduleEntry>(
   entries: T[],
   hasAdditionalConflict?: (first: T, second: T) => boolean,
+  getAdditionalConflictEntries?: (entries: T[]) => T[],
 ): boolean {
   const timedEntries: TimedEntry<T>[] = [];
   for (const entry of entries) {
@@ -113,7 +182,119 @@ function hasScheduleConflicts<T extends GeneratedScheduleEntry>(
     }
   }
 
-  return false;
+  return (getAdditionalConflictEntries?.(entries).length ?? 0) > 0;
+}
+
+export function trySwapSectionScheduleDays<T extends GeneratedScheduleEntry>(
+  entries: T[],
+  days: string[],
+  isTimeAllowed: (
+    entry: T,
+    day: string,
+    startTime: string,
+    endTime: string,
+  ) => boolean,
+  isValidSchedule: (entries: T[]) => boolean,
+  hasAdditionalConflict?: (first: T, second: T) => boolean,
+): T[] | null {
+  const daysToSwapBySection = new Map<string, Set<string>>();
+  const markDayForSwap = (sectionCode: string, day: string) => {
+    const sectionDays =
+      daysToSwapBySection.get(sectionCode) || new Set<string>();
+    sectionDays.add(day);
+    daysToSwapBySection.set(sectionCode, sectionDays);
+  };
+
+  const timedEntries = entries.flatMap((entry) => {
+    const start = parseTime(entry.startTime);
+    const end = parseTime(entry.endTime);
+    return start === null || end === null || end <= start
+      ? []
+      : [{ entry, start, end }];
+  });
+  for (let firstIndex = 0; firstIndex < timedEntries.length; firstIndex++) {
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < timedEntries.length;
+      secondIndex++
+    ) {
+      const first = timedEntries[firstIndex];
+      const second = timedEntries[secondIndex];
+      if (entriesConflict(first, second, hasAdditionalConflict)) {
+        markDayForSwap(first.entry.sectionCode, first.entry.day);
+        markDayForSwap(second.entry.sectionCode, second.entry.day);
+      }
+    }
+  }
+
+  entries.forEach((entry) => {
+    if (!isTimeAllowed(entry, entry.day, entry.startTime, entry.endTime)) {
+      markDayForSwap(entry.sectionCode, entry.day);
+    }
+  });
+
+  for (const [sectionCode, daysToSwap] of daysToSwapBySection) {
+    const sectionDays = days.filter((day) =>
+      entries.some(
+        (entry) => entry.sectionCode === sectionCode && entry.day === day,
+      ),
+    );
+
+    for (
+      let firstDayIndex = 0;
+      firstDayIndex < sectionDays.length;
+      firstDayIndex++
+    ) {
+      for (
+        let secondDayIndex = firstDayIndex + 1;
+        secondDayIndex < sectionDays.length;
+        secondDayIndex++
+      ) {
+        const firstDay = sectionDays[firstDayIndex];
+        const secondDay = sectionDays[secondDayIndex];
+        if (!daysToSwap.has(firstDay) && !daysToSwap.has(secondDay)) continue;
+        const sectionEntries = entries.filter(
+          (entry) =>
+            entry.sectionCode === sectionCode &&
+            (entry.day === firstDay || entry.day === secondDay),
+        );
+        const candidate = entries.map((entry) => {
+          if (
+            entry.sectionCode !== sectionCode ||
+            (entry.day !== firstDay && entry.day !== secondDay)
+          ) {
+            return entry;
+          }
+
+          return {
+            ...entry,
+            day: entry.day === firstDay ? secondDay : firstDay,
+          } as T;
+        });
+        const timeRulesSatisfied = sectionEntries.every((entry) => {
+          const swappedDay = entry.day === firstDay ? secondDay : firstDay;
+          return isTimeAllowed(
+            entry,
+            swappedDay,
+            entry.startTime,
+            entry.endTime,
+          );
+        });
+
+        if (
+          !timeRulesSatisfied ||
+          hasScheduleConflicts(candidate, hasAdditionalConflict) ||
+          !isValidSchedule(candidate)
+        ) {
+          continue;
+        }
+
+        return candidate;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
@@ -138,6 +319,10 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
       targets.add(index);
     }
     if (options.forceMoveSubjectIds?.has(entry.subjectId)) targets.add(index);
+  });
+  options.getAdditionalConflictEntries?.(entries).forEach((entry) => {
+    const index = entries.indexOf(entry);
+    if (index >= 0) targets.add(index);
   });
 
   const timedEntries = entries.flatMap((entry, index) => {
@@ -244,7 +429,12 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
               )
             );
           });
-          if (conflicts) continue;
+          if (
+            conflicts ||
+            options.hasAdditionalEntryConflict?.(candidate, occupied)
+          ) {
+            continue;
+          }
 
           const sameDayPenalty = day === originalDay ? 0 : 1440 + dayIndex * 5;
           const roomPenalty = room.roomId === entry.roomId ? 0 : 5;
@@ -291,6 +481,7 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
           end > start &&
           roomStillExists &&
           !options.isBreakTime(entry.day, entry.startTime, entry.endTime) &&
+          !options.hasAdditionalEntryConflict?.(entry, placed) &&
           options.isTimeAllowed(
             entry,
             entry.day,
@@ -340,7 +531,11 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
         (entry) => componentKey(entry) === componentKey(required),
       ),
     ) &&
-    !hasScheduleConflicts(targetedAttempt, options.hasAdditionalConflict)
+    !hasScheduleConflicts(
+      targetedAttempt,
+      options.hasAdditionalConflict,
+      options.getAdditionalConflictEntries,
+    )
   ) {
     return {
       entries: targetedAttempt,
@@ -370,7 +565,11 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
       requiredEntries.every((required) =>
         attempt.some((entry) => componentKey(entry) === componentKey(required)),
       ) &&
-      !hasScheduleConflicts(attempt, options.hasAdditionalConflict)
+      !hasScheduleConflicts(
+        attempt,
+        options.hasAdditionalConflict,
+        options.getAdditionalConflictEntries,
+      )
     ) {
       if (
         !bestCompleteAttempt ||

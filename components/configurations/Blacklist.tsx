@@ -7,7 +7,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Progress,
   Spinner,
   Table,
@@ -20,6 +19,7 @@ import {
   Toast,
   ToastToggle,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   deleteUser,
   fetchBlacklist,
@@ -462,18 +462,14 @@ export default function BlacklistManagement() {
       </Card>
 
       {/* Pagination */}
-      <div
-        className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
-      >
-        <Pagination
-          layout="table"
-          currentPage={currentUserPage || 1}
-          itemsPerPage={maxRowUser}
-          totalItems={blacklistCount || 1}
-          onPageChange={onPageChange}
-          showIcons
-        />
-      </div>
+      <TablePaginationFooter
+        className="mt-4"
+        currentPage={currentUserPage || 1}
+        pageSize={maxRowUser}
+        totalCount={blacklistCount}
+        onPageChange={onPageChange}
+        isLoading={isLoading}
+      />
 
       {/* --- Unblacklist Confirmation Modal --- */}
       <Modal show={openRemoveModal} size="md" onClose={handleCloseModal} popup>

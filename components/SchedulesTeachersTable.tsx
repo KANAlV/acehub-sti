@@ -19,7 +19,6 @@ import {
   Modal,
   ModalBody,
   ModalHeader,
-  Pagination,
   Progress,
   Select,
   Spinner,
@@ -35,6 +34,7 @@ import {
   Tooltip,
   useThemeMode,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   HiCheck,
   HiChevronRight,
@@ -884,21 +884,14 @@ export default function SchedulesTeachersTable({
           </Card>
 
           {/* Pagination Container */}
-          <div
-            className={`mt-4 ${
-              isLoading
-                ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed"
-                : ""
-            } flex w-full justify-center`}
-          >
-            <Pagination
-              layout="pagination"
-              currentPage={currentTeacherPage || 1}
-              totalPages={Math.ceil(teachersCount / maxRowTeacher) || 1}
-              onPageChange={onPageChangeTeachers}
-              showIcons
-            />
-          </div>
+          <TablePaginationFooter
+            className="mt-4"
+            currentPage={currentTeacherPage || 1}
+            pageSize={maxRowTeacher}
+            totalCount={teachersCount}
+            onPageChange={onPageChangeTeachers}
+            isLoading={isLoading}
+          />
         </>
       )}
 

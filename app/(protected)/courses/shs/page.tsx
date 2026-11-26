@@ -8,7 +8,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Progress,
   Spinner,
   Table,
@@ -22,6 +21,7 @@ import {
   ToastToggle,
   FileInput,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   FaPlus,
   FaSortDown,
@@ -870,18 +870,14 @@ export default function SHSProgramsManagement() {
         </Card>
 
         {/* --- Pagination --- */}
-        <div
-          className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
-        >
-          <Pagination
-            layout="table"
-            currentPage={currentProgramPage || 1}
-            itemsPerPage={maxRowPrograms}
-            totalItems={programsCount || 1}
-            onPageChange={onPageChangePrograms}
-            showIcons
-          />
-        </div>
+        <TablePaginationFooter
+          className="mt-4"
+          currentPage={currentProgramPage || 1}
+          pageSize={maxRowPrograms}
+          totalCount={programsCount}
+          onPageChange={onPageChangePrograms}
+          isLoading={isLoading}
+        />
       </div>
 
       {/* --- MODAL: EXCEL OPERATIONS --- */}

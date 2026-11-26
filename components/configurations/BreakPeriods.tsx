@@ -8,7 +8,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Progress,
   Select,
   Spinner,
@@ -22,6 +21,7 @@ import {
   Toast,
   ToastToggle,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   createBreakPeriod,
   deleteBreakPeriod,
@@ -656,17 +656,14 @@ export default function BreakPeriods() {
       </Card>
 
       {/* break periods pagination */}
-      <div
-        className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
-      >
-        <Pagination
-          layout="pagination"
-          currentPage={currentBreakPeriodPage ? currentBreakPeriodPage : 1}
-          totalPages={Math.ceil(breakPeriodsCount / maxRowBreakPeriod) || 1}
-          onPageChange={onPageChangeBreakPeriods}
-          showIcons
-        />
-      </div>
+      <TablePaginationFooter
+        className="mt-4"
+        currentPage={currentBreakPeriodPage || 1}
+        pageSize={maxRowBreakPeriod}
+        totalCount={breakPeriodsCount}
+        onPageChange={onPageChangeBreakPeriods}
+        isLoading={isLoading}
+      />
 
       {/* --- Modals --- */}
       {/* --- Add Break Modal --- */}

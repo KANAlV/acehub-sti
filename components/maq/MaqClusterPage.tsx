@@ -9,7 +9,6 @@ import {
   TableHeadCell,
   TableRow,
   TextInput,
-  Pagination,
   Spinner,
   Badge,
   Toast,
@@ -26,6 +25,7 @@ import {
   FileInput,
   useThemeMode,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   HiSearch,
   HiChevronUp,
@@ -56,8 +56,10 @@ import {
 } from "@/app/actions/system";
 import {
   filterAlphanumericDashUnderscoreComma,
-  filterAlphaUnderscore,
+  filterMAQQualification,
   filterMAQCluster,
+  isValidMAQQualification,
+  MAQ_QUALIFICATION_MAX_LENGTH,
 } from "@/utils/validation";
 import { useMsal } from "@azure/msal-react";
 import ExcelJS from "exceljs";
@@ -247,7 +249,10 @@ export default function MaqClusterPage() {
 
   // Validate AQ Search Input state whenever typing occurs
   const handleAqInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const filtered = filterAlphaUnderscore(e.target.value).slice(0, 50);
+    const filtered = filterMAQQualification(e.target.value).slice(
+        0,
+        MAQ_QUALIFICATION_MAX_LENGTH,
+    );
     setAqSearchInput(filtered);
 
     const trimmed = filtered.trim();
@@ -268,7 +273,7 @@ export default function MaqClusterPage() {
   // Add Custom AQ item when no matches exist
   const handleAddCustomAq = useCallback(() => {
     const trimmed = aqSearchInput.trim();
-    if (trimmed && !selectedEntries.includes(trimmed)) {
+    if (isValidMAQQualification(trimmed) && !selectedEntries.includes(trimmed)) {
       setSelectedEntries((prev) => [...prev, trimmed]);
     }
     setAqSearchInput("");
@@ -331,6 +336,14 @@ export default function MaqClusterPage() {
       return;
     }
 
+    if (selectedEntries.some((aq) => !isValidMAQQualification(aq))) {
+      triggerToast(
+          `Each Academic Qualification must be valid and no longer than ${MAQ_QUALIFICATION_MAX_LENGTH} characters.`,
+          "warning",
+      );
+      return;
+    }
+
     setIsSubmitting(true);
 
     const res = await createMaqCluster(actor, clusterNameInput.trim());
@@ -358,6 +371,14 @@ export default function MaqClusterPage() {
     }
 
     if (selectedEntries.length === 0) {
+      return;
+    }
+
+    if (selectedEntries.some((aq) => !isValidMAQQualification(aq))) {
+      triggerToast(
+          `Each Academic Qualification must be valid and no longer than ${MAQ_QUALIFICATION_MAX_LENGTH} characters.`,
+          "warning",
+      );
       return;
     }
 
@@ -613,12 +634,13 @@ export default function MaqClusterPage() {
         let hasInvalidAq = false;
 
         for (const aq of rawAqList) {
-          const cleanedAq = filterAlphaUnderscore(aq).trim();
-          if (!cleanedAq || cleanedAq !== aq || /\s/.test(aq)) {
+          if (!isValidMAQQualification(aq)) {
             hasInvalidAq = true;
             break;
           }
-          validAqs.push(cleanedAq);
+          validAqs.push(
+              filterMAQQualification(aq).trim(),
+          );
         }
 
         if (hasInvalidAq || validAqs.length === 0) {
@@ -668,8 +690,6 @@ export default function MaqClusterPage() {
   const isFormInvalid = useMemo(() => {
     return !clusterNameInput.trim() || selectedEntries.length === 0;
   }, [clusterNameInput, selectedEntries]);
-
-  const totalPages = useMemo(() => Math.ceil(totalCount / pageSize) || 1, [totalCount, pageSize]);
 
   return (
       <div className="space-y-4 p-4">
@@ -848,33 +868,13 @@ export default function MaqClusterPage() {
         </div>
 
         {/* Pagination Footer */}
-        {!loading && totalCount > 0 && (
-            <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            Showing{" "}
-            <span className="font-semibold text-gray-900 dark:text-white">
-              {(currentPage - 1) * pageSize + 1}
-            </span>{" "}
-            to{" "}
-            <span className="font-semibold text-gray-900 dark:text-white">
-              {Math.min(currentPage * pageSize, totalCount)}
-            </span>{" "}
-            of{" "}
-            <span className="font-semibold text-gray-900 dark:text-white">
-              {totalCount}
-            </span>{" "}
-            entries
-          </span>
-
-              {totalPages > 1 && (
-                  <Pagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      onPageChange={(page) => setCurrentPage(page)}
-                      showIcons
-                  />
-              )}
-            </div>
+        {!loading && (
+          <TablePaginationFooter
+            currentPage={currentPage}
+            pageSize={pageSize}
+            totalCount={totalCount}
+            onPageChange={(page) => setCurrentPage(page)}
+          />
         )}
 
         {/* MODAL: EXCEL OPERATIONS */}
@@ -963,7 +963,7 @@ export default function MaqClusterPage() {
 
                     <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
                       <span className="font-semibold uppercase tracking-wide">Format Standard:</span> Headers must strictly contain{" "}
-                      <b>Cluster Name</b> and <b>Academic Qualifications</b> (comma-separated valid codes without spaces/illegal symbols).
+                      <b>Cluster Name</b> and <b>Academic Qualifications</b>. Use commas only to separate entries; qualification names may include spaces and common punctuation.
                     </div>
 
                     {formatError && (
@@ -1099,7 +1099,7 @@ export default function MaqClusterPage() {
                     <Label>Academic Qualifications</Label>
                     <div className="flex items-center gap-3">
                   <span className="text-xs text-gray-400 dark:text-gray-500">
-                    {aqSearchInput.length}/50
+                    {aqSearchInput.length}/{MAQ_QUALIFICATION_MAX_LENGTH}
                   </span>
                     </div>
                   </div>
@@ -1113,7 +1113,7 @@ export default function MaqClusterPage() {
                         <TextInput
                             placeholder="Type to search qualifications..."
                             value={aqSearchInput}
-                            maxLength={50}
+                            maxLength={MAQ_QUALIFICATION_MAX_LENGTH}
                             onChange={handleAqInputChange}
                             onFocus={() => {
                               if (aqSearchInput.trim().length > 0) {

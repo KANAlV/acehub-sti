@@ -2573,7 +2573,8 @@ export type TeacherStatusFilter =
   | "On Leave"
   | "Inactive"
   | "Archived (Soft-Deleted)"
-  | "Archived";
+  | "Archived"
+  | "All Statuses";
 
 export interface TeacherInput {
   pscs_id?: string | null;

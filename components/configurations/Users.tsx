@@ -9,7 +9,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Progress,
   Select,
   Spinner,
@@ -25,6 +24,7 @@ import {
   ToggleSwitch,
   Tooltip,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   addToBlacklist,
   createUser,
@@ -609,18 +609,14 @@ export default function UsersManagement() {
       </Card>
 
       {/* Pagination */}
-      <div
-        className={`mt-4 ${isLoading ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed" : ""} flex w-full justify-center`}
-      >
-        <Pagination
-          layout="table"
-          currentPage={currentUserPage ? currentUserPage : 1}
-          itemsPerPage={maxRowUser}
-          totalItems={usersCount ? usersCount : 1}
-          onPageChange={onPageChangeUsers}
-          showIcons
-        />
-      </div>
+      <TablePaginationFooter
+        className="mt-4"
+        currentPage={currentUserPage || 1}
+        pageSize={maxRowUser}
+        totalCount={usersCount}
+        onPageChange={onPageChangeUsers}
+        isLoading={isLoading}
+      />
 
       {/* --- Add User Modal --- */}
       <Modal show={openAddUserModal} onClose={handleCloseUserModals}>

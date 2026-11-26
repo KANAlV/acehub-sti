@@ -24,7 +24,6 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
-  Pagination,
   Spinner,
   Card,
   Toast,
@@ -33,6 +32,7 @@ import {
   ToggleSwitch,
   FileInput,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   HiSearch,
   HiX,
@@ -69,7 +69,7 @@ import {
   SubjectAQClusterRecord,
 } from "@/app/actions/system";
 
-import { filterCurricula, filterCourseCode, filterCourseName, validateYearSemester, formatYearSemester, parseYearSemester } from "@/utils/validation";
+import { filterCurricula, filterCourseCode, filterSubjectCourseName, validateYearSemester, formatYearSemester, parseYearSemester } from "@/utils/validation";
 
 export interface ProgramRecord {
   program_code: string;
@@ -589,7 +589,7 @@ export default function SubjectsManagement() {
     }
 
     if (id === "course_name") {
-      const filtered = filterCourseName(value);
+      const filtered = filterSubjectCourseName(value);
       setCourseNameError(filtered.trim() === "" ? "Course name is required." : "");
       setFormData((prev) => ({ ...prev, course_name: filtered }));
       return;
@@ -1085,7 +1085,7 @@ export default function SubjectsManagement() {
             .replace(/\u00A0/g, " ")
             .replace(/\s+/g, " ")
             .trim();
-        const filteredName = filterCourseName(normalizedRawName);
+        const filteredName = filterSubjectCourseName(normalizedRawName);
         if (filteredName !== normalizedRawName) {
           logs.push(`Row ${rowNumber} (${rawCode}): Failed. Course name contains invalid characters. Only letters, numbers, spaces, and common symbols (-, (), ., ,, :, &, /, [], ') are allowed.`);
           failCount++;
@@ -1433,21 +1433,14 @@ export default function SubjectsManagement() {
           </Table>
         </Card>
 
-        <div
-          className={`mt-4 ${
-            isLoading
-              ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed"
-              : ""
-          } flex w-full justify-center`}
-        >
-          <Pagination
-            layout="pagination"
-            currentPage={currentPage || 1}
-            totalPages={Math.ceil(subjectsCount / maxRow) || 1}
-            onPageChange={(p) => setCurrentPage(p)}
-            showIcons
-          />
-        </div>
+        <TablePaginationFooter
+          className="mt-4"
+          currentPage={currentPage || 1}
+          pageSize={maxRow}
+          totalCount={subjectsCount}
+          onPageChange={(p) => setCurrentPage(p)}
+          isLoading={isLoading}
+        />
       </div>
 
       {/* --- MODAL: EXCEL OPERATIONS --- */}

@@ -9,7 +9,6 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Pagination,
   Progress,
   Select,
   Spinner,
@@ -26,6 +25,7 @@ import {
   useThemeMode,
   FileInput,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   FaPlus,
   FaSortDown,
@@ -140,7 +140,7 @@ export default function TeachersManagement() {
   const [sortTeachersDir, setSortTeachersDir] = useState("ASC");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<TeacherStatusFilter>(
-    "All Active & On Leave",
+    "All Statuses",
   );
   const [departmentFilter, setDepartmentFilter] =
     useState<string>("All Departments");
@@ -367,7 +367,7 @@ export default function TeachersManagement() {
       suffix: "",
       email: "j.resurreccion@alabang.sti.edu.ph",
       department: allDepartments[0] || "Information Technology",
-      employment_type: "Full-Time",
+      employment_type: "PT",
       status: "Active",
       availability: "Monday 8:00 AM-12:00 PM, Tuesday 1:00 PM-5:00 PM",
     });
@@ -403,7 +403,7 @@ export default function TeachersManagement() {
     worksheet.dataValidations.add("I2:I1000", {
       type: "list",
       allowBlank: false,
-      formulae: ['"Full-Time,Part-Time Full Load,Part-Time"'],
+      formulae: ['"Regular,FT,PTFL,PT"'],
       showErrorMessage: true,
       errorTitle: "Invalid Employment Type",
       error: "Please select a valid employment type from the dropdown.",
@@ -411,18 +411,18 @@ export default function TeachersManagement() {
 
     worksheet.dataValidations.add("J2:J1000", {
       type: "list",
-      allowBlank: true,
-      formulae: ['"Active,On Leave,Inactive"'],
+      allowBlank: false,
+      formulae: ['"Active,Archived"'],
       showErrorMessage: true,
       errorTitle: "Invalid Status",
-      error: "Please select a valid status from the dropdown. Leave blank for Active.",
+      error: "Please select a valid status from the dropdown.",
     });
 
     // Lock Availability column for Full-Time teachers; allow text input for Part-Time
     worksheet.dataValidations.add("K2:K1000", {
       type: "custom",
       allowBlank: true,
-      formulae: ["$I2<>\"Full-Time\""],
+      formulae: ['OR($I2="PTFL",$I2="PT")'],
       showErrorMessage: true,
       errorTitle: "Availability Not Allowed",
       error: "Only Part-Time teachers can have availability. Full-Time teachers have a default schedule.",
@@ -546,7 +546,7 @@ export default function TeachersManagement() {
       worksheet.dataValidations.add("J2:J1000", {
         type: "list",
         allowBlank: true,
-        formulae: ['"Active,On Leave,Inactive"'],
+        formulae: ['"Active,Archived"'],
       });
 
       // Lock Availability column for Full-Time teachers in export
@@ -666,6 +666,13 @@ export default function TeachersManagement() {
         availability: AvailabilitySlot[];
       }[] = [];
 
+      const employmentTypeAbbreviations: Record<string, string> = {
+        REGULAR: "Full-Time",
+        FT: "Full-Time",
+        PTFL: "Part-Time Full Load",
+        PT: "Part-Time",
+      };
+
       // Helper: extract plain text from an ExcelJS cell value (handles hyperlinks, rich text, null objects)
       const getCellValue = (val: import("exceljs").CellValue): string => {
         if (val === null || val === undefined) return "";
@@ -698,11 +705,12 @@ export default function TeachersManagement() {
         const availRaw = getCellValue(row.getCell(availCol).value).trim();
 
         const employment_typeTrimmed = employment_type.trim();
+        const mappedEmploymentType = employmentTypeAbbreviations[employment_typeTrimmed.toUpperCase()] || employment_typeTrimmed;
         const statusTrimmed = status.trim();
-        const normalizedEmployment = ["Full-Time", "Part-Time Full Load", "Part-Time"].includes(employment_typeTrimmed)
-          ? employment_typeTrimmed
+        const normalizedEmployment = ["Full-Time", "Part-Time Full Load", "Part-Time"].includes(mappedEmploymentType)
+          ? mappedEmploymentType
           : "Full-Time";
-        const normalizedStatus = ["Active", "On Leave", "Inactive"].includes(statusTrimmed) ? statusTrimmed : "Active";
+        const normalizedStatus = ["Active", "Archived"].includes(statusTrimmed) ? statusTrimmed : "Active";
         const isPartTime = ["Part-Time", "Part-Time Full Load"].includes(normalizedEmployment);
 
         // Parse availability for Part-Time teachers
@@ -1016,9 +1024,7 @@ export default function TeachersManagement() {
     const val = filterEmail(e.target.value).slice(0, 100);
     setInputEmail(val);
 
-    if (!val) {
-      setEmailError("Email is required.");
-    } else if (!validateEmailFormat(val)) {
+    if (val && !validateEmailFormat(val)) {
       setEmailError("Email must use the domain: @alabang.sti.edu.ph");
     } else {
       setEmailError("");
@@ -1054,9 +1060,7 @@ export default function TeachersManagement() {
     const val = filterEmail(e.target.value).slice(0, 100);
     editEmail(val);
 
-    if (!val) {
-      setEditEmailError("Email is required.");
-    } else if (!validateEmailFormat(val)) {
+    if (val && !validateEmailFormat(val)) {
       setEditEmailError("Email must use the domain: @alabang.sti.edu.ph");
     } else {
       setEditEmailError("");
@@ -1204,7 +1208,6 @@ export default function TeachersManagement() {
       !inputTeacherCode.trim() ||
       !inputFName.trim() ||
       !inputSurname.trim() ||
-      !inputEmail.trim() ||
       !inputDepartment.trim() ||
       !!pscsIdError ||
       !!teacherCodeError ||
@@ -1218,7 +1221,6 @@ export default function TeachersManagement() {
     inputTeacherCode,
     inputFName,
     inputSurname,
-    inputEmail,
     inputDepartment,
     pscsIdError,
     teacherCodeError,
@@ -1234,7 +1236,6 @@ export default function TeachersManagement() {
       !newTeacherCode.trim() ||
       !newFName.trim() ||
       !newSurname.trim() ||
-      !newEmail.trim() ||
       !newDepartment.trim() ||
       !!editPscsIdError ||
       !!editTeacherCodeError ||
@@ -1248,12 +1249,11 @@ export default function TeachersManagement() {
     newTeacherCode,
     newFName,
     newSurname,
-    newEmail,
     newDepartment,
     editPscsIdError,
     editTeacherCodeError,
     editFNameError,
-    editSurname,
+    editSurnameError,
     editEmailError,
     editDepartmentError,
   ]);
@@ -1682,22 +1682,9 @@ export default function TeachersManagement() {
               value={statusFilter}
               onChange={handleStatusFilterChange}
             >
-              <optgroup label="Active Statuses">
-                <option value="All Active & On Leave">
-                  All Active & On Leave
-                </option>
-                <option value="Active">Active</option>
-                <option value="On Leave">On Leave</option>
-              </optgroup>
-              <optgroup label="Inactive & Historical">
-                <option value="Inactive">Inactive</option>
-                <option value="Archived (Soft-Deleted)">
-                  Archived (Soft-Deleted)
-                </option>
-              </optgroup>
-              <optgroup label="Everything">
-                <option value="All Statuses">All Statuses</option>
-              </optgroup>
+              <option value="Active">Active</option>
+              <option value="Archived">Archived</option>
+              <option value="All Statuses">All Teachers</option>
             </Select>
           </div>
 
@@ -1963,21 +1950,14 @@ export default function TeachersManagement() {
       </Card>
 
       {/* Pagination Container */}
-      <div
-        className={`mt-4 ${
-          isLoading
-            ? "pointer-events-none opacity-50 [&_a]:cursor-not-allowed [&_button]:cursor-not-allowed"
-            : ""
-        } flex w-full justify-center`}
-      >
-        <Pagination
-          layout="pagination"
-          currentPage={currentTeacherPage || 1}
-          totalPages={Math.ceil(teachersCount / maxRowTeacher) || 1}
-          onPageChange={onPageChangeTeachers}
-          showIcons
-        />
-      </div>
+      <TablePaginationFooter
+        className="mt-4"
+        currentPage={currentTeacherPage || 1}
+        pageSize={maxRowTeacher}
+        totalCount={teachersCount}
+        onPageChange={onPageChangeTeachers}
+        isLoading={isLoading}
+      />
 
       {/* MODAL: EXCEL OPERATIONS */}
       <Modal show={openExcelModal} onClose={handleCloseTeacherModals} size="lg">
@@ -2206,7 +2186,7 @@ export default function TeachersManagement() {
             </div>
 
             <div className="sm:col-span-2">
-              <Label htmlFor="email">Email Address *</Label>
+              <Label htmlFor="email">Email Address</Label>
               <TextInput
                 id="email"
                 type="email"
@@ -2354,8 +2334,7 @@ export default function TeachersManagement() {
                 onChange={(e) => setInputStatus(e.target.value)}
               >
                 <option value="Active">Active</option>
-                <option value="On Leave">On Leave</option>
-                <option value="Inactive">Inactive</option>
+                <option value="Archived">Archived</option>
               </Select>
             </div>
 
@@ -2527,7 +2506,7 @@ export default function TeachersManagement() {
             </div>
 
             <div className="sm:col-span-2">
-              <Label htmlFor="edit_email">Email Address *</Label>
+              <Label htmlFor="edit_email">Email Address</Label>
               <TextInput
                 id="edit_email"
                 type="email"
@@ -2673,8 +2652,7 @@ export default function TeachersManagement() {
                 onChange={(e) => editStatus(e.target.value)}
               >
                 <option value="Active">Active</option>
-                <option value="On Leave">On Leave</option>
-                <option value="Inactive">Inactive</option>
+                <option value="Archived">Archived</option>
               </Select>
             </div>
 

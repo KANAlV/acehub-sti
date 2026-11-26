@@ -12,7 +12,6 @@ import {
   Button,
   TextInput,
   Select,
-  Pagination,
   Spinner,
   Card,
   Toast,
@@ -24,6 +23,7 @@ import {
   ModalFooter,
   FileInput,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   HiSearch,
   HiX,
@@ -587,15 +587,13 @@ export default function FcceTermDetailPage() {
           </Table>
         </Card>
 
-        <div className="mt-4 flex justify-center">
-          <Pagination
-              layout="pagination"
-              currentPage={currentPage}
-              totalPages={Math.ceil(recordsCount / maxRow) || 1}
-              onPageChange={(p) => setCurrentPage(p)}
-              showIcons
-          />
-        </div>
+        <TablePaginationFooter
+          className="mt-4"
+          currentPage={currentPage}
+          pageSize={maxRow}
+          totalCount={recordsCount}
+          onPageChange={(p) => setCurrentPage(p)}
+        />
 
         {/* --- MODAL: EXCEL OPERATIONS --- */}
         <Modal show={openExcelModal} onClose={() => setOpenExcelModal(false)} size="lg">

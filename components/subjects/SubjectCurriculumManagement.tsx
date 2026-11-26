@@ -17,13 +17,13 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
-  Pagination,
   Spinner,
   Card,
   Toast,
   ToastToggle,
   Progress,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { HiSearch, HiX, HiCheck, HiExclamation, HiChevronRight } from "react-icons/hi";
 import { FaPlus, FaSortUp, FaSortDown } from "react-icons/fa";
 import { useMsal } from "@azure/msal-react";
@@ -404,15 +404,13 @@ export default function SubjectCurriculumManagement() {
         </Table>
       </Card>
 
-      <div className="mt-4 flex w-full justify-center">
-        <Pagination
-          layout="pagination"
-          currentPage={currentPage}
-          totalPages={Math.ceil(totalCurricula / maxRow) || 1}
-          onPageChange={(p) => setCurrentPage(p)}
-          showIcons
-        />
-      </div>
+      <TablePaginationFooter
+        className="mt-4"
+        currentPage={currentPage}
+        pageSize={maxRow}
+        totalCount={totalCurricula}
+        onPageChange={(p) => setCurrentPage(p)}
+      />
 
       <Modal show={openAddCurriculumModal} onClose={handleCloseModals} size="md">
         <ModalHeader>Add New Curriculum</ModalHeader>

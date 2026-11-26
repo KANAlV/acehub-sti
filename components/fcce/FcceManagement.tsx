@@ -11,7 +11,6 @@ import {
     ModalBody,
     ModalFooter,
     ModalHeader,
-    Pagination,
     Progress,
     Select,
     Spinner,
@@ -28,6 +27,7 @@ import {
     Tooltip,
     FileInput,
 } from "flowbite-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
     archiveAllActiveFcce,
     createFcce,
@@ -1028,9 +1028,13 @@ export default function FcceManagement() {
                     </Card>
                 </div>
 
-                <div className="mt-4 flex justify-center">
-                    <Pagination layout="pagination" currentPage={currentFccePage} totalPages={Math.ceil(recordsCount / maxRowFcce) || 1} onPageChange={onPageChangeFcce} showIcons />
-                </div>
+                <TablePaginationFooter
+                    className="mt-4"
+                    currentPage={currentFccePage}
+                    pageSize={maxRowFcce}
+                    totalCount={recordsCount}
+                    onPageChange={onPageChangeFcce}
+                />
             </div>
 
             {/* --- MODAL: EXCEL OPERATIONS --- */}

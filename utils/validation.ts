@@ -42,6 +42,24 @@ export const filterAlphanumeric = (str: string): string =>
 export const filterAlphaUnderscore = (str: string): string =>
     str.replace(/[^a-zA-Z_ ]/g, "").replace(/\s+/g, " ");
 
+export const MAQ_QUALIFICATION_MAX_LENGTH = 250;
+
+/** MAQ qualifications allow descriptive text; commas stay reserved as the cluster import delimiter. */
+const MAQ_QUALIFICATION_PATTERN =
+    /^[a-zA-Z0-9_ ()\-.:&\/\[\]';+=]+$/;
+
+export const filterMAQQualification = (str: string): string =>
+    str.replace(/[^a-zA-Z0-9_ ()\-.:&\/\[\]';+=]/g, "").replace(/\s+/g, " ");
+
+export const isValidMAQQualification = (str: string): boolean => {
+    const value = str.trim();
+    return (
+        value.length > 0 &&
+        value.length <= MAQ_QUALIFICATION_MAX_LENGTH &&
+        MAQ_QUALIFICATION_PATTERN.test(value)
+    );
+};
+
 /**
  * Strips all non-alphanumeric characters (a-zA-Z0-9) and underscore, and collapse consecutive spaces into one.
  */
@@ -124,6 +142,12 @@ export const filterCourseName = (str: string): string =>
     str
         .replace(/[^a-zA-Z0-9 ()\-,.:&\/\[\]']/g, "")
         .replace(/[()\-,.:&\/\[\]']{2,}/g, (match: string): string => match[0])
+        .replace(/\s+/g, " ")
+        .trim();
+
+export const filterSubjectCourseName = (str: string): string =>
+    str
+        .replace(/[^a-zA-Z0-9 ()\-,.:&\/\[\]']/g, "")
         .replace(/\s+/g, " ")
         .trim();
 

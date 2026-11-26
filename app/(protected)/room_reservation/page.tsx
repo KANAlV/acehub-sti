@@ -14,6 +14,7 @@ import {
   HiChevronLeft,
   HiChevronRight,
   HiChevronUp,
+  HiArrowPath,
   HiCheck,
   HiTrash,
   HiXMark,
@@ -70,6 +71,10 @@ const TIMETABLE_ROW_HEIGHT = 44;
 const TIMETABLE_TIME_COLUMN_WIDTH = 96;
 const TIMETABLE_DAY_COUNT = 6;
 const RESERVATION_PAGE_SIZE = 5;
+const RESERVATION_DURATION_OPTIONS = Array.from(
+  { length: 24 },
+  (_, index) => (index + 1) * 30,
+);
 const BREAK_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const BREAK_WHOLE_WEEK = [...BREAK_WEEKDAYS, "Saturday"];
 const BREAK_DAY_OPTIONS = [
@@ -93,6 +98,13 @@ interface ReservationRoom extends RoomForGeneration {
   room_type_name: string | null;
 }
 
+interface ReservationPlacementDraft {
+  room_id: string | null;
+  day: string;
+  start_time: number | null;
+  end_time: number | null;
+}
+
 interface ExpandedBreakPeriod {
   break_id: string;
   day: string;
@@ -100,6 +112,8 @@ interface ExpandedBreakPeriod {
   end_time: number;
   break_description: string;
 }
+
+type ReservationAssignmentMode = "system-assisted" | "manual";
 
 function getCalendarDays(month: Date) {
   const firstOfMonth = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -185,6 +199,19 @@ function formatTime(minutes: number) {
     Math.floor(minutes / 60),
     minutes % 60,
   ).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function formatReservationDuration(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return [
+    hours ? `${hours} hr${hours === 1 ? "" : "s"}` : null,
+    remainingMinutes
+      ? `${remainingMinutes} min${remainingMinutes === 1 ? "" : "s"}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function timeStringToMinutes(time: string) {
@@ -453,11 +480,14 @@ function WeekTimetable({
   onClose,
   entries,
   reservations,
+  rooms,
   selectedRoom,
   selectedRoomId,
+  onRoomChange,
   onDropReservation,
   onReturnReschedule,
   isSavingReservation,
+  isLoadingRooms,
   roomError,
   breakPeriods,
   isLoading,
@@ -468,8 +498,10 @@ function WeekTimetable({
   onClose: () => void;
   entries: TimetableEntryRecord[];
   reservations: ReservationRecord[];
+  rooms: RoomForGeneration[];
   selectedRoom: string | null;
   selectedRoomId: string | null;
+  onRoomChange: (room: string) => void;
   onDropReservation: (
     reservationId: string,
     date: Date,
@@ -477,6 +509,7 @@ function WeekTimetable({
   ) => void;
   onReturnReschedule: (reservationId: string) => void;
   isSavingReservation: boolean;
+  isLoadingRooms: boolean;
   roomError: string | null;
   breakPeriods: BreakPeriodRecord[];
   isLoading: boolean;
@@ -570,49 +603,65 @@ function WeekTimetable({
         {error ||
           "Scheduled classes, break periods, and dated reservations are shown for the selected room."}
       </p>
-      <ul
-        aria-label="Timetable color legend"
-        className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-gray-600 dark:text-gray-300"
-      >
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-100 dark:border-blue-700 dark:bg-blue-950" />
-          Lecture
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950" />
-          Laboratory
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded border border-violet-300 bg-violet-100 dark:border-violet-700 dark:bg-violet-950" />
-          Break Periods
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950" />
-          Fatigue Risk / Unassigned
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-700 dark:bg-red-950" />
-          Schedule Conflict
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800" />
-          Other Section / Room
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded border border-fuchsia-300 bg-fuchsia-50 dark:border-fuchsia-700 dark:bg-fuchsia-950" />
-          Reservation
-        </li>
-        <li className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded border border-fuchsia-400 bg-fuchsia-200 dark:border-fuchsia-600 dark:bg-fuchsia-900" />
-          Reschedule
-        </li>
-      </ul>
-      {visibleReservations.some(
-        (reservation) => reservation.type.toLowerCase() === "reschedule",
+      <div className="mb-3 flex flex-wrap items-start gap-4">
+        <ul
+          aria-label="Timetable color legend"
+          className="flex min-w-0 flex-1 flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-gray-600 dark:text-gray-300"
+        >
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-100 dark:border-blue-700 dark:bg-blue-950" />
+            Lecture
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950" />
+            Laboratory
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-violet-300 bg-violet-100 dark:border-violet-700 dark:bg-violet-950" />
+            Break Periods
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950" />
+            Fatigue Risk / Unassigned
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-700 dark:bg-red-950" />
+            Schedule Conflict
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-gray-300 bg-gray-100 opacity-75 dark:border-gray-600 dark:bg-gray-800" />
+            Other Section / Room
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-fuchsia-300 bg-fuchsia-50 dark:border-fuchsia-700 dark:bg-fuchsia-950" />
+            Reservation
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-fuchsia-400 bg-fuchsia-200 dark:border-fuchsia-600 dark:bg-fuchsia-900" />
+            Reschedule
+          </li>
+        </ul>
+
+        <div className="w-full shrink-0 sm:w-56">
+          <span className="mb-1 block text-xs font-semibold text-gray-700 dark:text-gray-300">
+            Filter by room
+          </span>
+          <RoomFilterDropdown
+            rooms={rooms}
+            selectedRoom={selectedRoom}
+            onRoomChange={onRoomChange}
+            isLoading={isLoadingRooms}
+          />
+        </div>
+      </div>
+      {visibleReservations.some((reservation) =>
+        ["normal schedule", "no classes", "manual", "reschedule"].includes(
+          reservation.type.toLowerCase(),
+        ),
       ) && (
         <p className="mb-3 text-sm text-amber-800 dark:text-amber-300">
-          Rescheduled blocks are draggable. Drag one to another time slot to
-          move it, or use its X button to return it to the sidebar.
+          Reservation blocks are draggable. Drag one to another time slot to
+          move it; rescheduled blocks can be returned to the sidebar with X.
         </p>
       )}
       {breakError && (
@@ -776,8 +825,15 @@ function WeekTimetable({
                 ((endTime - startTime) / 30) * TIMETABLE_ROW_HEIGHT,
               );
               const isUnassigned = reservation.room_id === null;
-              const isReschedule =
-                reservation.type.toLowerCase() === "reschedule";
+              const reservationTypeName = reservation.type.toLowerCase();
+              const isReschedule = reservationTypeName === "reschedule";
+              const isManualReservation = reservationTypeName === "manual";
+              const isDraggable =
+                isReschedule ||
+                isUnassigned ||
+                isManualReservation ||
+                reservationTypeName === "normal schedule" ||
+                reservationTypeName === "no classes";
               const reservationDisplayName = getReservationDisplayName(
                 reservation,
                 entries,
@@ -786,7 +842,7 @@ function WeekTimetable({
               return (
                 <article
                   key={reservation.reservation_id}
-                  draggable={isReschedule || isUnassigned}
+                  draggable={isDraggable}
                   onDragStart={(event) => {
                     event.dataTransfer.setData(
                       "text/reservation-id",
@@ -795,7 +851,7 @@ function WeekTimetable({
                     event.dataTransfer.effectAllowed = "move";
                   }}
                   aria-label={`${reservationDisplayName}, ${reservation.type}, ${formatTime(startTime)} to ${formatTime(endTime)}${isUnassigned ? ", unassigned" : ""}`}
-                  className={`${isReschedule || isUnassigned ? "pointer-events-auto cursor-grab active:cursor-grabbing" : "pointer-events-none"} absolute flex flex-col overflow-hidden rounded border p-2 text-left shadow-xs ${
+                  className={`${isDraggable ? "pointer-events-auto cursor-grab active:cursor-grabbing" : "pointer-events-none"} absolute flex flex-col overflow-hidden rounded border p-2 text-left shadow-xs ${
                     isUnassigned
                       ? "border-amber-300 bg-amber-50/95 text-amber-950 dark:border-amber-700 dark:bg-amber-950/90 dark:text-amber-200"
                       : isReschedule
@@ -956,6 +1012,9 @@ export default function BookingPage() {
   const [isLoadingTimetable, setIsLoadingTimetable] = useState(true);
   const [timetableError, setTimetableError] = useState<string | null>(null);
   const [reservations, setReservations] = useState<ReservationRecord[]>([]);
+  const [reservationChanges, setReservationChanges] = useState<
+    Map<string, ReservationPlacementDraft>
+  >(() => new Map());
   const [isLoadingReservations, setIsLoadingReservations] = useState(true);
   const [reservationError, setReservationError] = useState<string | null>(null);
   const [isAddingReservation, setIsAddingReservation] = useState(false);
@@ -968,6 +1027,10 @@ export default function BookingPage() {
       null,
     );
   const [reservationDescription, setReservationDescription] = useState("");
+  const [reservationAssignmentMode, setReservationAssignmentMode] =
+    useState<ReservationAssignmentMode>("manual");
+  const [manualReservationDuration, setManualReservationDuration] =
+    useState(60);
   const [reservationType, setReservationType] = useState<
     "Normal Schedule" | "No Classes"
   >("Normal Schedule");
@@ -1021,7 +1084,16 @@ export default function BookingPage() {
         selectedWeekStart.getDate() + index + 1,
       ),
   );
-  const visibleReservations = reservations.filter(
+  const displayedReservations = useMemo(
+    () =>
+      reservations.map((reservation) => {
+        const changes = reservationChanges.get(reservation.reservation_id);
+        return changes ? { ...reservation, ...changes } : reservation;
+      }),
+    [reservationChanges, reservations],
+  );
+  const hasUnsavedReservationChanges = reservationChanges.size > 0;
+  const visibleReservations = displayedReservations.filter(
     (reservation) =>
       reservationMatchesDate(reservation, selectedDate) ||
       (reservation.room_id === null &&
@@ -1056,7 +1128,7 @@ export default function BookingPage() {
           (entry) =>
             !isScheduleEntryRescheduledOnDate(
               entry.schedule_entry_id,
-              reservations,
+              displayedReservations,
               selectedDate,
             ),
         )
@@ -1064,7 +1136,7 @@ export default function BookingPage() {
           ...entry,
           requiredRoomType: subjectLabTypes.get(entry.subject_id) ?? null,
         })),
-    [reservations, selectedDate, subjectLabTypes, timetableEntries],
+    [displayedReservations, selectedDate, subjectLabTypes, timetableEntries],
   );
   const conflictingScheduleEntries = useMemo(() => {
     if (
@@ -1094,7 +1166,7 @@ export default function BookingPage() {
   const conflictingReservations = useMemo(() => {
     if (!isReservationTimeValid || !reservationRoomId) return [];
 
-    return reservations.filter(
+    return displayedReservations.filter(
       (reservation) =>
         reservation.room_id === reservationRoomId &&
         reservationMatchesDate(reservation, selectedDate) &&
@@ -1108,14 +1180,14 @@ export default function BookingPage() {
     reservationEndMinutes,
     reservationRoomId,
     reservationStartMinutes,
-    reservations,
+    displayedReservations,
     selectedDate,
   ]);
   const hasScheduleConflicts = conflictingScheduleEntries.length > 0;
   const placementEntries = useMemo(
     () => [
       ...scheduleEntriesForConflict,
-      ...reservations
+      ...displayedReservations
         .filter(
           (
             reservation,
@@ -1137,7 +1209,12 @@ export default function BookingPage() {
           end_time: reservation.end_time,
         })),
     ],
-    [reservations, scheduleEntriesForConflict, selectedDate, selectedWeekday],
+    [
+      displayedReservations,
+      scheduleEntriesForConflict,
+      selectedDate,
+      selectedWeekday,
+    ],
   );
   const automaticReschedulePlan = useMemo(() => {
     if (
@@ -1409,6 +1486,8 @@ export default function BookingPage() {
     if (isSelectedDateInPast) return;
 
     setReservationDescription("");
+    setReservationAssignmentMode("manual");
+    setManualReservationDuration(60);
     setReservationType("Normal Schedule");
     setAutoAssignBasedOnConstraint(true);
     setReservationConstraint("room");
@@ -1437,21 +1516,23 @@ export default function BookingPage() {
     const currentRoom = rooms.find(
       (room) => room.room_id === reservationRoomId,
     );
-    if (!currentRoom?.room_id) {
+    const isManualAssignment = reservationAssignmentMode === "manual";
+    if (!isManualAssignment && !currentRoom?.room_id) {
       setReservationError("Select a room before adding a reservation.");
       return;
     }
-    if (!isReservationTimeValid) {
+    if (!isManualAssignment && !isReservationTimeValid) {
       setReservationError("Choose a valid time between 7:00 AM and 10:00 PM.");
       return;
     }
-    if (conflictingReservations.length > 0) {
+    if (!isManualAssignment && conflictingReservations.length > 0) {
       setReservationError(
         "The selected room and time overlap an existing reservation.",
       );
       return;
     }
     if (
+      !isManualAssignment &&
       reservationType === "Normal Schedule" &&
       (isLoadingTimetable || timetableError)
     ) {
@@ -1461,6 +1542,7 @@ export default function BookingPage() {
       return;
     }
     if (
+      !isManualAssignment &&
       autoAssignBasedOnConstraint &&
       reservationType === "Normal Schedule" &&
       conflictingScheduleEntries.length > 0 &&
@@ -1472,18 +1554,31 @@ export default function BookingPage() {
       return;
     }
 
-    const entriesToCreate: Parameters<typeof createReservations>[0] = [
-      {
-        room_id: currentRoom.room_id,
-        description,
-        type: reservationType,
-        day: formatReservationDate(selectedDate),
-        start_time: reservationStartMinutes,
-        end_time: reservationEndMinutes,
-      },
-    ];
+    const entriesToCreate: Parameters<typeof createReservations>[0] =
+      isManualAssignment
+        ? [
+            {
+              room_id: null,
+              description,
+              type: reservationType,
+              day: formatReservationDate(selectedDate),
+              start_time: RESERVATION_START_MINUTES,
+              end_time: RESERVATION_START_MINUTES + manualReservationDuration,
+            },
+          ]
+        : [
+            {
+              room_id: currentRoom!.room_id,
+              description,
+              type: reservationType,
+              day: formatReservationDate(selectedDate),
+              start_time: reservationStartMinutes,
+              end_time: reservationEndMinutes,
+            },
+          ];
 
     if (
+      !isManualAssignment &&
       reservationType === "Normal Schedule" &&
       conflictingScheduleEntries.length > 0
     ) {
@@ -1528,7 +1623,7 @@ export default function BookingPage() {
     setReservationType("Normal Schedule");
     setReservationStartTime("09:00");
     setReservationEndTime("10:00");
-    if (currentRoom.room_name?.trim()) {
+    if (!isManualAssignment && currentRoom?.room_name?.trim()) {
       setSelectedRoom(currentRoom.room_name.trim());
     }
     setIsAddingReservation(false);
@@ -1540,10 +1635,10 @@ export default function BookingPage() {
     date: Date,
     startTime: number,
   ) {
-    const reservation = reservations.find(
+    const reservation = displayedReservations.find(
       (entry) => entry.reservation_id === reservationId,
     );
-    if (!reservation || !selectedRoomId) return;
+    if (!reservation || !selectedRoomId || isSavingReservation) return;
 
     const sourceScheduleEntry = getRescheduledScheduleEntry(
       reservation,
@@ -1593,7 +1688,8 @@ export default function BookingPage() {
     }
     if (
       (reservation.type.toLowerCase() === "normal schedule" ||
-        reservation.type.toLowerCase() === "reschedule") &&
+        reservation.type.toLowerCase() === "reschedule" ||
+        reservation.type.toLowerCase() === "manual") &&
       (isLoadingTimetable || timetableError)
     ) {
       setReservationError(
@@ -1607,7 +1703,7 @@ export default function BookingPage() {
         (entry) =>
           !isScheduleEntryRescheduledOnDate(
             entry.schedule_entry_id,
-            reservations,
+            displayedReservations,
             date,
           ),
       )
@@ -1618,7 +1714,9 @@ export default function BookingPage() {
     const sourceEntryId = sourceScheduleEntry?.schedule_entry_id ?? null;
 
     if (
-      (reservation.type.toLowerCase() === "normal schedule" || isReschedule) &&
+      (reservation.type.toLowerCase() === "normal schedule" ||
+        isReschedule ||
+        reservation.type.toLowerCase() === "manual") &&
       getScheduleConflicts(
         scheduleEntriesForDate,
         weekday,
@@ -1653,7 +1751,7 @@ export default function BookingPage() {
       return;
     }
     if (
-      reservations.some(
+      displayedReservations.some(
         (entry) =>
           entry.reservation_id !== reservationId &&
           entry.room_id === selectedRoomId &&
@@ -1668,30 +1766,46 @@ export default function BookingPage() {
       return;
     }
 
-    setIsSavingReservation(true);
-    setReservationError(null);
-    const result = await updateReservation(reservationId, {
+    const placement = {
       room_id: selectedRoomId,
       day: formatReservationDate(date),
       start_time: startTime,
       end_time: endTime,
+    };
+    const originalReservation = reservations.find(
+      (entry) => entry.reservation_id === reservationId,
+    );
+    if (!originalReservation) return;
+
+    setReservationChanges((currentChanges) => {
+      const nextChanges = new Map(currentChanges);
+      const matchesOriginal =
+        originalReservation.room_id === placement.room_id &&
+        originalReservation.day === placement.day &&
+        originalReservation.start_time === placement.start_time &&
+        originalReservation.end_time === placement.end_time;
+
+      if (matchesOriginal) {
+        nextChanges.delete(reservationId);
+      } else {
+        nextChanges.set(reservationId, placement);
+      }
+
+      return nextChanges;
     });
-    setIsSavingReservation(false);
-
-    if (!result.success) {
-      setReservationError(result.error || "Reservation could not be assigned.");
-      return;
-    }
-
-    setReservationReloadKey((key) => key + 1);
+    setReservationError(null);
   }
 
-  async function handleReturnReschedule(reservationId: string) {
-    const reservation = reservations.find(
+  function handleReturnReschedule(reservationId: string) {
+    const reservation = displayedReservations.find(
+      (entry) => entry.reservation_id === reservationId,
+    );
+    const originalReservation = reservations.find(
       (entry) => entry.reservation_id === reservationId,
     );
     if (
       !reservation ||
+      !originalReservation ||
       reservation.room_id === null ||
       reservation.type.toLowerCase() !== "reschedule" ||
       isSavingReservation
@@ -1699,27 +1813,98 @@ export default function BookingPage() {
       return;
     }
 
-    setIsSavingReservation(true);
-    setReservationError(null);
-    try {
-      const result = await returnRescheduleToSidebar(reservationId);
-      if (!result.success) {
-        setReservationError(
-          result.error || "Reschedule could not be returned to the sidebar.",
-        );
-        return;
+    setReservationChanges((currentChanges) => {
+      const nextChanges = new Map(currentChanges);
+      const placement = {
+        room_id: null,
+        day: originalReservation.day,
+        start_time: null,
+        end_time: null,
+      };
+      const matchesOriginal =
+        originalReservation.room_id === placement.room_id &&
+        originalReservation.day === placement.day &&
+        originalReservation.start_time === placement.start_time &&
+        originalReservation.end_time === placement.end_time;
+
+      if (matchesOriginal) {
+        nextChanges.delete(reservationId);
+      } else {
+        nextChanges.set(reservationId, placement);
       }
 
-      setReservationReloadKey((key) => key + 1);
-    } catch (error) {
-      setReservationError(
-        error instanceof Error
-          ? error.message
-          : "Reschedule could not be returned to the sidebar.",
+      return nextChanges;
+    });
+    setReservationError(null);
+  }
+
+  function handleDiscardReservationChanges() {
+    if (isSavingReservation) return;
+    setReservationChanges(new Map());
+    setReservationError(null);
+  }
+
+  async function handleSaveReservationChanges() {
+    if (!reservationChanges.size || isSavingReservation) return;
+
+    setIsSavingReservation(true);
+    setReservationError(null);
+    const saveErrors: string[] = [];
+
+    for (const [reservationId, placement] of reservationChanges) {
+      const reservation = reservations.find(
+        (entry) => entry.reservation_id === reservationId,
       );
-    } finally {
-      setIsSavingReservation(false);
+      if (!reservation) {
+        setReservationChanges((currentChanges) => {
+          const nextChanges = new Map(currentChanges);
+          nextChanges.delete(reservationId);
+          return nextChanges;
+        });
+        continue;
+      }
+
+      try {
+        const result =
+          reservation.type.toLowerCase() === "reschedule" &&
+          placement.room_id === null
+            ? await returnRescheduleToSidebar(reservationId)
+            : await updateReservation(reservationId, placement);
+
+        if (result.success) {
+          setReservations((currentReservations) =>
+            currentReservations.map((entry) =>
+              entry.reservation_id === reservationId
+                ? { ...entry, ...placement }
+                : entry,
+            ),
+          );
+          setReservationChanges((currentChanges) => {
+            const nextChanges = new Map(currentChanges);
+            nextChanges.delete(reservationId);
+            return nextChanges;
+          });
+        } else {
+          saveErrors.push(
+            result.error ||
+              `Reservation ${reservation.description} was not saved.`,
+          );
+        }
+      } catch (error) {
+        saveErrors.push(
+          error instanceof Error
+            ? error.message
+            : `Reservation ${reservation.description} was not saved.`,
+        );
+      }
     }
+
+    if (saveErrors.length > 0) {
+      setReservationError(
+        `Some reservation changes could not be saved: ${saveErrors.join(" ")}`,
+      );
+    }
+    setIsSavingReservation(false);
   }
 
   async function handleDeleteReservation(reservationId: string) {
@@ -1734,6 +1919,11 @@ export default function BookingPage() {
         return;
       }
 
+      setReservationChanges((currentChanges) => {
+        const nextChanges = new Map(currentChanges);
+        nextChanges.delete(reservationId);
+        return nextChanges;
+      });
       setReservationReloadKey((key) => key + 1);
       setReservationPendingDeletion(null);
     } catch (error) {
@@ -1758,6 +1948,34 @@ export default function BookingPage() {
             Browse dates and review room reservations.
           </p>
         </header>
+
+        {hasUnsavedReservationChanges && (
+          <div className="flex flex-col items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 shadow-sm sm:flex-row dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            <span className="font-medium">
+              You have unsaved changes in this session.
+            </span>
+            <div className="flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSaveReservationChanges()}
+                disabled={isSavingReservation}
+                className="flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+              >
+                <HiCheck className="h-3.5 w-3.5" />
+                {isSavingReservation ? "Saving…" : "Save Changes"}
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardReservationChanges}
+                disabled={isSavingReservation}
+                className="flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                <HiArrowPath className="h-3.5 w-3.5" />
+                Discard Changes
+              </button>
+            </div>
+          </div>
+        )}
 
         <section className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -1812,8 +2030,8 @@ export default function BookingPage() {
                   const isCurrentMonth =
                     date.getMonth() === visibleMonth.getMonth() &&
                     date.getFullYear() === visibleMonth.getFullYear();
-                  const hasReservation = reservations.some((reservation) =>
-                    reservationMatchesDate(reservation, date),
+                  const hasReservation = displayedReservations.some(
+                    (reservation) => reservationMatchesDate(reservation, date),
                   );
                   const weekStart = calendarDays[Math.floor(index / 7) * 7];
                   const isExpanded =
@@ -1885,9 +2103,11 @@ export default function BookingPage() {
                           week={calendarDays.slice(index - 6, index + 1)}
                           onClose={() => setExpandedWeekStart(null)}
                           entries={timetableEntries}
-                          reservations={reservations}
+                          reservations={displayedReservations}
+                          rooms={rooms}
                           selectedRoom={selectedRoom}
                           selectedRoomId={selectedRoomId}
+                          onRoomChange={setSelectedRoom}
                           onDropReservation={(reservationId, date, time) =>
                             void handleReservationDrop(
                               reservationId,
@@ -1899,6 +2119,7 @@ export default function BookingPage() {
                             void handleReturnReschedule(reservationId)
                           }
                           isSavingReservation={isSavingReservation}
+                          isLoadingRooms={isLoadingRooms}
                           roomError={roomError}
                           breakPeriods={breakPeriods}
                           isLoading={isLoadingTimetable}
@@ -1928,22 +2149,6 @@ export default function BookingPage() {
               </div>
             </div>
             <div className="mt-5 border-t border-gray-200 pt-5 dark:border-gray-700">
-              <h2 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
-                Filter by room
-              </h2>
-              <RoomFilterDropdown
-                rooms={rooms}
-                selectedRoom={selectedRoom}
-                onRoomChange={setSelectedRoom}
-                isLoading={isLoadingRooms}
-              />
-              {roomError && (
-                <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">
-                  Rooms could not be loaded: {roomError}
-                </p>
-              )}
-            </div>
-            <div className="mt-5 border-t border-gray-200 pt-5 dark:border-gray-700">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
                   Reservations
@@ -1952,7 +2157,11 @@ export default function BookingPage() {
                 <button
                   type="button"
                   onClick={openReservationModal}
-                  disabled={isLoadingRooms || isSelectedDateInPast}
+                  disabled={
+                    isLoadingRooms ||
+                    isSelectedDateInPast ||
+                    isSavingReservation
+                  }
                   title={
                     isSelectedDateInPast
                       ? "Reservations cannot be added for past dates."
@@ -1992,10 +2201,17 @@ export default function BookingPage() {
                         reservation.start_time ?? scheduleEntry?.start_time;
                       const displayEndTime =
                         reservation.end_time ?? scheduleEntry?.end_time;
-                      const isReschedule =
-                        reservation.type.toLowerCase() === "reschedule";
+                      const reservationTypeName =
+                        reservation.type.toLowerCase();
+                      const isReschedule = reservationTypeName === "reschedule";
+                      const isManualReservation =
+                        reservationTypeName === "manual";
                       const canDrag =
-                        (isReschedule || reservation.room_id === null) &&
+                        (isReschedule ||
+                          reservation.room_id === null ||
+                          isManualReservation ||
+                          reservationTypeName === "normal schedule" ||
+                          reservationTypeName === "no classes") &&
                         displayStartTime !== undefined &&
                         displayEndTime !== undefined &&
                         displayEndTime > displayStartTime;
@@ -2078,17 +2294,26 @@ export default function BookingPage() {
                                 isReschedule && reservation.room_id === null
                               ) && (
                                 <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-                                  {displayStartTime !== undefined &&
+                                  {reservation.room_id === null &&
+                                  !isReschedule &&
+                                  displayStartTime !== undefined &&
                                   displayEndTime !== undefined
-                                    ? `${formatTime(displayStartTime)} – ${formatTime(displayEndTime)}`
-                                    : "Time not assigned"}
+                                    ? `Duration: ${formatReservationDuration(displayEndTime - displayStartTime)}`
+                                    : displayStartTime !== undefined &&
+                                        displayEndTime !== undefined
+                                      ? `${formatTime(displayStartTime)} – ${formatTime(displayEndTime)}`
+                                      : "Time not assigned"}
                                 </p>
                               )}
                               {canDrag && (
                                 <p className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">
                                   {reservation.room_id === null
                                     ? "Unassigned · drag into the timetable to place"
-                                    : "Drag into the timetable to move this reschedule"}
+                                    : isManualReservation
+                                      ? "Drag into the timetable to move this block"
+                                      : isReschedule
+                                        ? "Drag into the timetable to move this reschedule"
+                                        : "Drag into the timetable to move this reservation"}
                                 </p>
                               )}
                             </button>
@@ -2101,7 +2326,10 @@ export default function BookingPage() {
                                   description: reservationDisplayName,
                                 });
                               }}
-                              disabled={deletingReservationId !== null}
+                              disabled={
+                                deletingReservationId !== null ||
+                                isSavingReservation
+                              }
                               aria-label={`Delete reservation: ${reservationDisplayName}`}
                               title="Delete reservation"
                               className="shrink-0 rounded-md p-1.5 text-gray-500 transition-colors hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
@@ -2249,210 +2477,283 @@ export default function BookingPage() {
                   <option value="No Classes">No Classes</option>
                 </select>
               </label>
-              <div className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                <p>Room</p>
-                <RoomFilterDropdown
-                  rooms={rooms}
-                  selectedRoom={
-                    rooms
-                      .find((room) => room.room_id === reservationRoomId)
-                      ?.room_name?.trim() ?? null
-                  }
-                  onRoomChange={(roomName) => {
-                    const room = rooms.find(
-                      (entry) => entry.room_name?.trim() === roomName,
-                    );
-                    if (room?.room_id) setReservationRoomId(room.room_id);
-                    setReservationError(null);
-                  }}
-                  isLoading={isLoadingRooms}
-                  ariaLabel="Select reservation room"
-                  placeholder="Select a room"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Starts
-                  <input
-                    required
-                    type="time"
-                    min="07:00"
-                    max="22:00"
-                    step={RESERVATION_TIME_STEP * 60}
-                    value={reservationStartTime}
-                    onChange={(event) => {
-                      setReservationStartTime(event.target.value);
-                      setReservationError(null);
-                    }}
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Ends
-                  <input
-                    required
-                    type="time"
-                    min="07:00"
-                    max="22:00"
-                    step={RESERVATION_TIME_STEP * 60}
-                    value={reservationEndTime}
-                    onChange={(event) => {
-                      setReservationEndTime(event.target.value);
-                      setReservationError(null);
-                    }}
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
-                  />
-                </label>
-              </div>
-
-              {reservationType === "Normal Schedule" &&
-                hasScheduleConflicts && (
-                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={autoAssignBasedOnConstraint}
-                      onChange={(event) => {
-                        setAutoAssignBasedOnConstraint(event.target.checked);
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Assigning method
+                </legend>
+                <div
+                  role="radiogroup"
+                  aria-label="Reservation assignment method"
+                  className="grid grid-cols-2 gap-2"
+                >
+                  {(
+                    [
+                      ["manual", "Manual"],
+                      ["system-assisted", "System-assisted"],
+                    ] as const
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="radio"
+                      aria-checked={reservationAssignmentMode === mode}
+                      onClick={() => {
+                        setReservationAssignmentMode(mode);
                         setReservationError(null);
                       }}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500"
-                    />
-                    <span>
-                      <span className="block font-semibold text-gray-900 dark:text-white">
-                        {autoAssignBasedOnConstraint
-                          ? "Auto Assign based on constraint"
-                          : "Manually assign"}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                        {autoAssignBasedOnConstraint
-                          ? "Resolve conflicts automatically using the chosen constraint."
-                          : "Create an unassigned reschedule entry for each conflict, then drag each class into an open timetable slot."}
-                      </span>
-                    </span>
-                  </label>
-                )}
-
-              {conflictingReservations.length > 0 ? (
-                <p
-                  role="alert"
-                  className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
-                >
-                  The selected room and time overlap an existing reservation.
-                </p>
-              ) : reservationType === "No Classes" ? (
-                <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
-                  No Classes is selected, so active timetable constraints will
-                  not be checked.
-                </p>
-              ) : !isReservationTimeValid ? (
-                <p
-                  role="alert"
-                  className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-                >
-                  Choose a start time from 7:00 AM onward and an end time after
-                  the start, no later than 10:00 PM.
-                </p>
-              ) : !reservationRoomId ? (
-                <p className="rounded-lg bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                  Select a room to preview conflicts and set this reservation’s
-                  destination.
-                </p>
-              ) : isLoadingTimetable ? (
-                <p className="rounded-lg bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                  Checking the active timetable…
-                </p>
-              ) : timetableError ? (
-                <p
-                  role="alert"
-                  className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
-                >
-                  The active timetable could not be checked: {timetableError}
-                </p>
-              ) : conflictingScheduleEntries.length > 0 ? (
-                <div className="space-y-3 rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-900 dark:bg-rose-950/30">
-                  <div>
-                    <p className="mb-2 text-sm font-semibold text-rose-800 dark:text-rose-200">
-                      Resolve any conflicts:
-                    </p>
-                    <p className="text-sm font-semibold text-rose-800 dark:text-rose-200">
-                      {conflictingScheduleEntries.length} active-schedule
-                      {conflictingScheduleEntries.length === 1
-                        ? " entry overlaps"
-                        : " entries overlap"}{" "}
-                      this reservation
-                    </p>
-                    <ul className="mt-2 space-y-1 text-xs text-rose-800 dark:text-rose-200">
-                      {conflictingScheduleEntries.map((entry) => (
-                        <li key={entry.schedule_entry_id}>
-                          {entry.course_name || entry.course_code} ·{" "}
-                          {entry.section} · {formatTime(entry.start_time)}–
-                          {formatTime(entry.end_time)}
-                        </li>
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                        reservationAssignmentMode === mode
+                          ? "border-blue-600 bg-blue-50 text-blue-800 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200"
+                          : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              {reservationAssignmentMode === "manual" ? (
+                <>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Duration
+                    <select
+                      value={manualReservationDuration}
+                      onChange={(event) => {
+                        setManualReservationDuration(
+                          Number(event.target.value),
+                        );
+                        setReservationError(null);
+                      }}
+                      className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                    >
+                      {RESERVATION_DURATION_OPTIONS.map((duration) => (
+                        <option key={duration} value={duration}>
+                          {formatReservationDuration(duration)}
+                        </option>
                       ))}
-                    </ul>
+                    </select>
+                  </label>
+                  <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+                    A block for{" "}
+                    {formatReservationDuration(manualReservationDuration)}
+                    will be added to the sidebar. Drag it into the timetable to
+                    choose its room and time.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <p>Room</p>
+                    <RoomFilterDropdown
+                      rooms={rooms}
+                      selectedRoom={
+                        rooms
+                          .find((room) => room.room_id === reservationRoomId)
+                          ?.room_name?.trim() ?? null
+                      }
+                      onRoomChange={(roomName) => {
+                        const room = rooms.find(
+                          (entry) => entry.room_name?.trim() === roomName,
+                        );
+                        if (room?.room_id) setReservationRoomId(room.room_id);
+                        setReservationError(null);
+                      }}
+                      isLoading={isLoadingRooms}
+                      ariaLabel="Select reservation room"
+                      placeholder="Select a room"
+                    />
                   </div>
-                  {autoAssignBasedOnConstraint && (
-                    <label className="block text-sm font-medium text-rose-900 dark:text-rose-100">
-                      Conflict constraint
-                      <select
-                        value={reservationConstraint}
-                        onChange={(event) =>
-                          setReservationConstraint(
-                            event.target.value as ReservationConstraint,
-                          )
-                        }
-                        className="mt-1 w-full rounded-md border border-rose-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-rose-800 dark:bg-gray-900 dark:text-white"
-                      >
-                        <option value="room">Change room only</option>
-                        <option value="time">Change time only</option>
-                        <option value="both">Change room and time</option>
-                      </select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Starts
+                      <input
+                        required
+                        type="time"
+                        min="07:00"
+                        max="22:00"
+                        step={RESERVATION_TIME_STEP * 60}
+                        value={reservationStartTime}
+                        onChange={(event) => {
+                          setReservationStartTime(event.target.value);
+                          setReservationError(null);
+                        }}
+                        className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                      />
                     </label>
-                  )}
-                  {autoAssignBasedOnConstraint ? (
-                    automaticReschedulePlan === null ? (
-                      <p className="text-sm text-rose-800 dark:text-rose-200">
-                        No conflict-free placement satisfies the selected{" "}
-                        {reservationConstraint} constraint for every class.
-                      </p>
-                    ) : (
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Ends
+                      <input
+                        required
+                        type="time"
+                        min="07:00"
+                        max="22:00"
+                        step={RESERVATION_TIME_STEP * 60}
+                        value={reservationEndTime}
+                        onChange={(event) => {
+                          setReservationEndTime(event.target.value);
+                          setReservationError(null);
+                        }}
+                        className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                      />
+                    </label>
+                  </div>
+
+                  {reservationType === "Normal Schedule" &&
+                    hasScheduleConflicts && (
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={autoAssignBasedOnConstraint}
+                          onChange={(event) => {
+                            setAutoAssignBasedOnConstraint(
+                              event.target.checked,
+                            );
+                            setReservationError(null);
+                          }}
+                          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+                        />
+                        <span>
+                          <span className="block font-semibold text-gray-900 dark:text-white">
+                            {autoAssignBasedOnConstraint
+                              ? "Auto Assign based on constraint"
+                              : "Manually assign"}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                            {autoAssignBasedOnConstraint
+                              ? "Resolve conflicts automatically using the chosen constraint."
+                              : "Create an unassigned reschedule entry for each conflict, then drag each class into an open timetable slot."}
+                          </span>
+                        </span>
+                      </label>
+                    )}
+
+                  {conflictingReservations.length > 0 ? (
+                    <p
+                      role="alert"
+                      className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                    >
+                      The selected room and time overlap an existing
+                      reservation.
+                    </p>
+                  ) : reservationType === "No Classes" ? (
+                    <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+                      No Classes is selected, so active timetable constraints
+                      will not be checked.
+                    </p>
+                  ) : !isReservationTimeValid ? (
+                    <p
+                      role="alert"
+                      className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                    >
+                      Choose a start time from 7:00 AM onward and an end time
+                      after the start, no later than 10:00 PM.
+                    </p>
+                  ) : !reservationRoomId ? (
+                    <p className="rounded-lg bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                      Select a room to preview conflicts and set this
+                      reservation’s destination.
+                    </p>
+                  ) : isLoadingTimetable ? (
+                    <p className="rounded-lg bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                      Checking the active timetable…
+                    </p>
+                  ) : timetableError ? (
+                    <p
+                      role="alert"
+                      className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                    >
+                      The active timetable could not be checked:{" "}
+                      {timetableError}
+                    </p>
+                  ) : conflictingScheduleEntries.length > 0 ? (
+                    <div className="space-y-3 rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-900 dark:bg-rose-950/30">
                       <div>
-                        <p className="mb-1 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                          These entries will be rescheduled automatically:
+                        <p className="mb-2 text-sm font-semibold text-rose-800 dark:text-rose-200">
+                          Resolve any conflicts:
                         </p>
-                        <ul className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
-                          {automaticReschedulePlan.map(
-                            ({ entry, alternative }) => {
-                              const roomName =
-                                rooms.find(
-                                  (room) => room.room_id === alternative.roomId,
-                                )?.room_name || "Room";
-                              return (
-                                <li key={entry.schedule_entry_id}>
-                                  {entry.course_name || entry.course_code} →{" "}
-                                  {roomName},{" "}
-                                  {formatTime(alternative.startTime)}–
-                                  {formatTime(alternative.endTime)}
-                                </li>
-                              );
-                            },
-                          )}
+                        <p className="text-sm font-semibold text-rose-800 dark:text-rose-200">
+                          {conflictingScheduleEntries.length} active-schedule
+                          {conflictingScheduleEntries.length === 1
+                            ? " entry overlaps"
+                            : " entries overlap"}{" "}
+                          this reservation
+                        </p>
+                        <ul className="mt-2 space-y-1 text-xs text-rose-800 dark:text-rose-200">
+                          {conflictingScheduleEntries.map((entry) => (
+                            <li key={entry.schedule_entry_id}>
+                              {entry.course_name || entry.course_code} ·{" "}
+                              {entry.section} · {formatTime(entry.start_time)}–
+                              {formatTime(entry.end_time)}
+                            </li>
+                          ))}
                         </ul>
                       </div>
-                    )
+                      {autoAssignBasedOnConstraint && (
+                        <label className="block text-sm font-medium text-rose-900 dark:text-rose-100">
+                          Conflict constraint
+                          <select
+                            value={reservationConstraint}
+                            onChange={(event) =>
+                              setReservationConstraint(
+                                event.target.value as ReservationConstraint,
+                              )
+                            }
+                            className="mt-1 w-full rounded-md border border-rose-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-rose-800 dark:bg-gray-900 dark:text-white"
+                          >
+                            <option value="room">Change room only</option>
+                            <option value="time">Change time only</option>
+                            <option value="both">Change room and time</option>
+                          </select>
+                        </label>
+                      )}
+                      {autoAssignBasedOnConstraint ? (
+                        automaticReschedulePlan === null ? (
+                          <p className="text-sm text-rose-800 dark:text-rose-200">
+                            No conflict-free placement satisfies the selected{" "}
+                            {reservationConstraint} constraint for every class.
+                          </p>
+                        ) : (
+                          <div>
+                            <p className="mb-1 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                              These entries will be rescheduled automatically:
+                            </p>
+                            <ul className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
+                              {automaticReschedulePlan.map(
+                                ({ entry, alternative }) => {
+                                  const roomName =
+                                    rooms.find(
+                                      (room) =>
+                                        room.room_id === alternative.roomId,
+                                    )?.room_name || "Room";
+                                  return (
+                                    <li key={entry.schedule_entry_id}>
+                                      {entry.course_name || entry.course_code} →{" "}
+                                      {roomName},{" "}
+                                      {formatTime(alternative.startTime)}–
+                                      {formatTime(alternative.endTime)}
+                                    </li>
+                                  );
+                                },
+                              )}
+                            </ul>
+                          </div>
+                        )
+                      ) : (
+                        <p className="text-sm text-amber-800 dark:text-amber-200">
+                          An unassigned reschedule entry will be created for
+                          each conflict. Drag each entry from the sidebar or
+                          timetable to an open slot; the original timetable is
+                          not changed.
+                        </p>
+                      )}
+                    </div>
                   ) : (
-                    <p className="text-sm text-amber-800 dark:text-amber-200">
-                      An unassigned reschedule entry will be created for each
-                      conflict. Drag each entry from the sidebar or timetable to
-                      an open slot; the original timetable is not changed.
+                    <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                      No active-schedule class conflict. Break periods are not
+                      treated as room conflicts.
                     </p>
                   )}
-                </div>
-              ) : (
-                <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
-                  No active-schedule class conflict. Break periods are not
-                  treated as room conflicts.
-                </p>
+                </>
               )}
 
               {reservationError && (
@@ -2479,19 +2780,24 @@ export default function BookingPage() {
                     isSavingReservation ||
                     !reservationDescription.trim() ||
                     isSelectedDateInPast ||
-                    !isReservationTimeValid ||
-                    !reservationRoomId ||
-                    conflictingReservations.length > 0 ||
-                    (reservationType === "Normal Schedule" &&
-                      (isLoadingTimetable || Boolean(timetableError))) ||
-                    (autoAssignBasedOnConstraint &&
-                      reservationType === "Normal Schedule" &&
-                      conflictingScheduleEntries.length > 0 &&
-                      automaticReschedulePlan === null)
+                    (reservationAssignmentMode === "system-assisted" &&
+                      (!isReservationTimeValid ||
+                        !reservationRoomId ||
+                        conflictingReservations.length > 0 ||
+                        (reservationType === "Normal Schedule" &&
+                          (isLoadingTimetable || Boolean(timetableError))) ||
+                        (autoAssignBasedOnConstraint &&
+                          reservationType === "Normal Schedule" &&
+                          conflictingScheduleEntries.length > 0 &&
+                          automaticReschedulePlan === null)))
                   }
                   className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-600 dark:hover:bg-blue-500"
                 >
-                  {isSavingReservation ? "Saving…" : "Save reservation"}
+                  {isSavingReservation
+                    ? "Saving…"
+                    : reservationAssignmentMode === "manual"
+                      ? "Create block"
+                      : "Save reservation"}
                 </button>
               </div>
             </form>
