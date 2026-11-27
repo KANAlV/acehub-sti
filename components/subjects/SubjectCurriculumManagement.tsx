@@ -289,22 +289,9 @@ export default function SubjectCurriculumManagement() {
             Select a curriculum to view all associated subjects or create a new curriculum version.
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setFormData(initialCurriculumForm);
-            setVersionError("");
-            setSelectedCourse("");
-            setCourseSuffix("");
-            setOpenAddCurriculumModal(true);
-          }}
-          className="w-full sm:w-auto whitespace-nowrap"
-        >
-          <FaPlus className="mr-2" />
-          Add Curriculum
-        </Button>
       </div>
 
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="relative w-full md:w-64">
           <TextInput
             id="search-curriculum"
@@ -324,6 +311,19 @@ export default function SubjectCurriculumManagement() {
             </button>
           )}
         </div>
+        <Button
+          onClick={() => {
+            setFormData(initialCurriculumForm);
+            setVersionError("");
+            setSelectedCourse("");
+            setCourseSuffix("");
+            setOpenAddCurriculumModal(true);
+          }}
+          className="ml-auto w-full whitespace-nowrap sm:w-auto"
+        >
+          <FaPlus className="mr-2" />
+          Add Curriculum
+        </Button>
       </div>
 
       <Card className={`overflow-x-auto transition-opacity ${isPending ? "opacity-60" : "opacity-100"}`}>
