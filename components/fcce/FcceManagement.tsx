@@ -748,8 +748,9 @@ export default function FcceManagement() {
                 const rawAySem = String(row.getCell(aySemCol).value || "").trim();
                 const rawStatus = String(row.getCell(statusCol).value || "").trim().toLowerCase();
 
-                if (rawStatus === "na" || rawStatus === "n/a" || rawStatus === "na/") {
-                    logs.push(`Row ${rowNumber} (${rawPscs || "unknown"}): Skipped. Status is N/A.`);
+                if (rawStatus === "na" || rawStatus === "n/a" || rawStatus === "na/" || rawStatus === "not applicable") {
+                    const skippedStatus = rawStatus === "not applicable" ? "Not applicable" : "N/A";
+                    logs.push(`Row ${rowNumber} (${rawPscs || "unknown"}): Skipped. Status is ${skippedStatus}.`);
                     skippedCount++;
                     return;
                 }
