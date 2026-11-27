@@ -866,9 +866,9 @@ export default function FcceManagement() {
                     <p className="text-gray-500">Manage and track FCCE student course passing statuses and archive records.</p>
                 </div>
 
-                <div className="my-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="my-4 grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="flex flex-wrap items-center gap-3">
-                        <div className="relative w-full sm:max-w-xs">
+                        <div className="relative w-full sm:w-64">
                             <TextInput
                                 id="search-fcce"
                                 type="text"
@@ -909,7 +909,7 @@ export default function FcceManagement() {
                         </Button>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3 lg:justify-end">
                         <Button
                             color="gray"
                             className="whitespace-nowrap"
@@ -932,38 +932,38 @@ export default function FcceManagement() {
                     </div>
                 )}
 
-                <div className="overflow-y-auto rounded-lg border border-gray-700 bg-gray-800 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent" style={{ maxHeight: "600px" }}>
-                    <Card className="overflow-x-auto bg-gray-800 dark:bg-gray-800">
-                        <Table hoverable>
+                <div className="overflow-y-auto rounded-lg border border-gray-200 bg-white scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:scrollbar-thumb-gray-600 dark:scrollbar-track-gray-800" style={{ maxHeight: "600px" }}>
+                    <Card className="overflow-x-auto bg-white dark:bg-gray-800">
+                        <Table className="min-w-[900px] text-gray-900 dark:text-gray-100" hoverable>
                             <TableHead>
-                            <TableRow className="bg-blue-600 dark:bg-blue-600">
+                            <TableRow>
                                 <TableHeadCell onClick={() => handleFcceSorting("pscs_id")}>
-                                    <div className="flex cursor-pointer text-white hover:underline">
+                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
                                         PSCS ID {sortFcceBy === "pscs_id" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("teacher_name")}>
-                                    <div className="flex cursor-pointer text-white hover:underline">
+                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
                                         Teacher Name {sortFcceBy === "teacher_name" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("course_name")}>
-                                    <div className="flex cursor-pointer text-white hover:underline">
+                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
                                         Course Name {sortFcceBy === "course_name" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("ay_sem")}>
-                                    <div className="flex cursor-pointer text-white hover:underline">
+                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
                                         AY / Sem {sortFcceBy === "ay_sem" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("pass")}>
-                                    <div className="flex cursor-pointer text-white hover:underline">
+                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
                                         Status {sortFcceBy === "pass" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>
                                 <TableHeadCell onClick={() => handleFcceSorting("created_at")}>
-                                    <div className="flex cursor-pointer text-white hover:underline">
+                                    <div className="flex cursor-pointer text-blue-500 hover:underline">
                                         Created At {sortFcceBy === "created_at" && (sortFcceDir === "ASC" ? <FaSortUp className="ml-1" /> : <FaSortDown className="ml-1" />)}
                                     </div>
                                 </TableHeadCell>

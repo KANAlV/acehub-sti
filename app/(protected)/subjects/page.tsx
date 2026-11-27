@@ -24,7 +24,7 @@ export default function SubjectsPage() {
     }, []);
 
     return (
-        <div className={"m-8"}>
+        <div className={"mx-2 my-4 min-w-0 sm:mx-4 lg:m-8"}>
             <h1 className={"text-xl font-bold mb-4"}>Subject</h1>
 
             <Tabs

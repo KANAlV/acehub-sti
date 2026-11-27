@@ -28,6 +28,7 @@ interface DetailedStep {
     title: string;
     description: string;
     details: string[];
+    phase?: string;
 }
 
 interface SubTabGuide {
@@ -204,17 +205,18 @@ export default function HelpPage() {
             route: "/configurations",
             icon: HiCog,
             description:
-                "Follow this step-by-step guide to configure AceHub for the first time. The system must be set up in the correct order — each step builds on the previous one so the scheduler has all the data it needs.",
+                "Follow these phases in order: configure the system and enter required data, edit and validate what you entered, check readiness, generate a schedule, then review and publish it.",
             roles: ["Academic Head"],
             features: [
-                "Ordered configuration workflow: Config → Rooms → Courses → MAQ (Matrix of Academic Qualifications) → Subjects → Teachers",
+                "Phase 1: Configure system settings and enter room, course, subject, and teacher data in order",
                 "Each step links to its corresponding module guide for detailed instructions",
-                "Requirements explained so you understand why the order matters",
-                "Quick checklist to verify your system is ready for schedule generation",
+                "Separate data review and correction phase before schedule generation",
+                "Readiness checklist, schedule generation, and after-schedule review steps",
             ],
             steps: [
                 {
                     stepNumber: 1,
+                    phase: "PHASE 1 — CONFIGURATION & REQUIRED DATA",
                     title: "Step 1 — Configurations: Set System-Wide Rules",
                     description:
                         "Before adding any rooms, courses, or teachers, configure the foundational rules that govern how the scheduler works.",
@@ -232,6 +234,7 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 2,
+                    phase: "PHASE 1 — CONFIGURATION & REQUIRED DATA",
                     title: "Step 2 — Rooms: Register Classrooms & Laboratories",
                     description:
                         "Add all physical classrooms and laboratories that the scheduler can assign classes to.",
@@ -247,6 +250,7 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 3,
+                    phase: "PHASE 1 — CONFIGURATION & REQUIRED DATA",
                     title: "Step 3 — Courses: Define Programs & Student Counts",
                     description:
                         "Register all academic programs (SHS strands and Tertiary degree programs) and input student enrollment counts.",
@@ -260,6 +264,7 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 4,
+                    phase: "PHASE 1 — CONFIGURATION & REQUIRED DATA",
                     title: "Step 4 — MAQ (Matrix of Academic Qualifications): Define Academic Qualifications",
                     description:
                         "Create the master list of Academic Qualification (AQ) codes that will be used to match teachers to subjects.",
@@ -274,6 +279,7 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 5,
+                    phase: "PHASE 1 — CONFIGURATION & REQUIRED DATA",
                     title: "Step 5 — Subjects: Add Curriculum & Link AQ (Academic Qualification) Requirements",
                     description:
                         "Register all courses offered by your institution and specify which academic qualifications are required to teach each one.",
@@ -290,6 +296,7 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 6,
+                    phase: "PHASE 1 — CONFIGURATION & REQUIRED DATA",
                     title: "Step 6 — Teachers: Register Faculty & Assign Qualifications",
                     description:
                         "Add all faculty members, assign their academic qualifications, and manage FCCE (Faculty Class & Course Evaluation) records.",
@@ -305,6 +312,7 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 7,
+                    phase: "PHASE 1 — CONFIGURATION & REQUIRED DATA",
                     title: "Step 7 — Optional: Set Teacher Pre-assignments",
                     description:
                         "Lock specific teachers to specific subjects and sections before running the scheduler.",
@@ -319,24 +327,25 @@ export default function HelpPage() {
                 },
                 {
                     stepNumber: 8,
-                    title: "Step 8 — Generate Your Schedule",
+                    phase: "PHASE 2 — EDIT & VALIDATE ENTERED DATA",
+                    title: "Step 8 — Review and Correct Your Entries",
                     description:
-                        "With all requirements set up, run the timetable generator to create your class schedule.",
+                        "Check the saved settings and records before scheduling. Return to the relevant module to correct missing or incorrect information.",
                     details: [
-                        "Navigate to Schedules from the sidebar.",
-                        "Review your configured data: Courses (with student counts), Subjects (with AQ requirements), Teachers (with AQ assignments), Rooms (with types), and Configurations (load limits, break periods).",
-                        "Click the schedule generation button to start the engine. The scheduler will create sections based on student counts, map subjects to qualified teachers, and assign rooms and time slots.",
-                        "After generation, review the Schedule Summary: check for unassigned entries, teacher overloads, and room conflicts.",
-                        "Use the interactive timetable to make manual adjustments — drag and drop entries to fix any issues.",
-                        "Once satisfied, set the schedule as active so it appears on the Dashboard.",
-                        "Export the schedule to Excel for distribution to faculty and students.",
+                        "Configurations: Confirm maximum students per section, teacher load and preparation limits, allowed overload, break periods, departments, and room types.",
+                        "Rooms and Courses: Check that rooms have the right type and floor, and verify student counts for every program, grade, and year level.",
+                        "MAQ and Subjects: Confirm the required Academic Qualification (AQ) codes exist, subject codes and terms are correct, lecture and lab units are accurate, and each subject has the right AQ and lab-room requirements.",
+                        "Teachers: Check each teacher's department and employment type, and make sure the required qualifications are attached with an Approved status.",
+                        "Pre-assignments: If used, confirm each teacher, subject, and section combination is correct and saved.",
+                        "If you used Excel import, review the import results and fix any rejected or incomplete rows in the related module. Use each module's guide for its edit steps.",
                     ],
                 },
                 {
                     stepNumber: 9,
-                    title: "Verification Checklist",
+                    phase: "PHASE 3 — BEFORE SCHEDULE GENERATION",
+                    title: "Step 9 — Complete the Readiness Check",
                     description:
-                        "Before generating your first schedule, verify that all the following are configured.",
+                        "Use this final checklist to make sure the required configuration and data are ready.",
                     details: [
                         "✓ Configurations: Max students per section, faculty load limits, prep limits, overload parameters, break periods, departments, and room types are all set.",
                         "✓ Rooms: At least one room of each required type is registered with a floor level.",
@@ -346,6 +355,34 @@ export default function HelpPage() {
                         "✓ Teachers: All faculty are registered with employment type, and each teacher has at least one approved AQ assigned.",
                         "✓ (Optional) Pre-assignments: Any locked teacher-to-subject bindings are saved in a template.",
                         "If all items are checked, proceed to Schedules to generate your timetable. If any item is missing, the scheduler may produce incomplete or incorrect results.",
+                    ],
+                },
+                {
+                    stepNumber: 10,
+                    phase: "PHASE 4 — SCHEDULE GENERATION",
+                    title: "Step 10 — Create the Schedule",
+                    description:
+                        "Choose what to schedule, then run the timetable generator using the data you checked in the earlier phases.",
+                    details: [
+                        "Open Schedules from the sidebar and start creating a new schedule.",
+                        "Enter a unique schedule name, select the programs or curricula to include, and choose the academic term.",
+                        "Review the selected data before starting: courses and student counts, subjects and AQ requirements, teachers and approved AQs, rooms, and configuration rules.",
+                        "Click the schedule generation action to create sections, match subjects with qualified teachers, and assign rooms and time slots.",
+                        "Wait for generation to finish, then open the new schedule's Summary page to review the result.",
+                    ],
+                },
+                {
+                    stepNumber: 11,
+                    phase: "PHASE 5 — AFTER SCHEDULE GENERATION",
+                    title: "Step 11 — Review, Adjust, Activate, and Export",
+                    description:
+                        "Check the generated timetable, fix issues, and publish or export it when it is ready.",
+                    details: [
+                        "On the Schedule Summary page, review unassigned entries, teacher and room conflicts, section conflicts, and teacher workload or overloads.",
+                        "Open the timetable and make needed changes with the timetable editor. Check the summary again after editing and confirm that the changes are saved.",
+                        "Compare the result with any teacher pre-assignments and confirm that the required classes are assigned as intended.",
+                        "When the schedule is checked and ready to share, choose 'Set as Active' to show it on the Dashboard and Timetable pages.",
+                        "Export the final timetable to Excel for sharing or printing. Keep the schedule inactive while it still needs review.",
                     ],
                 },
             ],
@@ -1523,6 +1560,7 @@ export default function HelpPage() {
             (mod.steps &&
                 mod.steps.some(
                     (s) =>
+                        s.phase?.toLowerCase().includes(q) ||
                         s.title.toLowerCase().includes(q) ||
                         s.description.toLowerCase().includes(q) ||
                         s.details.some((d) => d.toLowerCase().includes(q))
@@ -1534,6 +1572,7 @@ export default function HelpPage() {
                         t.summary.toLowerCase().includes(q) ||
                         t.steps.some(
                             (s) =>
+                                s.phase?.toLowerCase().includes(q) ||
                                 s.title.toLowerCase().includes(q) ||
                                 s.description.toLowerCase().includes(q) ||
                                 s.details.some((d) => d.toLowerCase().includes(q))
@@ -1818,36 +1857,44 @@ export default function HelpPage() {
                         </h3>
 
                         <div className="space-y-4">
-                            {displayedSteps.map((step) => (
-                                <div
-                                    key={step.stepNumber}
-                                    className="p-5 bg-slate-50/90 dark:bg-gray-900/60 rounded-2xl border border-gray-200/90 dark:border-gray-700 space-y-3 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <span className="flex items-center justify-center w-8 h-8 bg-blue-600 dark:bg-blue-500 text-white rounded-full text-sm font-bold shrink-0 shadow-sm">
-                                            {step.stepNumber}
-                                        </span>
-                                        <h4 className="font-semibold text-gray-900 dark:text-white text-base">
-                                            {step.title}
-                                        </h4>
+                            {displayedSteps.map((step, index) => (
+                                <React.Fragment key={step.stepNumber}>
+                                    {step.phase &&
+                                        (index === 0 || displayedSteps[index - 1]?.phase !== step.phase) && (
+                                            <div className="flex items-center gap-3 pt-3 first:pt-0">
+                                                <span className="rounded-full bg-blue-100 px-3 py-1 text-[11px] font-bold tracking-wide text-blue-800 dark:bg-blue-900/50 dark:text-blue-200">
+                                                    {step.phase}
+                                                </span>
+                                                <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+                                            </div>
+                                        )}
+                                    <div className="p-5 bg-slate-50/90 dark:bg-gray-900/60 rounded-2xl border border-gray-200/90 dark:border-gray-700 space-y-3 transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <span className="flex items-center justify-center w-8 h-8 bg-blue-600 dark:bg-blue-500 text-white rounded-full text-sm font-bold shrink-0 shadow-sm">
+                                                {step.stepNumber}
+                                            </span>
+                                            <h4 className="font-semibold text-gray-900 dark:text-white text-base">
+                                                {step.title}
+                                            </h4>
+                                        </div>
+
+                                        <p className="text-sm font-medium text-gray-700 dark:text-gray-200 pl-9 sm:pl-11 leading-relaxed">
+                                            {step.description}
+                                        </p>
+
+                                        <ul className="pl-9 sm:pl-11 space-y-2.5 pt-0.5">
+                                            {step.details.map((detail, dIdx) => (
+                                                <li
+                                                    key={dIdx}
+                                                    className="text-sm text-gray-600 dark:text-gray-300 flex items-start gap-2.5 leading-relaxed"
+                                                >
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 mt-2 shrink-0" />
+                                                    <span>{detail}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
-
-                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 pl-9 sm:pl-11 leading-relaxed">
-                                        {step.description}
-                                    </p>
-
-                                    <ul className="pl-9 sm:pl-11 space-y-2.5 pt-0.5">
-                                        {step.details.map((detail, dIdx) => (
-                                            <li
-                                                key={dIdx}
-                                                className="text-sm text-gray-600 dark:text-gray-300 flex items-start gap-2.5 leading-relaxed"
-                                            >
-                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 mt-2 shrink-0" />
-                                                <span>{detail}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
+                                </React.Fragment>
                             ))}
                         </div>
                     </div>
