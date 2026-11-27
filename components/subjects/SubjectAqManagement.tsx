@@ -24,7 +24,6 @@ import {
   ModalFooter,
   FileInput,
   HelperText,
-  Pagination,
   Spinner,
   Toast,
   ToastToggle,
@@ -70,6 +69,7 @@ import {
   SyncSubjectAQInput, fetchSubjectsCountNoAQ,
 } from "@/app/actions/system";
 import {HiQuestionMarkCircle} from "react-icons/hi2";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 
 interface ProgramRecord {
   program_code: string;
@@ -1021,7 +1021,6 @@ export default function SubjectAqManagement() {
     }
   };
 
-  const totalPages = Math.ceil(totalCount / maxRow) || 1;
   const successfulImportResults = importResults.filter(
     (result) => result.status === "success",
   );
@@ -1043,56 +1042,58 @@ export default function SubjectAqManagement() {
           </p>
         </div>
 
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {/* No Aq Warning */}
-          {noAqCount !== 0 && (
-            <Button
-              color={"light"}
-              className={"flex flex-wrap gap-2 border-transparent hover:border-black dark:hover:border-white"}
-              onClick={() => setAqFilterState("NO_AQ")}
-            >
-              <HiExclamation className={"h-8 w-8 text-yellow-400"} />
-              {noAqCount} Subject(s) have no set AQ
-            </Button>
-          )}
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {/* No Aq Warning */}
+            {noAqCount !== 0 && (
+              <Button
+                color={"light"}
+                className={"flex flex-wrap gap-2 border-transparent hover:border-black dark:hover:border-white"}
+                onClick={() => setAqFilterState("NO_AQ")}
+              >
+                <HiExclamation className={"h-8 w-8 text-yellow-400"} />
+                {noAqCount} Subject(s) have no set AQ
+              </Button>
+            )}
 
-          {/* Program Filter Dropdown */}
-          <div className="w-full sm:w-48">
-            <Select
-              id="program-filter-select"
-              value={selectedProgramFilter}
-              onChange={(e) => {
-                setSelectedProgramFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-            >
-              <option value="ALL">All Programs</option>
-              {allProgramsFilterList.map((prog) => (
-                <option
-                  key={`filter-${prog.program_code}`}
-                  value={prog.program_code}
-                >
-                  {prog.program_code} - {prog.program_name}
-                </option>
-              ))}
-            </Select>
-          </div>
+            {/* Program Filter Dropdown */}
+            <div className="w-full sm:w-48">
+              <Select
+                id="program-filter-select"
+                value={selectedProgramFilter}
+                onChange={(e) => {
+                  setSelectedProgramFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="ALL">All Programs</option>
+                {allProgramsFilterList.map((prog) => (
+                  <option
+                    key={`filter-${prog.program_code}`}
+                    value={prog.program_code}
+                  >
+                    {prog.program_code} - {prog.program_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
 
-          {/* AQ Status Filter Dropdown */}
-          <div className="w-full sm:w-44">
-            <Select
-              id="aq-filter-select"
-              value={aqFilterState}
-              onChange={(e) => {
-                setAqFilterState(e.target.value);
-                setCurrentPage(1);
-              }}
-            >
-              <option value="ALL">All AQ Status</option>
-              <option value="WITH_AQ">With AQ Assigned</option>
-              <option value="NO_AQ_REQUIRED">No AQ Required</option>
-              <option value="NO_AQ">No AQ Assigned</option>
-            </Select>
+            {/* AQ Status Filter Dropdown */}
+            <div className="w-full sm:w-44">
+              <Select
+                id="aq-filter-select"
+                value={aqFilterState}
+                onChange={(e) => {
+                  setAqFilterState(e.target.value);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="ALL">All AQ Status</option>
+                <option value="WITH_AQ">With AQ Assigned</option>
+                <option value="NO_AQ_REQUIRED">No AQ Required</option>
+                <option value="NO_AQ">No AQ Assigned</option>
+              </Select>
+            </div>
           </div>
 
           <div className="flex w-full flex-wrap items-center gap-2">
@@ -1272,16 +1273,14 @@ export default function SubjectAqManagement() {
       </div>
 
       {/* Pagination Footer */}
-      {!isLoading && totalPages > 0 && (
-        <div className="flex w-full justify-center">
-          <Pagination
-            layout="pagination"
-            currentPage={currentPage || 1}
-            totalPages={totalPages}
-            onPageChange={(p) => setCurrentPage(p)}
-            showIcons
-          />
-        </div>
+      {!isLoading && (
+        <TablePaginationFooter
+          className="mt-4"
+          currentPage={currentPage}
+          pageSize={maxRow}
+          totalCount={totalCount}
+          onPageChange={(page) => setCurrentPage(page)}
+        />
       )}
 
       {/* --- MODAL: EXCEL OPERATIONS --- */}
