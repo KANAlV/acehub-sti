@@ -718,6 +718,7 @@ export default function FcceManagement() {
 
             let successCount = 0;
             let failCount = 0;
+            let skippedCount = 0;
             const logs: string[] = [];
 
             const headerIndexMap: Record<string, number> = {};
@@ -746,6 +747,12 @@ export default function FcceManagement() {
                 const rawCourse = String(row.getCell(courseCol).value || "").trim();
                 const rawAySem = String(row.getCell(aySemCol).value || "").trim();
                 const rawStatus = String(row.getCell(statusCol).value || "").trim().toLowerCase();
+
+                if (rawStatus === "na" || rawStatus === "n/a" || rawStatus === "na/") {
+                    logs.push(`Row ${rowNumber} (${rawPscs || "unknown"}): Skipped. Status is N/A.`);
+                    skippedCount++;
+                    return;
+                }
 
                 if (!rawPscs || !rawCourse || !rawAySem) {
                     logs.push(`Row ${rowNumber}: Skipped. Essential information (PSCS ID, Course Name, or AY/Sem) is missing.`);
@@ -790,7 +797,7 @@ export default function FcceManagement() {
 
             setImportLogs((prev) => [
                 ...prev,
-                `Import Completed: ${successCount} successful, ${failCount} failed.`,
+                `Import Completed: ${successCount} successful, ${failCount} failed, ${skippedCount} skipped.`,
                 ...logs,
             ]);
 
