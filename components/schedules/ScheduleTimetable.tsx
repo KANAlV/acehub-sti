@@ -496,6 +496,13 @@ interface DragPayload {
   originalEndTime?: number;
 }
 
+interface DropOverrides {
+  allowRoomTypeMismatch?: boolean;
+  allowConsecutiveTeaching?: boolean;
+  allowLectureInLabRoom?: boolean;
+  allowBreakConflict?: boolean;
+}
+
 export default function ScheduleTimetableClient({
                                                   scheduleName,
                                                 }: ScheduleTimetableClientProps) {
@@ -568,7 +575,7 @@ export default function ScheduleTimetableClient({
     matchingDuplicates: [],
   });
 
-  // --- Confirmation Modal State for Lecture in Lab Room, Break Overrides & 4-Hour Rules --- //
+  // --- Confirmation Modal State for Room Type, Break & 4-Hour Overrides --- //
   const [confirmModalData, setConfirmModalData] = useState<{
     show: boolean;
     title: string;
@@ -1139,6 +1146,7 @@ export default function ScheduleTimetableClient({
     targetDay: string,
     targetTimeSlot: string,
     droppedData: DragPayload,
+    overrides: DropOverrides = {},
   ) => {
     hasDroppedRef.current = true;
     setDragOverCell(null);
@@ -1293,7 +1301,7 @@ export default function ScheduleTimetableClient({
         }
       }
 
-      if (hasConsecutiveViolation) {
+      if (hasConsecutiveViolation && !overrides.allowConsecutiveTeaching) {
         setConfirmModalData({
           show: true,
           title: "Continuous Teaching Limit Exceeded!",
@@ -1311,13 +1319,10 @@ export default function ScheduleTimetableClient({
               message: "",
               onConfirm: () => {},
             });
-            executeDropPlacement(
-              targetDay,
-              targetStartMins,
-              duration,
-              droppedData,
-              activeRoom,
-            );
+            handleDropToSlot(targetDay, targetTimeSlot, droppedData, {
+              ...overrides,
+              allowConsecutiveTeaching: true,
+            });
           },
         });
         return;
@@ -1347,11 +1352,35 @@ export default function ScheduleTimetableClient({
             roomTypeUuid === requiredLabTypeUuid ||
             roomTypeName.toLowerCase() === requiredLabTypeName.toLowerCase();
 
-          if (requiredLabTypeUuid && roomTypeUuid && !isMatch) {
-            setConflictModalData({
+          if (
+            requiredLabTypeUuid &&
+            roomTypeUuid &&
+            !isMatch &&
+            !overrides.allowRoomTypeMismatch
+          ) {
+            setConfirmModalData({
               show: true,
-              title: `Room Type Mismatch`,
-              message: `Laboratory block requires room type [${requiredLabTypeName}], However room [${activeRoom}] is classified as [${roomTypeName}].`,
+              title: "Laboratory Room Type Mismatch",
+              message: (
+                <>
+                  This laboratory block requires a {requiredLabTypeName} room,
+                  but {activeRoom} is classified as {roomTypeName}.
+                  <br />
+                  Do you want to override this restriction and continue?
+                </>
+              ),
+              onConfirm: () => {
+                setConfirmModalData({
+                  show: false,
+                  title: "",
+                  message: "",
+                  onConfirm: () => {},
+                });
+                handleDropToSlot(targetDay, targetTimeSlot, droppedData, {
+                  ...overrides,
+                  allowRoomTypeMismatch: true,
+                });
+              },
             });
             return;
           }
@@ -1363,7 +1392,11 @@ export default function ScheduleTimetableClient({
             roomTypeName.toLowerCase().includes("gym") ||
             roomTypeName.toLowerCase().includes("avr");
 
-          if (isLabRoom && !roomTypeName.toLowerCase().includes("lecture")) {
+          if (
+            isLabRoom &&
+            !roomTypeName.toLowerCase().includes("lecture") &&
+            !overrides.allowLectureInLabRoom
+          ) {
             setConfirmModalData({
               show: true,
               title: "Assign Lecture to Laboratory Room",
@@ -1381,13 +1414,10 @@ export default function ScheduleTimetableClient({
                   message: "",
                   onConfirm: () => {},
                 });
-                executeDropPlacement(
-                  targetDay,
-                  targetStartMins,
-                  duration,
-                  droppedData,
-                  activeRoom,
-                );
+                handleDropToSlot(targetDay, targetTimeSlot, droppedData, {
+                  ...overrides,
+                  allowLectureInLabRoom: true,
+                });
               },
             });
             return;
@@ -1423,7 +1453,7 @@ export default function ScheduleTimetableClient({
       return targetStartMins < bp.end_time && targetEndMins > bp.start_time;
     });
 
-    if (breakConflict) {
+    if (breakConflict && !overrides.allowBreakConflict) {
       setConfirmModalData({
         show: true,
         title: "Break Period Conflict Override",
@@ -1441,13 +1471,10 @@ export default function ScheduleTimetableClient({
             message: "",
             onConfirm: () => {},
           });
-          executeDropPlacement(
-            targetDay,
-            targetStartMins,
-            duration,
-            droppedData,
-            activeRoom,
-          );
+          handleDropToSlot(targetDay, targetTimeSlot, droppedData, {
+            ...overrides,
+            allowBreakConflict: true,
+          });
         },
       });
       return;

@@ -99,7 +99,7 @@ export default function TertiaryProgramsManagement() {
   const { instance, accounts } = useMsal();
   const activeAccount = instance.getActiveAccount() || accounts[0];
   const activeUser = activeAccount?.username || "system";
-  const [isLoading, setLoading] = useState(false);
+  const [isLoading, setLoading] = useState(true);
 
   // --- Table & Filter States --- //
   const [programs, setPrograms] = useState<TertiaryProgram[]>([]);

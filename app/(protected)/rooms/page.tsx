@@ -148,6 +148,11 @@ export default function RoomsManagement() {
         return map;
     }, [roomTypes]);
 
+    const selectableRoomTypes = useMemo(
+        () => roomTypes.filter((rt) => rt.value.trim().toLowerCase() !== "ojt"),
+        [roomTypes]
+    );
+
     /** --- Helper for Triggering File Downloads --- **/
     const downloadWorkbook = (buffer: ArrayBuffer, filename: string) => {
         const blob = new Blob([buffer], {
@@ -463,6 +468,7 @@ export default function RoomsManagement() {
     const handleDownloadTemplate = useCallback(async () => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Template") as unknown as WorksheetWithValidation;
+        const templateRoomTypes = selectableRoomTypes;
 
         // Generous, un-cramped column width definitions (accounting for dropdown arrow icons)
         worksheet.columns = [
@@ -473,11 +479,11 @@ export default function RoomsManagement() {
 
         worksheet.addRow({
             room_name: "Lab 101",
-            room_type: roomTypes[0]?.value || "Lecture Room",
+            room_type: templateRoomTypes[0]?.value || "Lecture Room",
             floor_level: "Floor 1",
         });
 
-        const typeValues = roomTypes.map((rt) => rt.value.replace(/"/g, '""')).join(",");
+        const typeValues = templateRoomTypes.map((rt) => rt.value.replace(/"/g, '""')).join(",");
         const validationFormula = `"${typeValues}"`;
 
         worksheet.dataValidations.add("B2:B1000", {
@@ -504,7 +510,7 @@ export default function RoomsManagement() {
         downloadWorkbook(buffer, "Rooms_Import_Template.xlsx");
 
         triggerToast("Blank Excel template downloaded successfully with dynamic room type options!", "success");
-    }, [roomTypes, triggerToast]);
+    }, [selectableRoomTypes, triggerToast]);
 
     const handleExportExcel = useCallback(async () => {
         try {
@@ -1150,7 +1156,7 @@ export default function RoomsManagement() {
                                 <option value="" hidden={true}>
                                     Select Room Type...
                                 </option>
-                                {roomTypes.map((type) => (
+                                {selectableRoomTypes.map((type) => (
                                     <option key={type.room_type_id} value={type.room_type_id}>
                                         {type.value}
                                     </option>
@@ -1227,7 +1233,7 @@ export default function RoomsManagement() {
                                 <option value="" hidden={true}>
                                     Select Room Type...
                                 </option>
-                                {roomTypes.map((type) => (
+                                {selectableRoomTypes.map((type) => (
                                     <option key={type.room_type_id} value={type.room_type_id}>
                                         {type.value}
                                     </option>

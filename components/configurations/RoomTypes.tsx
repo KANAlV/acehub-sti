@@ -383,7 +383,7 @@ export default function RoomTypes() {
                     {item.value}
                   </TableCell>
                   <TableCell>
-                    {item.value !== "Lecture" && (
+                    {(item.value !== "Lecture" && item.value !== "OJT") && (
                       <a
                         onClick={() => loadEditData(item)}
                         className="text-primary-600 dark:text-primary-500 cursor-pointer font-medium hover:underline"
