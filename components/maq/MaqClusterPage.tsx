@@ -973,8 +973,8 @@ export default function MaqClusterPage() {
                     </div>
 
                     <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-                      <span className="font-semibold uppercase tracking-wide">Format Standard:</span> Headers must strictly contain{" "}
-                      <b>Cluster Name</b> and <b>Academic Qualifications</b>. Use commas only to separate entries; qualification names may include spaces and common punctuation.
+                      <span className="font-semibold uppercase tracking-wide">Format Standard:</span> Use an{" "}
+                      <b>Academic Qualifications</b>, <b>Academic Qualification</b>, or <b>AQ</b> header. The Cluster Name header is optional; leave the cluster name blank to import qualifications as individual MAQs. Separate multiple qualifications with commas; names may include spaces and common punctuation.
                     </div>
 
                     {formatError && (
