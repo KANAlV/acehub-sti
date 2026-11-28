@@ -8,6 +8,7 @@ import {
   fetchPrograms,
   fetchRoomTypeList,
   fetchSubjectRequirements,
+  fetchTeachers,
   getRoomsForGeneration,
   getTeachersWithAqAndFcce,
   SubjectRequirementRecord,
@@ -29,6 +30,7 @@ import {
   type RepairScheduleOptions,
 } from "@/utils/autoScheduleRepair";
 import { parseSubjectYearTerm } from "@/utils/subjectYearTerm";
+import { isTeacherTimeWithinAvailability } from "@/utils/teacherAvailability";
 
 /** --- INTERFACES --- **/
 
@@ -103,6 +105,7 @@ export interface TeacherRecord {
   department?: string;
   employment_type?: string;
   status?: string;
+  availability?: unknown;
   aqs?: unknown;
   fcces?: unknown;
   preferences?: {
@@ -495,10 +498,14 @@ export async function generateRoomAndClassSchedules(
     // Fetch room types to identify kitchen labs
     const roomTypesResult = await fetchRoomTypeList(null, "ASC", -1, 1);
     const kitchenRoomTypeIds = new Set<string>();
+    const ojtRoomTypeIds = new Set<string>();
     if (roomTypesResult.success && roomTypesResult.data) {
       for (const rt of roomTypesResult.data) {
         if (rt.value && rt.value.toLowerCase().includes("kitchen")) {
           kitchenRoomTypeIds.add(rt.room_type_id);
+        }
+        if (rt.value?.trim().toLowerCase() === "ojt") {
+          ojtRoomTypeIds.add(rt.room_type_id.trim().toLowerCase());
         }
       }
     }
@@ -736,7 +743,12 @@ export async function generateRoomAndClassSchedules(
 
       let scheduledDay: string | null = null;
 
-      if (hasLecture && hasLab && !isKitchenLab) {
+      if (
+        hasLecture &&
+        hasLab &&
+        !isKitchenLab &&
+        !isOjtLabType(subject.lab_type, ojtRoomTypeIds)
+      ) {
         // New pairing logic: try to schedule both components on the same day in adjacent slots
         const paired = trySchedulePaired(
           subject,
@@ -785,6 +797,7 @@ export async function generateRoomAndClassSchedules(
           lectureRoomTypeId,
           preferBefore6PM,
           sectionDaySubjectCount,
+          ojtRoomTypeIds,
         );
         if (result) {
           scheduledDay = result.day;
@@ -812,6 +825,7 @@ export async function generateRoomAndClassSchedules(
           lectureRoomTypeId,
           preferBefore6PM,
           sectionDaySubjectCount,
+          ojtRoomTypeIds,
         );
         if (result) {
           // If lecture and lab were scheduled independently, count the lab's day too
@@ -833,7 +847,7 @@ export async function generateRoomAndClassSchedules(
     // Strategy: find the earliest available time for the lab first (since lab phases run first),
     // then check if the lecture can fit immediately after without hitting a break or conflict.
     // If pairing would hit a break or conflict, return false so components schedule independently.
-    // Skip pairing entirely if combined units (lec + lab) >= 6, as it would be too many units for one day.
+    // Skip pairing entirely if combined units (lec + lab) >= 4, as it would be too many units for one day.
     function trySchedulePaired(
       subject: AssignedSubjectDetail,
       sectionCode: string,
@@ -844,8 +858,8 @@ export async function generateRoomAndClassSchedules(
       labHours: number,
       sectionDaySubjectCount: Map<string, Map<string, number>>,
     ): boolean {
-      // Skip pairing if combined units would be 6 or more
-      if (lecHours + labHours >= 6) return false;
+      // Skip pairing if combined units would be 4 or more
+      if (lecHours + labHours >= 4) return false;
 
       const lecSlotsNeeded = Math.ceil((lecHours * 60) / 30);
       const labSlotsNeeded = Math.ceil((labHours * 60) / 30);
@@ -1420,9 +1434,110 @@ export async function generateRoomAndClassSchedules(
       }
     }
 
-    return {
-      success: true,
+    const subjectsById = new Map(
+      sectionAssignments.flatMap((assignment) =>
+        assignment.subjects.map((subject) => [subject.subject_id, subject]),
+      ),
+    );
+    const requiredEntries: ScheduleEntry[] = sectionAssignments.flatMap(
+      ({ sectionCode, subjects }) =>
+        subjects.flatMap((subject) =>
+          ([
+            ["LECTURE", subject.lecture_units],
+            ["LABORATORY", subject.lab_units],
+          ] as const)
+            .filter(([, units]) => units > 0)
+            .map(([componentType, units]) => {
+              const duration = Math.ceil((units * 60) / 30) * 30;
+              return {
+                sectionCode,
+                subjectId: subject.subject_id,
+                courseCode: subject.course_code,
+                courseName: subject.course_name,
+                componentType,
+                units,
+                roomId: null,
+                roomName:
+                  componentType === "LABORATORY" &&
+                  isOjtLabType(subject.lab_type, ojtRoomTypeIds)
+                    ? "No Room Required"
+                    : "Unassigned Room",
+                day: "Monday",
+                startTime: "07:00",
+                endTime: `${String(Math.floor((7 * 60 + duration) / 60)).padStart(2, "0")}:${String((7 * 60 + duration) % 60).padStart(2, "0")}`,
+                type: componentType.toLowerCase(),
+                teacherId: null,
+                teacherName: null,
+              };
+            }),
+        ),
+    );
+    const baseRepair = repairGeneratedSchedule(
       scheduleEntries,
+      requiredEntries,
+      {
+        days,
+        dayStartMinutes: 7 * 60,
+        dayEndMinutes: 22 * 60,
+        localSearchIterations: 60,
+        isTimeAllowed: (entry, day, _startTime, endTime) => {
+          if (!/^([A-Z]+)([12])(\d{2})$/.test(entry.sectionCode)) {
+            return true;
+          }
+          return (
+            shsDays.includes(day) && timeToMinutes(endTime) <= 18 * 60
+          );
+        },
+        isBreakTime: (day, startTime, endTime) => {
+          const start = timeToMinutes(startTime);
+          const end = timeToMinutes(endTime);
+          for (let slotStart = start; slotStart < end; slotStart += 30) {
+            const slotEnd = Math.min(slotStart + 30, end);
+            if (
+              isBreakTime(
+                day,
+                `${String(Math.floor(slotStart / 60)).padStart(2, "0")}:${String(slotStart % 60).padStart(2, "0")} - ${String(Math.floor(slotEnd / 60)).padStart(2, "0")}:${String(slotEnd % 60).padStart(2, "0")}`,
+                breakPeriods,
+              )
+            ) {
+              return true;
+            }
+          }
+          return false;
+        },
+        hasAdditionalConflict: (first, second) =>
+          !!first.courseCode && first.courseCode === second.courseCode,
+        getRooms: (entry) => {
+          const subject = subjectsById.get(entry.subjectId);
+          if (
+            entry.componentType === "LABORATORY" &&
+            isOjtLabType(subject?.lab_type, ojtRoomTypeIds)
+          ) {
+            return [{ roomId: null, roomName: "No Room Required" }];
+          }
+          return getFilteredRooms(
+            entry.componentType,
+            rooms,
+            subject?.lab_type,
+            lectureRoomTypeId,
+          ).map((room) => ({
+            roomId: room.room_id,
+            roomName: room.room_name || "Unassigned Room",
+          }));
+        },
+      },
+    );
+    const repairedValidation = validateGeneratedSchedule(
+      baseRepair.entries,
+      sectionAssignments,
+    );
+
+    return {
+      success: baseRepair.complete,
+      scheduleEntries: baseRepair.entries,
+      error: baseRepair.complete
+        ? undefined
+        : formatGeneratedScheduleValidationError(repairedValidation),
     };
   } catch (error) {
     console.error("Failed to generate room and class schedules:", error);
@@ -1440,8 +1555,9 @@ export async function generateRoomAndClassSchedules(
  * Teacher-aware schedule generation for full auto mode.
  * Integrates teacher assignment during scheduling with employment type constraints:
  * - Full-Time: weekdays only (M-F), 7AM-6PM
- * - Part-Time Full Load: can handle 6PM-10PM, respects preferred times and subjects
- * - Part-Time: handles Saturdays, only preferred days/times/subjects
+ * - Part-Time Full Load: follows availability and can handle evening classes
+ * - Part-Time: follows availability, including Saturdays when available
+ * - Part-time availability defaults to Monday-Saturday, 7AM-10PM when unset
  */
 export async function generateRoomAndClassSchedulesWithTeachers(
   _name: string,
@@ -1454,6 +1570,32 @@ export async function generateRoomAndClassSchedulesWithTeachers(
   testMode: boolean = false,
 ): Promise<ScheduleAssignmentResult> {
   try {
+    const needsAvailabilityLookup = teachersForGeneration.some(
+      (teacher) =>
+        (teacher.employment_type || "").toLowerCase().includes("part") &&
+        teacher.availability === undefined,
+    );
+    const availabilityByTeacherId = new Map<string, unknown>();
+    if (needsAvailabilityLookup) {
+      const availabilityResult = await fetchTeachers(
+        null,
+        "All Statuses",
+        "All Departments",
+        "surname",
+        "ASC",
+        -1,
+        1,
+      );
+      if (!availabilityResult.success) {
+        throw new Error(
+          availabilityResult.error || "Failed to fetch teacher availability.",
+        );
+      }
+      for (const teacher of availabilityResult.data || []) {
+        availabilityByTeacherId.set(teacher.teacher_id, teacher.availability);
+      }
+    }
+
     if (testMode) {
       const teacherDebugData = teachersForGeneration.map(
         ({
@@ -1558,6 +1700,13 @@ export async function generateRoomAndClassSchedulesWithTeachers(
           "Failed to resolve required section subject components.",
       );
     }
+
+    const roomTypesResult = await fetchRoomTypeList(null, "ASC", -1, 1);
+    const ojtRoomTypeIds = new Set(
+      (roomTypesResult.success ? roomTypesResult.data || [] : [])
+        .filter((roomType) => roomType.value.trim().toLowerCase() === "ojt")
+        .map((roomType) => roomType.room_type_id.trim().toLowerCase()),
+    );
 
     if (testMode) {
       const sectionRequirements = requirementsResult.assignments.map(
@@ -1767,7 +1916,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
       shsTerm,
     );
 
-    if (!baseResult.success || !baseResult.scheduleEntries.length) {
+    if (!baseResult.scheduleEntries.length) {
       return baseResult;
     }
 
@@ -1810,6 +1959,26 @@ export async function generateRoomAndClassSchedulesWithTeachers(
     // Helper: check if day is weekday (M-F)
     function isWeekday(day: string): boolean {
       return day !== "Saturday";
+    }
+
+    function isPartTimeCategory(
+      category: ReturnType<typeof getEmploymentCategory>,
+    ): boolean {
+      return category !== "full_time";
+    }
+
+    function isTeacherWithinAvailability(
+      teacher: TeacherRecord,
+      day: string,
+      startTime: string,
+      endTime: string,
+    ): boolean {
+      return isTeacherTimeWithinAvailability(
+        teacher.availability ?? availabilityByTeacherId.get(teacher.teacher_id),
+        day,
+        startTime,
+        endTime,
+      );
     }
 
     // Helper: check if teacher prefers this time slot
@@ -1876,6 +2045,16 @@ export async function generateRoomAndClassSchedulesWithTeachers(
 
       // Part-Time: only preferred days/times, handles Saturdays
       if (category === "part_time") {
+        if (
+          !isTeacherWithinAvailability(
+            teacher,
+            entry.day,
+            entry.startTime,
+            entry.endTime,
+          )
+        ) {
+          valid = false;
+        }
         // Check preferred times
         if (
           !teacherPrefersTime(
@@ -1891,6 +2070,16 @@ export async function generateRoomAndClassSchedulesWithTeachers(
 
       // Part-Time Full Load: can handle evening, but prefer preferred times
       if (category === "part_time_full_load") {
+        if (
+          !isTeacherWithinAvailability(
+            teacher,
+            entry.day,
+            entry.startTime,
+            entry.endTime,
+          )
+        ) {
+          valid = false;
+        }
         // Can handle 6PM-10PM, but respect preferred times if set
         if (
           !teacherPrefersTime(
@@ -1909,7 +2098,8 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         }
       }
 
-      if (!valid) {
+      const startsLate = timeToMinutes(entry.startTime) >= 19 * 60 + 30;
+      if (!valid || (isPartTimeCategory(category) && startsLate)) {
         needsReschedule.add(entry.subjectId);
       }
 
@@ -1970,10 +2160,21 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         const teacher = entry.teacherId
           ? teacherInfoMap.get(entry.teacherId)
           : undefined;
+        const subject = subjectsById.get(entry.subjectId);
+        if (
+          entry.componentType === "LABORATORY" &&
+          isOjtLabType(subject?.lab_type, ojtRoomTypeIds)
+        ) {
+          result[index] = {
+            ...entry,
+            roomId: null,
+            roomName: "No Room Required",
+          };
+          continue;
+        }
         const preferredRooms = teacher?.preferences?.preferred_rooms;
         if (!preferredRooms?.length) continue;
 
-        const subject = subjectsById.get(entry.subjectId);
         const compatibleRooms = getFilteredRooms(
           entry.componentType,
           roomsResult.data,
@@ -2029,7 +2230,16 @@ export async function generateRoomAndClassSchedulesWithTeachers(
       if (
         !hasInitialIssues &&
         needsReschedule.size === 0 &&
-        !hasInitialFatigueRisk
+        !hasInitialFatigueRisk &&
+        !preferredRoomEntries.some((entry) => {
+          const teacher = entry.teacherId
+            ? teacherInfoMap.get(entry.teacherId)
+            : undefined;
+          return (
+            (teacher?.preferences?.preferred_rooms?.length ?? 0) > 0 ||
+            (teacher?.preferences?.preferred_times?.length ?? 0) > 0
+          );
+        })
       ) {
         return { success: true, scheduleEntries: preferredRoomEntries };
       }
@@ -2091,7 +2301,11 @@ export async function generateRoomAndClassSchedulesWithTeachers(
           componentType,
           units,
           roomId: null,
-          roomName: "Unassigned Room",
+          roomName:
+            componentType === "LABORATORY" &&
+            isOjtLabType(subject.lab_type, ojtRoomTypeIds)
+              ? "No Room Required"
+              : "Unassigned Room",
           day: "Monday",
           startTime: formatRepairTime(startMinutes),
           endTime: formatRepairTime(startMinutes + durationMinutes),
@@ -2129,7 +2343,12 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         endTime: string,
       ): boolean => {
         const isShs = /^([A-Z]+)([12])(\d{2})$/.test(entry.sectionCode);
-        if (isShs && timeToMinutes(endTime) > 18 * 60) return false;
+        if (
+          isShs &&
+          (!isWeekday(day) || timeToMinutes(endTime) > 18 * 60)
+        ) {
+          return false;
+        }
 
         const teacher = entry.teacherId
           ? teacherInfoMap.get(entry.teacherId)
@@ -2140,6 +2359,12 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         if (
           category === "full_time" &&
           (!isWeekday(day) || !isWithinDaytime(startTime, endTime))
+        ) {
+          return false;
+        }
+        if (
+          isPartTimeCategory(category) &&
+          !isTeacherWithinAvailability(teacher, day, startTime, endTime)
         ) {
           return false;
         }
@@ -2199,6 +2424,12 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         },
         getRooms: (entry) => {
           const subject = subjectsById.get(entry.subjectId);
+          if (
+            entry.componentType === "LABORATORY" &&
+            isOjtLabType(subject?.lab_type, ojtRoomTypeIds)
+          ) {
+            return [{ roomId: null, roomName: "No Room Required" }];
+          }
           const compatibleRooms = getFilteredRooms(
             entry.componentType,
             roomsResult.data as RoomForGeneration[],
@@ -2209,46 +2440,80 @@ export async function generateRoomAndClassSchedulesWithTeachers(
             ? teacherInfoMap.get(entry.teacherId)
             : undefined;
           const preferredRooms = teacher?.preferences?.preferred_rooms || [];
-          const category = teacher ? getEmploymentCategory(teacher) : null;
-          const orderedRooms =
-            category === "full_time" && preferredRooms.length > 0
-              ? findPreferredRooms(compatibleRooms, preferredRooms)
-              : (() => {
-                  const preferredRoom = findPreferredRoom(
-                    compatibleRooms,
-                    preferredRooms,
-                  );
-                  return preferredRoom
-                    ? [
-                        preferredRoom,
-                        ...compatibleRooms.filter(
-                          (room) => room.room_id !== preferredRoom.room_id,
-                        ),
-                      ]
-                    : compatibleRooms;
-                })();
+          const preferredRoomOptions = findPreferredRooms(
+            compatibleRooms,
+            preferredRooms,
+          );
+          const preferredRoomIds = new Set(
+            preferredRoomOptions.map((room) => room.room_id),
+          );
+          const orderedRooms = [
+            ...preferredRoomOptions,
+            ...compatibleRooms.filter(
+              (room) => !preferredRoomIds.has(room.room_id),
+            ),
+          ];
           return orderedRooms.map((room) => ({
             roomId: room.room_id,
             roomName: room.room_name || "Unassigned Room",
           }));
         },
+        getPreferencePenalty: (entry) => {
+          const teacher = entry.teacherId
+            ? teacherInfoMap.get(entry.teacherId)
+            : undefined;
+          if (!teacher) return 0;
+
+          const preferences = teacher.preferences;
+          let penalty = 0;
+          const category = getEmploymentCategory(teacher);
+          const subject = subjectsById.get(entry.subjectId);
+          const preferredRooms = preferences?.preferred_rooms ?? [];
+          if (
+            !(
+              entry.componentType === "LABORATORY" &&
+              isOjtLabType(subject?.lab_type, ojtRoomTypeIds)
+            ) &&
+            preferredRooms.length > 0 &&
+            !preferredRooms.some((preferredRoom) => {
+              const normalizedPreference = preferredRoom
+                .trim()
+                .toLowerCase();
+              return [entry.roomId, entry.roomName].some(
+                (room) => room?.trim().toLowerCase() === normalizedPreference,
+              );
+            })
+          ) {
+            penalty++;
+          }
+
+          if (
+            (preferences?.preferred_times?.length ?? 0) > 0 &&
+            !teacherPrefersTime(
+              teacher,
+              entry.day,
+              entry.startTime,
+              entry.endTime,
+            )
+          ) {
+            penalty++;
+          }
+          if (
+            isPartTimeCategory(category) &&
+            timeToMinutes(entry.startTime) >= 19 * 60 + 30
+          ) {
+            penalty++;
+          }
+          return penalty;
+        },
+        localSearchIterations: 200,
       });
 
       const repairStages = [
         {
-          description: "configured breaks and fatigue limits",
+          description: "while preserving configured breaks and fatigue limits",
           ignoreConfiguredBreaks: false,
           ignoreFatigue: false,
-        },
-        {
-          description: "without configured breaks",
-          ignoreConfiguredBreaks: true,
-          ignoreFatigue: false,
-        },
-        {
-          description: "without configured breaks or fatigue limits",
-          ignoreConfiguredBreaks: true,
-          ignoreFatigue: true,
         },
       ];
       let lastRepair: {
@@ -2294,8 +2559,27 @@ export async function generateRoomAndClassSchedulesWithTeachers(
             candidate,
             requirementsResult.assignments,
           );
-          return Object.values(validation).every(
-            (issues) => issues.length === 0,
+          const hasConfiguredBreak = candidate.some((entry) => {
+            const start = timeToMinutes(entry.startTime);
+            const end = timeToMinutes(entry.endTime);
+            for (let slotStart = start; slotStart < end; slotStart += 30) {
+              const slotEnd = Math.min(slotStart + 30, end);
+              if (
+                isBreakTime(
+                  entry.day,
+                  `${formatRepairTime(slotStart)} - ${formatRepairTime(slotEnd)}`,
+                  breakPeriods,
+                )
+              ) {
+                return true;
+              }
+            }
+            return false;
+          });
+          return (
+            Object.values(validation).every((issues) => issues.length === 0) &&
+            !hasConfiguredBreak &&
+            getFatigueRiskEntries(candidate).length === 0
           );
         },
         (first, second) =>
@@ -2314,7 +2598,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         scheduleEntries: lastRepair?.entries || preferredRoomEntries,
         error: Object.values(lastValidation).some((issues) => issues.length > 0)
           ? formatGeneratedScheduleValidationError(lastValidation)
-          : "Could not place every required class component after retrying with relaxed break and fatigue constraints.",
+          : "Could not place every required class component while preserving teacher availability, configured breaks, fatigue limits, and room constraints.",
       };
     }
 
@@ -2509,6 +2793,28 @@ export async function assignTeachersToSchedule(
 
     for (const subjectId of subjectIds) {
       const subjectInfo = subjectInfoMap.get(subjectId)!;
+      const preferenceRankedTeachers = [...activeTeachers].sort(
+        (first, second) => {
+          const preferenceDifference =
+            getTeacherPreferenceMatchScore(
+              second.preferences,
+              subjectInfo.courseName,
+              subjectInfo.courseCode,
+              null,
+            ) -
+            getTeacherPreferenceMatchScore(
+              first.preferences,
+              subjectInfo.courseName,
+              subjectInfo.courseCode,
+              null,
+            );
+          if (preferenceDifference !== 0) return preferenceDifference;
+          return (
+            (teacherLoad.get(first.teacher_id) || 0) -
+            (teacherLoad.get(second.teacher_id) || 0)
+          );
+        },
+      );
 
       // Calculate total units for this subject across ALL sections
       // We need the per-subject units (lecture + lab), not multiplied by sections
@@ -2552,7 +2858,7 @@ export async function assignTeachersToSchedule(
       let bestTeacher: TeacherRecord | null = null;
 
       // First pass: find teachers with full AQ + FCCE match
-      for (const teacher of activeTeachers) {
+      for (const teacher of preferenceRankedTeachers) {
         const loadLimit = getFacultyLoadLimit(teacher.employment_type);
         const absoluteMax = loadLimit + overloadMax;
         const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
@@ -2585,7 +2891,7 @@ export async function assignTeachersToSchedule(
 
       // Second pass: if no full match, find teachers with AQ match only
       if (!bestTeacher) {
-        for (const teacher of activeTeachers) {
+        for (const teacher of preferenceRankedTeachers) {
           const loadLimit = getFacultyLoadLimit(teacher.employment_type);
           const absoluteMax = loadLimit + overloadMax;
           const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
@@ -2609,7 +2915,7 @@ export async function assignTeachersToSchedule(
 
       // Third pass: if still no match, find any teacher with available load
       if (!bestTeacher) {
-        for (const teacher of activeTeachers) {
+        for (const teacher of preferenceRankedTeachers) {
           const loadLimit = getFacultyLoadLimit(teacher.employment_type);
           const absoluteMax = loadLimit + overloadMax;
           const currentLoad = teacherLoad.get(teacher.teacher_id) || 0;
@@ -2808,6 +3114,17 @@ function findEarliestAvailableSlots(
   return -1;
 }
 
+function isOjtLabType(
+  labTypeId: string | null | undefined,
+  ojtRoomTypeIds: Set<string>,
+): boolean {
+  return Boolean(
+    labTypeId &&
+      (labTypeId.trim().toLowerCase() === "ojt" ||
+        ojtRoomTypeIds.has(labTypeId.trim().toLowerCase())),
+  );
+}
+
 function getFilteredRooms(
   componentType: "LECTURE" | "LABORATORY",
   rooms: RoomForGeneration[],
@@ -2855,6 +3172,7 @@ function scheduleSession(
   lectureRoomTypeId?: string | null,
   preferBefore6PM: boolean = false,
   sectionDaySubjectCount?: Map<string, Map<string, number>>,
+  ojtRoomTypeIds: Set<string> = new Set(),
 ): {
   day: string;
   endSlotIndex: number;
@@ -2863,12 +3181,17 @@ function scheduleSession(
 } | null {
   const slotsNeeded = Math.ceil((durationHours * 60) / 30);
   const activeDays = sectionActiveDays.get(sectionCode)!;
-  const fallbackRooms = getFilteredRooms(
-    componentType,
-    rooms,
-    requiredLabTypeId,
-    lectureRoomTypeId,
-  );
+  const isRoomlessOjtLab =
+    componentType === "LABORATORY" &&
+    isOjtLabType(requiredLabTypeId, ojtRoomTypeIds);
+  const fallbackRooms = isRoomlessOjtLab
+    ? []
+    : getFilteredRooms(
+        componentType,
+        rooms,
+        requiredLabTypeId,
+        lectureRoomTypeId,
+      );
 
   // Use balanced day ordering if tracker is available, otherwise fall back to vacant-day ordering
   let prioritizedDays: string[];
@@ -3097,7 +3420,7 @@ function scheduleSession(
         componentType,
         units,
         roomId: null,
-        roomName: "Unassigned Room",
+        roomName: isRoomlessOjtLab ? "No Room Required" : "Unassigned Room",
         day,
         startTime,
         endTime,

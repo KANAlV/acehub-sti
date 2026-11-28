@@ -1,7 +1,7 @@
 import type { GeneratedScheduleEntry } from "./autoScheduleValidation";
 
 export interface RepairRoom {
-  roomId: string;
+  roomId: string | null;
   roomName: string;
 }
 
@@ -21,6 +21,8 @@ export interface RepairScheduleOptions<T extends GeneratedScheduleEntry> {
   hasAdditionalEntryConflict?: (candidate: T, occupied: T[]) => boolean;
   getAdditionalConflictEntries?: (entries: T[]) => T[];
   forceMoveSubjectIds?: Set<string>;
+  getPreferencePenalty?: (entry: T) => number;
+  localSearchIterations?: number;
 }
 
 export interface RepairScheduleResult<T> {
@@ -347,14 +349,6 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
     }
   }
 
-  if (targets.size === 0 && missingEntries.length === 0) {
-    return {
-      entries: entries.map((entry) => ({ ...entry })),
-      complete: true,
-      movedEntries: 0,
-    };
-  }
-
   const durationFor = (entry: T): number => {
     const start = parseTime(entry.startTime);
     const end = parseTime(entry.endTime);
@@ -370,21 +364,16 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
       : 30;
   };
 
-  function placeEntry(entry: T, occupied: T[]): T | null {
+  function getPlacements(entry: T, occupied: T[]): T[] {
     const duration = durationFor(entry);
     const originalStart = parseTime(entry.startTime) ?? options.dayStartMinutes;
     const originalDay = options.days.includes(entry.day)
       ? entry.day
       : options.days[0];
     const roomOptions = options.getRooms(entry);
-    if (roomOptions.length === 0) return null;
+    if (roomOptions.length === 0) return [];
 
-    const candidates: Array<{
-      day: string;
-      start: number;
-      room: RepairRoom;
-      score: number;
-    }> = [];
+    const candidates: Array<{ entry: T; score: number }> = [];
 
     options.days.forEach((day, dayIndex) => {
       for (
@@ -438,29 +427,76 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
 
           const sameDayPenalty = day === originalDay ? 0 : 1440 + dayIndex * 5;
           const roomPenalty = room.roomId === entry.roomId ? 0 : 5;
+          const preferencePenalty = options.getPreferencePenalty?.(candidate);
           candidates.push({
-            day,
-            start,
-            room,
+            entry: candidate,
             score:
-              sameDayPenalty + Math.abs(start - originalStart) + roomPenalty,
+              (Number.isFinite(preferencePenalty)
+                ? Math.max(0, preferencePenalty || 0) * 2000
+                : 0) +
+              sameDayPenalty +
+              Math.abs(start - originalStart) +
+              roomPenalty,
           });
         }
       }
     });
 
     candidates.sort((first, second) => first.score - second.score);
-    const candidate = candidates[0];
-    if (!candidate) return null;
+    return candidates.map(({ entry: candidate }) => candidate);
+  }
 
-    return {
-      ...entry,
-      day: candidate.day,
-      startTime: formatTime(candidate.start),
-      endTime: formatTime(candidate.start + duration),
-      roomId: candidate.room.roomId,
-      roomName: candidate.room.roomName,
-    };
+  function placeEntry(entry: T, occupied: T[]): T | null {
+    return getPlacements(entry, occupied)[0] || null;
+  }
+
+  function isPlacementAllowed(entry: T, occupied: T[]): boolean {
+    const start = parseTime(entry.startTime);
+    const end = parseTime(entry.endTime);
+    const roomStillExists = options
+      .getRooms(entry)
+      .some((room) => room.roomId === entry.roomId);
+    if (
+      start === null ||
+      end === null ||
+      !options.days.includes(entry.day) ||
+      start < options.dayStartMinutes ||
+      end <= start ||
+      end > options.dayEndMinutes ||
+      !roomStillExists ||
+      options.isBreakTime(entry.day, entry.startTime, entry.endTime) ||
+      !options.isTimeAllowed(entry, entry.day, entry.startTime, entry.endTime) ||
+      options.hasAdditionalEntryConflict?.(entry, occupied)
+    ) {
+      return false;
+    }
+
+    return !occupied.some((other) => {
+      const otherStart = parseTime(other.startTime);
+      const otherEnd = parseTime(other.endTime);
+      return (
+        otherStart !== null &&
+        otherEnd !== null &&
+        entriesConflict(
+          { entry, start, end },
+          { entry: other, start: otherStart, end: otherEnd },
+          options.hasAdditionalConflict,
+        )
+      );
+    });
+  }
+
+  function isValidState(candidate: T[]): boolean {
+    const placed: T[] = [];
+    for (const entry of candidate) {
+      if (!isPlacementAllowed(entry, placed)) return false;
+      placed.push(entry);
+    }
+    return !hasScheduleConflicts(
+      candidate,
+      options.hasAdditionalConflict,
+      options.getAdditionalConflictEntries,
+    );
   }
 
   function runAttempt(
@@ -517,33 +553,56 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
     return placed;
   }
 
-  const stableEntries = entries.filter((_, index) => !targets.has(index));
-  const movedEntries = entries.filter((_, index) => targets.has(index));
-  const targetedAttempt = runAttempt(
-    [...stableEntries, ...movedEntries, ...missingEntries],
-    true,
-  );
+  function runPartialAttempt(
+    orderedEntries: T[],
+    preserveOriginals: boolean,
+  ): T[] {
+    const placed: T[] = [];
+    const placedKeys = new Set<string>();
+    for (const entry of orderedEntries) {
+      const key = componentKey(entry);
+      if (placedKeys.has(key)) continue;
 
-  if (
-    targetedAttempt &&
-    requiredEntries.every((required) =>
-      targetedAttempt.some(
-        (entry) => componentKey(entry) === componentKey(required),
-      ),
-    ) &&
-    !hasScheduleConflicts(
-      targetedAttempt,
-      options.hasAdditionalConflict,
-      options.getAdditionalConflictEntries,
-    )
-  ) {
-    return {
-      entries: targetedAttempt,
-      complete: true,
-      movedEntries: countMovedEntries(entries, targetedAttempt),
-    };
+      const originalIndex = entries.indexOf(entry);
+      if (
+        preserveOriginals &&
+        originalIndex >= 0 &&
+        !targets.has(originalIndex) &&
+        isPlacementAllowed(entry, placed)
+      ) {
+        placed.push({ ...entry });
+        placedKeys.add(key);
+        continue;
+      }
+
+      const placement = placeEntry(entry, placed);
+      if (!placement) continue;
+      placed.push(placement);
+      placedKeys.add(key);
+    }
+    return placed;
   }
 
+  const getMissingEntries = (candidate: T[]) => {
+    const scheduledKeys = new Set(candidate.map(componentKey));
+    return requiredEntries.filter(
+      (entry) => !scheduledKeys.has(componentKey(entry)),
+    );
+  };
+  const getStateScore = (candidate: T[]) => {
+    const preferencePenalty = candidate.reduce((total, entry) => {
+      const penalty = options.getPreferencePenalty?.(entry) ?? 0;
+      return total + (Number.isFinite(penalty) ? Math.max(0, penalty) : 0);
+    }, 0);
+    return (
+      getMissingEntries(candidate).length * 100_000 +
+      preferencePenalty * 100 +
+      countMovedEntries(entries, candidate) * 0.1
+    );
+  };
+
+  const stableEntries = entries.filter((_, index) => !targets.has(index));
+  const movedEntries = entries.filter((_, index) => targets.has(index));
   const fallbackEntries = [...entries, ...missingEntries];
   const orderings = [
     fallbackEntries,
@@ -552,46 +611,187 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
     ),
     [...fallbackEntries].reverse(),
   ];
-  let bestAttempt: T[] | null = null;
-  let bestCompleteAttempt: T[] | null = null;
+  let bestState: T[] = [];
+  let bestScore = Number.POSITIVE_INFINITY;
+  const considerState = (candidate: T[]) => {
+    if (!isValidState(candidate)) return;
+    const score = getStateScore(candidate);
+    if (score < bestScore) {
+      bestState = candidate.map((entry) => ({ ...entry }));
+      bestScore = score;
+    }
+  };
+
+  const targetedOrdering = [...stableEntries, ...movedEntries, ...missingEntries];
+  const targetedAttempt = runAttempt(targetedOrdering, true);
+  if (targetedAttempt) considerState(targetedAttempt);
+  considerState(runPartialAttempt(targetedOrdering, true));
 
   for (const ordering of orderings) {
     const attempt = runAttempt(ordering, false);
-    if (!attempt) continue;
-    if (!bestAttempt || isBetterRepair(entries, attempt, bestAttempt)) {
-      bestAttempt = attempt;
+    if (attempt) considerState(attempt);
+    considerState(runPartialAttempt(ordering, false));
+  }
+
+  let randomSeed = [...entries, ...requiredEntries].reduce(
+    (seed, entry) => seed ^ entry.subjectId.split("").reduce(
+      (value, character) => Math.imul(value ^ character.charCodeAt(0), 16777619),
+      2166136261,
+    ),
+    2166136261,
+  );
+  const random = () => {
+    randomSeed = (Math.imul(randomSeed, 1664525) + 1013904223) >>> 0;
+    return randomSeed / 0x1_0000_0000;
+  };
+  const shuffle = <V>(values: V[]): V[] => {
+    const shuffled = [...values];
+    for (let index = shuffled.length - 1; index > 0; index--) {
+      const swapIndex = Math.floor(random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [
+        shuffled[swapIndex],
+        shuffled[index],
+      ];
     }
-    if (
-      requiredEntries.every((required) =>
-        attempt.some((entry) => componentKey(entry) === componentKey(required)),
-      ) &&
-      !hasScheduleConflicts(
-        attempt,
-        options.hasAdditionalConflict,
-        options.getAdditionalConflictEntries,
-      )
-    ) {
-      if (
-        !bestCompleteAttempt ||
-        isBetterRepair(entries, attempt, bestCompleteAttempt)
-      ) {
-        bestCompleteAttempt = attempt;
+    return shuffled;
+  };
+  const samePlacement = (first: T, second: T) =>
+    first.day === second.day &&
+    first.startTime === second.startTime &&
+    first.roomId === second.roomId;
+  const getDifferentPlacement = (entry: T, occupied: T[]): T | null => {
+    const candidates = getPlacements(entry, occupied).filter(
+      (candidate) => !samePlacement(candidate, entry),
+    );
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(random() * candidates.length)];
+  };
+
+  function proposeRelocation(candidate: T[]): T[] | null {
+    const missing = getMissingEntries(candidate);
+    const shouldInsert = missing.length > 0 && random() < 0.65;
+    const selected = shouldInsert
+      ? missing[Math.floor(random() * missing.length)]
+      : candidate[Math.floor(random() * candidate.length)];
+    if (!selected) return null;
+
+    const occupied = candidate.filter(
+      (entry) => componentKey(entry) !== componentKey(selected),
+    );
+    const placement = getDifferentPlacement(selected, occupied);
+    return placement ? [...occupied, placement] : null;
+  }
+
+  function proposeSwap(candidate: T[]): T[] | null {
+    if (candidate.length < 2) return null;
+    const firstIndex = Math.floor(random() * candidate.length);
+    let secondIndex = Math.floor(random() * (candidate.length - 1));
+    if (secondIndex >= firstIndex) secondIndex++;
+    const first = candidate[firstIndex];
+    const second = candidate[secondIndex];
+    const firstStart = parseTime(first.startTime);
+    const secondStart = parseTime(second.startTime);
+    if (firstStart === null || secondStart === null) return null;
+
+    const rest = candidate.filter(
+      (_, index) => index !== firstIndex && index !== secondIndex,
+    );
+    const firstDuration = durationFor(first);
+    const secondDuration = durationFor(second);
+    const firstRooms = options.getRooms(first);
+    const secondRooms = options.getRooms(second);
+    const firstRoomOptions = shuffle(firstRooms);
+    const secondRoomOptions = shuffle(secondRooms);
+
+    for (const firstRoom of firstRoomOptions) {
+      const movedFirst = {
+        ...first,
+        day: second.day,
+        startTime: formatTime(secondStart),
+        endTime: formatTime(secondStart + firstDuration),
+        roomId: firstRoom.roomId,
+        roomName: firstRoom.roomName,
+      } as T;
+      if (!isPlacementAllowed(movedFirst, rest)) continue;
+
+      for (const secondRoom of secondRoomOptions) {
+        const movedSecond = {
+          ...second,
+          day: first.day,
+          startTime: formatTime(firstStart),
+          endTime: formatTime(firstStart + secondDuration),
+          roomId: secondRoom.roomId,
+          roomName: secondRoom.roomName,
+        } as T;
+        if (
+          isPlacementAllowed(movedSecond, [...rest, movedFirst]) &&
+          !samePlacement(movedFirst, first) &&
+          !samePlacement(movedSecond, second)
+        ) {
+          return [...rest, movedFirst, movedSecond];
+        }
       }
     }
+    return null;
   }
 
-  if (bestCompleteAttempt) {
-    return {
-      entries: bestCompleteAttempt,
-      complete: true,
-      movedEntries: countMovedEntries(entries, bestCompleteAttempt),
-    };
+  function proposeEjection(candidate: T[]): T[] | null {
+    const missing = getMissingEntries(candidate);
+    if (missing.length === 0) return null;
+
+    for (const unplaced of shuffle(missing)) {
+      for (const blocker of shuffle(candidate)) {
+        const rest = candidate.filter(
+          (entry) => componentKey(entry) !== componentKey(blocker),
+        );
+        const placements = getPlacements(unplaced, rest);
+        for (const placement of placements.slice(0, 20)) {
+          const blockerPlacement = placeEntry(blocker, [...rest, placement]);
+          if (blockerPlacement) {
+            return [...rest, placement, blockerPlacement];
+          }
+        }
+      }
+    }
+    return null;
   }
 
+  let current = bestState;
+  let currentScore = bestScore;
+  const iterations =
+    options.localSearchIterations ??
+    Math.min(1000, Math.max(100, requiredEntries.length * 3));
+  for (let iteration = 0; iteration < iterations; iteration++) {
+    const moveType = random();
+    const proposal =
+      moveType < 0.65
+        ? proposeRelocation(current)
+        : moveType < 0.9
+          ? proposeSwap(current)
+          : proposeEjection(current);
+    if (!proposal) continue;
+    if (!isValidState(proposal)) continue;
+
+    const proposalMissing = getMissingEntries(proposal).length;
+    const currentMissing = getMissingEntries(current).length;
+    const proposalScore = getStateScore(proposal);
+    const temperature = 40 * Math.pow(0.01, iteration / iterations);
+    if (
+      proposalMissing < currentMissing ||
+      proposalScore < currentScore ||
+      random() < Math.exp(-(proposalScore - currentScore) / temperature)
+    ) {
+      current = proposal;
+      currentScore = proposalScore;
+      considerState(current);
+    }
+  }
+
+  const completed = getMissingEntries(bestState).length === 0;
   return {
-    entries: bestAttempt || entries.map((entry) => ({ ...entry })),
-    complete: false,
-    movedEntries: countMovedEntries(entries, bestAttempt || entries),
+    entries: bestState,
+    complete: completed && isValidState(bestState),
+    movedEntries: countMovedEntries(entries, bestState),
   };
 }
 
@@ -613,55 +813,3 @@ function countMovedEntries<T extends GeneratedScheduleEntry>(
     );
   }).length;
 }
-
-function isBetterRepair<T extends GeneratedScheduleEntry>(
-  original: T[],
-  candidate: T[],
-  currentBest: T[],
-): boolean {
-  const candidateMoves = countMovedEntries(original, candidate);
-  const bestMoves = countMovedEntries(original, currentBest);
-  if (candidateMoves !== bestMoves) return candidateMoves < bestMoves;
-
-  const candidateDistance = getTotalMovementDistance(original, candidate);
-  const bestDistance = getTotalMovementDistance(original, currentBest);
-  return candidateDistance < bestDistance;
-}
-
-function getTotalMovementDistance<T extends GeneratedScheduleEntry>(
-  original: T[],
-  repaired: T[],
-): number {
-  const originalByKey = new Map(
-    original.map((entry) => [componentKey(entry), entry]),
-  );
-  return repaired.reduce((total, entry) => {
-    const originalEntry = originalByKey.get(componentKey(entry));
-    if (!originalEntry) return total;
-
-    const originalDay = WEEK_DAYS.indexOf(originalEntry.day);
-    const repairedDay = WEEK_DAYS.indexOf(entry.day);
-    const originalStart = parseTime(originalEntry.startTime);
-    const repairedStart = parseTime(entry.startTime);
-    const dayDistance =
-      originalDay >= 0 && repairedDay >= 0
-        ? Math.abs(originalDay - repairedDay) * 24 * 60
-        : 0;
-    const timeDistance =
-      originalStart !== null && repairedStart !== null
-        ? Math.abs(originalStart - repairedStart)
-        : 0;
-    const roomDistance = originalEntry.roomId === entry.roomId ? 0 : 60;
-    return total + dayDistance + timeDistance + roomDistance;
-  }, 0);
-}
-
-const WEEK_DAYS = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
