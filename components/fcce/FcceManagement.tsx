@@ -165,6 +165,7 @@ export default function FcceManagement() {
     const maxRowFcce = 10;
     const [currentFccePage, setCurrentFccePage] = useState(1);
     const [pageChanging, setPageChanging] = useState(false);
+    const skipNextFccePageEffect = useRef(false);
 
     // --- Toast State --- //
     const [showToast, setShowToast] = useState(false);
@@ -302,10 +303,11 @@ export default function FcceManagement() {
     }
 
     function onPageChangeFcce(page: number) {
-        if (pageChanging) return;
+        if (pageChanging || page === currentFccePage) return;
         setPageChanging(true);
         setRecords([]);
         void getFcceRecords(searchTerm, "ALL", archiveFilter, sortFcceBy, sortFcceDir, maxRowFcce, page, viewMode);
+        skipNextFccePageEffect.current = true;
         setPageChanging(false);
         setCurrentFccePage(page);
     }
@@ -855,6 +857,11 @@ export default function FcceManagement() {
     }
 
     useEffect(() => {
+        if (skipNextFccePageEffect.current) {
+            skipNextFccePageEffect.current = false;
+            return;
+        }
+
         setLoading(true);
         const delayDebounceFn = setTimeout(() => {
             void getFcceRecords(searchTerm, "ALL", archiveFilter, sortFcceBy, sortFcceDir, maxRowFcce, currentFccePage, viewMode);
