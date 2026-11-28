@@ -97,6 +97,7 @@ export default function FcceManagement() {
 
     // --- Course Name Suggestions State --- //
     const [courseNameList, setCourseNameList] = useState<string[]>([]);
+    const [courseNamesStatus, setCourseNamesStatus] = useState<"loading" | "loaded" | "error">("loading");
     const [filteredCourses, setFilteredCourses] = useState<string[]>([]);
 
     // --- Teachers Search / Suggestions State --- //
@@ -205,9 +206,17 @@ export default function FcceManagement() {
     }
 
     async function loadCourseNames() {
-        const res = await fetchDistinctCourseNames(null, "ASC", 100, 1);
-        if (res?.success && res.data) {
-            setCourseNameList(res.data);
+        try {
+            const res = await fetchDistinctCourseNames(null, "ASC", 0, 1);
+            if (res?.success && Array.isArray(res.data)) {
+                setCourseNameList(res.data);
+                setCourseNamesStatus("loaded");
+            } else {
+                setCourseNamesStatus("error");
+            }
+        } catch (error) {
+            console.error("Failed to load subject names for FCCE validation:", error);
+            setCourseNamesStatus("error");
         }
     }
 
@@ -253,7 +262,7 @@ export default function FcceManagement() {
         return courseNameList.some((name) => name.toLowerCase().trim() === courseName.toLowerCase().trim());
     }, [courseNameList]);
 
-    const hasInvalidSubjects = records.some((item) => !isCourseValid(item.course_name));
+    const hasInvalidSubjects = courseNamesStatus === "loaded" && records.some((item) => !isCourseValid(item.course_name));
     const hasArchivedRecords = records.some((item) => item.archived);
 
     const getFcceCount = useCallback(async (search?: string | null, aySem: string = "ALL", archivedMode: ArchivedMode = archiveFilter, mode: "ALL" | "UNMATCHED" = viewMode) => {
@@ -936,10 +945,11 @@ export default function FcceManagement() {
                     </div>
                 </div>
 
-                {(hasInvalidSubjects || hasArchivedRecords) && (
+                {(hasInvalidSubjects || hasArchivedRecords || courseNamesStatus === "error") && (
                     <div className="m-2 flex flex-wrap gap-2">
                         {hasInvalidSubjects && <Badge color="warning">Invalid / Missing Subject</Badge>}
                         {hasArchivedRecords && <Badge color="gray">Archived Record</Badge>}
+                        {courseNamesStatus === "error" && <Badge color="gray">Subject validation unavailable</Badge>}
                     </div>
                 )}
 
@@ -994,7 +1004,7 @@ export default function FcceManagement() {
                                 </TableRow>
                             ) : records.length > 0 ? (
                                 records.map((item) => {
-                                    const exists = isCourseValid(item.course_name);
+                                    const exists = courseNamesStatus !== "loaded" || isCourseValid(item.course_name);
                                     // Responsive dark/light mode background styles for standard, archived, and invalid status states
                                     const rowBgClass = item.archived
                                         ? "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-400"
