@@ -29,6 +29,10 @@ export interface GeneratedScheduleValidation {
   roomConflicts: string[];
 }
 
+export interface GeneratedScheduleValidationOptions {
+  requireTeachers?: boolean;
+}
+
 function getTimeInMinutes(value: string): number | null {
   const match = value.match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
@@ -53,12 +57,19 @@ function formatEntry(entry: GeneratedScheduleEntry): string {
   return `${entry.sectionCode} ${entry.courseCode || entry.subjectId} (${entry.day} ${entry.startTime}-${entry.endTime})`;
 }
 
+function isCrossTrackSection(sectionCode: string): boolean {
+  return /^.+-CT\d{3,}$/i.test(sectionCode.trim());
+}
+
 export function validateGeneratedSchedule(
   entries: GeneratedScheduleEntry[],
   assignments: RequiredScheduleAssignment[],
+  options: GeneratedScheduleValidationOptions = {},
 ): GeneratedScheduleValidation {
   const requiredComponents = new Set<string>();
   for (const assignment of assignments) {
+    if (isCrossTrackSection(assignment.sectionCode)) continue;
+
     for (const subject of assignment.subjects) {
       if (subject.lecture_units > 0) {
         requiredComponents.add(
@@ -73,8 +84,11 @@ export function validateGeneratedSchedule(
     }
   }
 
+  const primaryEntries = entries.filter(
+    (entry) => !isCrossTrackSection(entry.sectionCode),
+  );
   const scheduledComponents = new Set(
-    entries.map(
+    primaryEntries.map(
       (entry) =>
         `${entry.sectionCode}|${entry.subjectId}|${entry.componentType}`,
     ),
@@ -92,8 +106,10 @@ export function validateGeneratedSchedule(
   const sectionConflicts: string[] = [];
   const roomConflicts: string[] = [];
 
-  const timedEntries = entries.flatMap((entry) => {
-    if (!entry.teacherId) unassignedTeachers.push(formatEntry(entry));
+  const timedEntries = primaryEntries.flatMap((entry) => {
+    if (options.requireTeachers !== false && !entry.teacherId) {
+      unassignedTeachers.push(formatEntry(entry));
+    }
 
     const start = getTimeInMinutes(entry.startTime);
     const end = getTimeInMinutes(entry.endTime);

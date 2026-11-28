@@ -735,23 +735,58 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
     return null;
   }
 
+  function placeWithEjectionChain(
+    entry: T,
+    occupied: T[],
+    remainingDepth: number,
+    movingKeys: Set<string>,
+  ): T[] | null {
+    const directPlacement = placeEntry(entry, occupied);
+    if (directPlacement) return [directPlacement];
+    if (remainingDepth === 0) return null;
+
+    for (const blocker of shuffle(occupied)) {
+      const blockerKey = componentKey(blocker);
+      if (movingKeys.has(blockerKey)) continue;
+
+      const rest = occupied.filter(
+        (other) => componentKey(other) !== blockerKey,
+      );
+      const placements = getPlacements(entry, rest);
+      for (const placement of placements.slice(0, 20)) {
+        const nextMovingKeys = new Set(movingKeys);
+        nextMovingKeys.add(blockerKey);
+        const blockerChain = placeWithEjectionChain(
+          blocker,
+          [...rest, placement],
+          remainingDepth - 1,
+          nextMovingKeys,
+        );
+        if (blockerChain) return [placement, ...blockerChain];
+      }
+    }
+
+    return null;
+  }
+
   function proposeEjection(candidate: T[]): T[] | null {
     const missing = getMissingEntries(candidate);
     if (missing.length === 0) return null;
 
     for (const unplaced of shuffle(missing)) {
-      for (const blocker of shuffle(candidate)) {
-        const rest = candidate.filter(
-          (entry) => componentKey(entry) !== componentKey(blocker),
-        );
-        const placements = getPlacements(unplaced, rest);
-        for (const placement of placements.slice(0, 20)) {
-          const blockerPlacement = placeEntry(blocker, [...rest, placement]);
-          if (blockerPlacement) {
-            return [...rest, placement, blockerPlacement];
-          }
-        }
-      }
+      const movedEntries = placeWithEjectionChain(
+        unplaced,
+        candidate,
+        3,
+        new Set([componentKey(unplaced)]),
+      );
+      if (!movedEntries) continue;
+
+      const movedKeys = new Set(movedEntries.map(componentKey));
+      return [
+        ...candidate.filter((entry) => !movedKeys.has(componentKey(entry))),
+        ...movedEntries,
+      ];
     }
     return null;
   }
@@ -760,7 +795,7 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
   let currentScore = bestScore;
   const iterations =
     options.localSearchIterations ??
-    Math.min(1000, Math.max(100, requiredEntries.length * 3));
+    Math.min(1000, Math.max(100, getMissingEntries(bestState).length * 20));
   for (let iteration = 0; iteration < iterations; iteration++) {
     const moveType = random();
     const proposal =

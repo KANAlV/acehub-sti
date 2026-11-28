@@ -29,6 +29,12 @@ import {
   trySwapSectionScheduleDays,
   type RepairScheduleOptions,
 } from "@/utils/autoScheduleRepair";
+import {
+  getAssignmentsWithSharedCrossTrackSubjects,
+  getPrimarySectionAssignments,
+  inheritCrossTrackScheduleEntries,
+  isCrossTrackSectionCode,
+} from "@/utils/crossTrackSchedules";
 import { parseSubjectYearTerm } from "@/utils/subjectYearTerm";
 import { isTeacherTimeWithinAvailability } from "@/utils/teacherAvailability";
 
@@ -343,7 +349,7 @@ export async function assignSubjectsToSections(
     const assignments: SectionSubjectAssignment[] = [];
 
     for (const sectionCode of sections) {
-      const shsMatch = sectionCode.match(/^([A-Z]+)([12])(\d{2})$/);
+      const shsMatch = sectionCode.match(/^(.+?)([12])(\d{2})$/);
 
       const matchedSubjects = allSubjects.filter((subject) => {
         const subProg = (subject.program_code || "").trim().toUpperCase();
@@ -355,7 +361,7 @@ export async function assignSubjectsToSections(
 
         // Helper: try matching as a tertiary section
         function tryTertiaryMatch(): boolean {
-          const match = sectionCode.match(/^([A-Z]+)(\d+)$/);
+          const match = sectionCode.match(/^(.+?)(\d+)$/);
           if (!match) return false;
 
           const progCode = match[1].trim().toUpperCase();
@@ -535,7 +541,13 @@ export async function generateRoomAndClassSchedules(
           "Failed to resolve section subject assignments.",
       );
     }
-    const sectionAssignments = assignmentResult.assignments;
+    const sharedAssignments = getAssignmentsWithSharedCrossTrackSubjects(
+      assignmentResult.assignments,
+    );
+    const sectionAssignments = getPrimarySectionAssignments(sharedAssignments);
+    const crossTrackAssignments = sharedAssignments.filter((assignment) =>
+      isCrossTrackSectionCode(assignment.sectionCode),
+    );
 
     const days: string[] = [
       "Monday",
@@ -568,7 +580,7 @@ export async function generateRoomAndClassSchedules(
     // so their active days are the least crowded ones.
     const sectionSubjectCount = new Map<string, number>();
     for (const assignment of sectionAssignments) {
-      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(
+      const isShsSection = /^(.+?)([12])(\d{2})$/.test(
         assignment.sectionCode,
       );
       if (!isShsSection) {
@@ -585,7 +597,7 @@ export async function generateRoomAndClassSchedules(
 
     for (const assignment of sectionAssignments) {
       const sectionCode = assignment.sectionCode;
-      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(sectionCode);
+      const isShsSection = /^(.+?)([12])(\d{2})$/.test(sectionCode);
 
       if (isShsSection) {
         // SHS sections always use Mon-Fri; Saturday is the fixed vacant day
@@ -1338,7 +1350,7 @@ export async function generateRoomAndClassSchedules(
     const tertiaryAssignments: SectionSubjectAssignment[] = [];
 
     for (const assignment of sectionAssignments) {
-      const isShsSection = /^([A-Z]+)([12])(\d{2})$/.test(
+      const isShsSection = /^(.+?)([12])(\d{2})$/.test(
         assignment.sectionCode,
       );
       if (isShsSection) {
@@ -1479,9 +1491,8 @@ export async function generateRoomAndClassSchedules(
         days,
         dayStartMinutes: 7 * 60,
         dayEndMinutes: 22 * 60,
-        localSearchIterations: 60,
         isTimeAllowed: (entry, day, _startTime, endTime) => {
-          if (!/^([A-Z]+)([12])(\d{2})$/.test(entry.sectionCode)) {
+          if (!/^(.+?)([12])(\d{2})$/.test(entry.sectionCode)) {
             return true;
           }
           return (
@@ -1530,11 +1541,17 @@ export async function generateRoomAndClassSchedules(
     const repairedValidation = validateGeneratedSchedule(
       baseRepair.entries,
       sectionAssignments,
+      { requireTeachers: false },
     );
-
     return {
       success: baseRepair.complete,
-      scheduleEntries: baseRepair.entries,
+      scheduleEntries: [
+        ...baseRepair.entries,
+        ...inheritCrossTrackScheduleEntries(
+          baseRepair.entries,
+          crossTrackAssignments,
+        ),
+      ],
       error: baseRepair.complete
         ? undefined
         : formatGeneratedScheduleValidationError(repairedValidation),
@@ -1700,6 +1717,13 @@ export async function generateRoomAndClassSchedulesWithTeachers(
           "Failed to resolve required section subject components.",
       );
     }
+    const sharedAssignments = getAssignmentsWithSharedCrossTrackSubjects(
+      requirementsResult.assignments,
+    );
+    const sectionAssignments = getPrimarySectionAssignments(sharedAssignments);
+    const crossTrackAssignments = sharedAssignments.filter((assignment) =>
+      isCrossTrackSectionCode(assignment.sectionCode),
+    );
 
     const roomTypesResult = await fetchRoomTypeList(null, "ASC", -1, 1);
     const ojtRoomTypeIds = new Set(
@@ -1709,7 +1733,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
     );
 
     if (testMode) {
-      const sectionRequirements = requirementsResult.assignments.map(
+      const sectionRequirements = sectionAssignments.map(
         ({ sectionCode, subjects }) => ({
           sectionCode,
           subjectCount: subjects.length,
@@ -1814,6 +1838,10 @@ export async function generateRoomAndClassSchedulesWithTeachers(
 
       // Assign teachers to subjects
       for (const subject of subjectsForMapping) {
+        if ((subject.program_code || "").trim().toUpperCase().endsWith("-CT")) {
+          continue;
+        }
+
         const lectureUnits = subject.lecture_units || 0;
         const labUnits = subject.lab_units || 0;
         const totalUnits = lectureUnits + labUnits;
@@ -2216,10 +2244,19 @@ export async function generateRoomAndClassSchedulesWithTeachers(
     async function validateAndFinalizeSchedule(
       entries: ScheduleEntry[],
     ): Promise<ScheduleAssignmentResult> {
+      const withSharedCrossTrackEntries = (
+        scheduleEntries: ScheduleEntry[],
+      ): ScheduleEntry[] => [
+        ...scheduleEntries,
+        ...inheritCrossTrackScheduleEntries(
+          scheduleEntries,
+          crossTrackAssignments,
+        ),
+      ];
       const preferredRoomEntries = await applyPreferredRooms(entries);
       const initialValidation = validateGeneratedSchedule(
         preferredRoomEntries,
-        requirementsResult.assignments,
+        sectionAssignments,
       );
       const hasInitialIssues = Object.values(initialValidation).some(
         (issues) => issues.length > 0,
@@ -2241,14 +2278,17 @@ export async function generateRoomAndClassSchedulesWithTeachers(
           );
         })
       ) {
-        return { success: true, scheduleEntries: preferredRoomEntries };
+        return {
+          success: true,
+          scheduleEntries: withSharedCrossTrackEntries(preferredRoomEntries),
+        };
       }
 
       const roomsResult = await getRoomsForGeneration();
       if (!roomsResult.success || !roomsResult.data) {
         return {
           success: false,
-          scheduleEntries: preferredRoomEntries,
+          scheduleEntries: withSharedCrossTrackEntries(preferredRoomEntries),
           error:
             roomsResult.error || "Failed to fetch rooms for schedule repair.",
         };
@@ -2270,7 +2310,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
               ?.room_type_id ?? null)
           : null;
       const subjectsById = new Map(
-        requirementsResult.assignments.flatMap((assignment) =>
+        sectionAssignments.flatMap((assignment) =>
           assignment.subjects.map(
             (subject) => [subject.subject_id, subject] as const,
           ),
@@ -2317,7 +2357,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         };
       }
 
-      const requiredEntries = requirementsResult.assignments.flatMap(
+      const requiredEntries = sectionAssignments.flatMap(
         ({ sectionCode, subjects }) =>
           subjects.flatMap((subject) => [
             ...(subject.lecture_units > 0
@@ -2342,7 +2382,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         startTime: string,
         endTime: string,
       ): boolean => {
-        const isShs = /^([A-Z]+)([12])(\d{2})$/.test(entry.sectionCode);
+        const isShs = /^(.+?)([12])(\d{2})$/.test(entry.sectionCode);
         if (
           isShs &&
           (!isWeekday(day) || timeToMinutes(endTime) > 18 * 60)
@@ -2534,7 +2574,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         );
         const validation = validateGeneratedSchedule(
           repair.entries,
-          requirementsResult.assignments,
+          sectionAssignments,
         );
         const hasValidationIssues = Object.values(validation).some(
           (issues) => issues.length > 0,
@@ -2546,7 +2586,10 @@ export async function generateRoomAndClassSchedulesWithTeachers(
           console.info(
             `Schedule repair succeeded ${stage.description}; moved ${repair.movedEntries} entries.`,
           );
-          return { success: true, scheduleEntries: repair.entries };
+          return {
+            success: true,
+            scheduleEntries: withSharedCrossTrackEntries(repair.entries),
+          };
         }
       }
 
@@ -2557,7 +2600,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         (candidate) => {
           const validation = validateGeneratedSchedule(
             candidate,
-            requirementsResult.assignments,
+            sectionAssignments,
           );
           const hasConfiguredBreak = candidate.some((entry) => {
             const start = timeToMinutes(entry.startTime);
@@ -2590,12 +2633,17 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         console.info(
           "Schedule repair succeeded after swapping days within a section.",
         );
-        return { success: true, scheduleEntries: swappedEntries };
+        return {
+          success: true,
+          scheduleEntries: withSharedCrossTrackEntries(swappedEntries),
+        };
       }
 
       return {
         success: false,
-        scheduleEntries: lastRepair?.entries || preferredRoomEntries,
+        scheduleEntries: withSharedCrossTrackEntries(
+          lastRepair?.entries || preferredRoomEntries,
+        ),
         error: Object.values(lastValidation).some((issues) => issues.length > 0)
           ? formatGeneratedScheduleValidationError(lastValidation)
           : "Could not place every required class component while preserving teacher availability, configured breaks, fatigue limits, and room constraints.",

@@ -76,6 +76,7 @@ import {
 import Image from "next/image";
 import { getTeacherPreferenceMatchScore } from "@/utils/autoSchedulePreferences";
 import { getCurriculumYearCoverageStatus } from "@/utils/curriculumYearCoverage";
+import { getAssignmentsWithSharedCrossTrackSubjects } from "@/utils/crossTrackSchedules";
 import {
   buildScheduleCopyTree,
   getCopySelectionState,
@@ -917,7 +918,9 @@ export default function ScheduleManagement() {
       errorMessage = assignRes.error || "";
 
       if (isSuccess && assignRes.assignments) {
-        const newAssignments = assignRes.assignments.map((assignment) => ({
+        const newAssignments = getAssignmentsWithSharedCrossTrackSubjects(
+          assignRes.assignments,
+        ).map((assignment) => ({
           ...assignment,
           subjects: assignment.subjects.filter(
             (subject) =>
