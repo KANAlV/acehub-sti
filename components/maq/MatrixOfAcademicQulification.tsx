@@ -22,6 +22,7 @@ import {
   FileInput,
 } from "flowbite-react";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
+import ImportResultsPanel from "@/components/ImportResultsPanel";
 import {
   HiSearch,
   HiChevronUp,
@@ -463,12 +464,14 @@ export default function MatrixOfAcademicQualificationPage() {
         const res = await createMaq(actor, item.aqVal);
         if (res?.success) {
           successCount++;
+          logs.push(`Row ${item.rowNum} (${item.aqVal}): Imported successfully.`);
         } else {
           logs.push(`Row ${item.rowNum} (${item.aqVal}): ${res?.error || "Creation failed."}`);
           failCount++;
         }
       }
 
+      logs.unshift(`${rowsToProcess.length} row(s) ready to import.`);
       setImportLogs((prev) => [
         ...prev,
         `Import Completed: ${successCount} successful, ${failCount} failed.`,
@@ -719,24 +722,7 @@ export default function MatrixOfAcademicQualificationPage() {
                         </div>
                     )}
 
-                    {importLogs.length > 0 && (
-                        <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
-                          {importLogs.map((log, index) => (
-                              <div
-                                  key={index}
-                                  className={
-                                    log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
-                                        ? "text-red-400"
-                                        : log.includes("Completed") || log.includes("Found")
-                                            ? "font-bold text-green-400"
-                                            : "text-gray-300"
-                                  }
-                              >
-                                {log}
-                              </div>
-                          ))}
-                        </div>
-                    )}
+                    <ImportResultsPanel logs={importLogs} ariaLabel="Academic qualification import summary and results" />
 
                     <Button
                         onClick={handleImportSubmit}

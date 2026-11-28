@@ -22,6 +22,7 @@ import {
   FileInput,
 } from "flowbite-react";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
+import ImportResultsPanel from "@/components/ImportResultsPanel";
 import {
   FaPlus,
   FaSortDown,
@@ -465,6 +466,7 @@ export default function TertiaryProgramsManagement() {
         const createRes = await createProgram(activeUser, payload);
         if (createRes.success) {
           successCount++;
+          logs.push(`Row ${item.rowNum} (${item.code}): Imported successfully.`);
         } else {
           // If creation fails, try updating the existing program instead
           const updatePayload = {
@@ -488,6 +490,7 @@ export default function TertiaryProgramsManagement() {
         }
       }
 
+      logs.unshift(`${rowsToProcess.length} row(s) ready to import.`);
       setImportLogs((prev) => [
         ...prev,
         `Import Completed: ${successCount} successful, ${failCount} failed.`,
@@ -1027,24 +1030,7 @@ export default function TertiaryProgramsManagement() {
                         </div>
                     )}
 
-                    {importLogs.length > 0 && (
-                        <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
-                          {importLogs.map((log, index) => (
-                              <div
-                                  key={index}
-                                  className={
-                                    log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
-                                        ? "text-red-400"
-                                        : log.includes("Completed") || log.includes("Verified")
-                                            ? "font-bold text-green-400"
-                                            : "text-gray-300"
-                                  }
-                              >
-                                {log}
-                              </div>
-                          ))}
-                        </div>
-                    )}
+                    <ImportResultsPanel logs={importLogs} ariaLabel="Tertiary program import summary and results" />
 
                     <Button
                         onClick={handleImportSubmit}

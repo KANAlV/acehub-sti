@@ -25,6 +25,7 @@ import {
   Progress,
 } from "flowbite-react";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
+import ImportResultsPanel from "@/components/ImportResultsPanel";
 import { useEffect, useRef, useState } from "react";
 import {
   FaGraduationCap,
@@ -1392,6 +1393,7 @@ export default function TeacherAQs() {
         const res = await createTeacherAQ(item.pscsId, item.aqName, aqContents, item.status);
         if (res?.success) {
           successCount++;
+          logs.push(`Row ${item.rowNumber} (${item.teacherCode}, ${item.aqName}): Imported successfully.`);
           // Add newly created AQ to the existing set to prevent duplicates within the same import batch
           const key = `${item.pscsId}|||${item.aqName.toUpperCase()}`;
           existingAqSet.add(key);
@@ -1408,6 +1410,8 @@ export default function TeacherAQs() {
         logs.push(`${duplicateSkipped} duplicate(s) skipped — teacher(s) already have these AQ(s).`);
       }
 
+      const readyRowCount = new Set(rowsToProcess.map((item) => item.rowNumber)).size;
+      logs.unshift(`${readyRowCount} row(s) ready to import.`);
       setImportLogs((prev) => [
         ...prev,
         `Import Completed: ${successCount} successful, ${failCount} failed.`,
@@ -2258,24 +2262,7 @@ export default function TeacherAQs() {
                   </div>
                 )}
 
-                {importLogs.length > 0 && (
-                  <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-900 p-3 font-mono text-xs dark:border-gray-700">
-                    {importLogs.map((log, index) => (
-                      <div
-                        key={index}
-                        className={
-                          log.includes("Error") || log.includes("Failed") || log.includes("Skipped")
-                            ? "text-red-400"
-                            : log.includes("Completed") || log.includes("Found")
-                              ? "font-bold text-green-400"
-                              : "text-gray-300"
-                        }
-                      >
-                        {log}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <ImportResultsPanel logs={importLogs} ariaLabel="Teacher AQ import summary and results" />
 
                 <Button
                   onClick={handleImportSubmit}
