@@ -1607,6 +1607,52 @@ export default function HelpPage() {
         ? currentSubTab.steps
         : currentModule.steps || [];
 
+    const renderStep = (step: DetailedStep) => (
+        <div
+            key={step.stepNumber}
+            className="space-y-3 rounded-2xl border border-gray-200/90 bg-slate-50/90 p-5 transition-colors dark:border-gray-700 dark:bg-gray-900/60"
+        >
+            <div className="flex items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white shadow-sm dark:bg-blue-500">
+                    {step.stepNumber}
+                </span>
+                <h4 className="text-base font-semibold text-gray-900 dark:text-white">
+                    {step.title}
+                </h4>
+            </div>
+
+            <p className="pl-9 text-sm font-medium leading-relaxed text-gray-700 dark:text-gray-200 sm:pl-11">
+                {step.description}
+            </p>
+
+            <ul className="space-y-2.5 pt-0.5 pl-9 sm:pl-11">
+                {step.details.map((detail, dIdx) => (
+                    <li
+                        key={dIdx}
+                        className="flex items-start gap-2.5 text-sm leading-relaxed text-gray-600 dark:text-gray-300"
+                    >
+                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600 dark:bg-blue-400" />
+                        <span>{detail}</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+
+    const stepsByPhase = displayedSteps.reduce<{ phase: string; steps: DetailedStep[] }[]>(
+        (groups, step) => {
+            const phase = step.phase ?? "Other";
+            const existingGroup = groups.find((group) => group.phase === phase);
+            if (existingGroup) {
+                existingGroup.steps.push(step);
+            } else {
+                groups.push({ phase, steps: [step] });
+            }
+            return groups;
+        },
+        []
+    );
+
     return (
         <div className="flex h-full flex-col overflow-hidden bg-gray-50 p-4 sm:p-6 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
             {isLoading ? (
@@ -1856,47 +1902,42 @@ export default function HelpPage() {
                                 : "Step-by-Step Operation Guide"}
                         </h3>
 
-                        <div className="space-y-4">
-                            {displayedSteps.map((step, index) => (
-                                <React.Fragment key={step.stepNumber}>
-                                    {step.phase &&
-                                        (index === 0 || displayedSteps[index - 1]?.phase !== step.phase) && (
-                                            <div className="flex items-center gap-3 pt-3 first:pt-0">
-                                                <span className="rounded-full bg-blue-100 px-3 py-1 text-[11px] font-bold tracking-wide text-blue-800 dark:bg-blue-900/50 dark:text-blue-200">
-                                                    {step.phase}
-                                                </span>
-                                                <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-                                            </div>
-                                        )}
-                                    <div className="p-5 bg-slate-50/90 dark:bg-gray-900/60 rounded-2xl border border-gray-200/90 dark:border-gray-700 space-y-3 transition-colors">
-                                        <div className="flex items-center gap-3">
-                                            <span className="flex items-center justify-center w-8 h-8 bg-blue-600 dark:bg-blue-500 text-white rounded-full text-sm font-bold shrink-0 shadow-sm">
-                                                {step.stepNumber}
-                                            </span>
-                                            <h4 className="font-semibold text-gray-900 dark:text-white text-base">
-                                                {step.title}
-                                            </h4>
+                        {currentModule.id === "getting_started" ? (
+                            <div className="space-y-3">
+                                {stepsByPhase.map(({ phase, steps }) => (
+                                    <details
+                                        key={phase}
+                                        name="getting-started-phase"
+                                        className="group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
+                                    >
+                                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 font-semibold text-gray-800 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:text-gray-100 dark:hover:bg-gray-700/50">
+                                            <span>{phase}</span>
+                                            <HiChevronRight className="h-5 w-5 shrink-0 text-blue-600 transition-transform group-open:rotate-90 dark:text-blue-400" />
+                                        </summary>
+                                        <div className="space-y-4 border-t border-gray-200 p-4 dark:border-gray-700">
+                                            {steps.map(renderStep)}
                                         </div>
-
-                                        <p className="text-sm font-medium text-gray-700 dark:text-gray-200 pl-9 sm:pl-11 leading-relaxed">
-                                            {step.description}
-                                        </p>
-
-                                        <ul className="pl-9 sm:pl-11 space-y-2.5 pt-0.5">
-                                            {step.details.map((detail, dIdx) => (
-                                                <li
-                                                    key={dIdx}
-                                                    className="text-sm text-gray-600 dark:text-gray-300 flex items-start gap-2.5 leading-relaxed"
-                                                >
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 mt-2 shrink-0" />
-                                                    <span>{detail}</span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                </React.Fragment>
-                            ))}
-                        </div>
+                                    </details>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {displayedSteps.map((step, index) => (
+                                    <React.Fragment key={step.stepNumber}>
+                                        {step.phase &&
+                                            (index === 0 || displayedSteps[index - 1]?.phase !== step.phase) && (
+                                                <div className="flex items-center gap-3 pt-3 first:pt-0">
+                                                    <span className="rounded-full bg-blue-100 px-3 py-1 text-[11px] font-bold tracking-wide text-blue-800 dark:bg-blue-900/50 dark:text-blue-200">
+                                                        {step.phase}
+                                                    </span>
+                                                    <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+                                                </div>
+                                            )}
+                                        {renderStep(step)}
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </section>
             </div>

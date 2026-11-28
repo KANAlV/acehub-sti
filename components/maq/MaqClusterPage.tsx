@@ -50,6 +50,7 @@ import {
   syncMaqClusterEntries,
   deleteMaqCluster,
   fetchMaq,
+  createMaq,
   MaqClusterWithEntriesRecord,
   MaqRecord,
   MaqClusterEntryItem,
@@ -63,8 +64,6 @@ import {
 } from "@/utils/validation";
 import { useMsal } from "@azure/msal-react";
 import ExcelJS from "exceljs";
-
-const REQUIRED_HEADERS = ["Cluster Name", "Academic Qualifications"];
 
 export default function MaqClusterPage() {
   const { computedMode } = useThemeMode();
@@ -588,13 +587,14 @@ export default function MaqClusterPage() {
         if (cell.value) uploadedHeaders.push(String(cell.value).trim());
       });
 
-      const isHeaderValid = REQUIRED_HEADERS.every((reqHeader) =>
-          uploadedHeaders.some((uh) => uh.toLowerCase() === reqHeader.toLowerCase())
+      const aqHeaders = ["academic qualifications", "academic qualification", "aq"];
+      const isHeaderValid = uploadedHeaders.some((header) =>
+          aqHeaders.includes(header.toLowerCase())
       );
 
       if (!isHeaderValid) {
         setFormatError(
-            `Strict Format Violation: Missing required headers. Your file must include: [${REQUIRED_HEADERS.join(", ")}]`
+            "Strict Format Violation: Your file must include an Academic Qualifications, Academic Qualification, or AQ header."
         );
         setIsImporting(false);
         return;
@@ -613,21 +613,19 @@ export default function MaqClusterPage() {
         }
       });
 
-      const nameCol = headerIndexMap["cluster name"] || 1;
-      const aqCol = headerIndexMap["academic qualifications"] || headerIndexMap["aq"] || 2;
+      const nameCol = headerIndexMap["cluster name"];
+      const aqCol = headerIndexMap["academic qualifications"] ||
+          headerIndexMap["academic qualification"] ||
+          headerIndexMap["aq"] || 1;
 
       const rowsToProcess: { rowNum: number; clusterName: string; aqs: string[] }[] = [];
 
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
-        const rawClusterName = filterMAQCluster(String(row.getCell(nameCol).value || "")).trim();
+        const rawClusterName = nameCol
+            ? filterMAQCluster(String(row.getCell(nameCol).value || "")).trim()
+            : "";
         const rawAqString = String(row.getCell(aqCol).value || "").trim();
-
-        if (!rawClusterName) {
-          logs.push(`Row ${rowNumber}: Skipped. Cluster Name is empty.`);
-          failCount++;
-          return;
-        }
 
         const rawAqList = rawAqString.split(",").map((s) => s.trim()).filter(Boolean);
         const validAqs: string[] = [];
@@ -644,7 +642,7 @@ export default function MaqClusterPage() {
         }
 
         if (hasInvalidAq || validAqs.length === 0) {
-          logs.push(`Row ${rowNumber} (${rawClusterName}): Failed. Invalid or empty Academic Qualifications formatting.`);
+          logs.push(`Row ${rowNumber} (${rawClusterName || "Individual MAQ"}): Failed. Invalid or empty Academic Qualifications formatting.`);
           failCount++;
           return;
         }
@@ -657,6 +655,19 @@ export default function MaqClusterPage() {
       });
 
       for (const item of rowsToProcess) {
+        if (!item.clusterName) {
+          for (const aq of item.aqs) {
+            const createRes = await createMaq(actor, aq);
+            if (createRes?.success) {
+              successCount++;
+            } else {
+              logs.push(`Row ${item.rowNum} (${aq}): ${createRes?.error || "Import failed."}`);
+              failCount++;
+            }
+          }
+          continue;
+        }
+
         const createRes = await createMaqCluster(actor, item.clusterName);
         const syncRes = await syncMaqClusterEntries(actor, item.clusterName, item.aqs);
 
@@ -675,7 +686,7 @@ export default function MaqClusterPage() {
       ]);
 
       if (successCount > 0) {
-        triggerToast(`Imported ${successCount} clusters successfully.`, "success");
+        triggerToast(`Imported ${successCount} MAQ items successfully.`, "success");
         void loadData();
       }
     } catch (err) {

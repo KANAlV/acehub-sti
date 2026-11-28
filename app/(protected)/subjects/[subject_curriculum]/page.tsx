@@ -1245,7 +1245,7 @@ export default function CurriculumSubjectsPage() {
                                             (item.lab_type ? roomTypeMap.get(item.lab_type) : null) ||
                                             item.lab_type_name ||
                                             item.lab_type ||
-                                            "Configured Lab"
+                                            "No Laboratory"
                                         )}
                                     </TableCell>
                                     <TableCell>
