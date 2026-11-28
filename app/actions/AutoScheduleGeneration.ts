@@ -25,6 +25,7 @@ import {
 } from "@/utils/autoScheduleValidation";
 import {
   getFatigueRiskEntries,
+  hasFatigueRiskForEntry,
   repairGeneratedSchedule,
   trySwapSectionScheduleDays,
   type RepairScheduleOptions,
@@ -2437,9 +2438,7 @@ export async function generateRoomAndClassSchedulesWithTeachers(
         hasAdditionalEntryConflict: ignoreFatigue
           ? undefined
           : (candidate, occupied) =>
-              getFatigueRiskEntries([...occupied, candidate]).includes(
-                candidate,
-              ),
+              hasFatigueRiskForEntry(candidate, occupied),
         getAdditionalConflictEntries: ignoreFatigue
           ? undefined
           : getFatigueRiskEntries,
@@ -2546,7 +2545,10 @@ export async function generateRoomAndClassSchedulesWithTeachers(
           }
           return penalty;
         },
-        localSearchIterations: 200,
+        localSearchIterations: Math.min(
+          120,
+          Math.max(50, Math.ceil(requiredEntries.length / 5)),
+        ),
       });
 
       const repairStages = [

@@ -373,9 +373,22 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
     const roomOptions = options.getRooms(entry);
     if (roomOptions.length === 0) return [];
 
+    const occupiedByDay = new Map<string, TimedEntry<T>[]>();
+    for (const other of occupied) {
+      const start = parseTime(other.startTime);
+      const end = parseTime(other.endTime);
+      if (start === null || end === null) continue;
+
+      const dayKey = other.day.trim().toLowerCase();
+      const dayEntries = occupiedByDay.get(dayKey) ?? [];
+      dayEntries.push({ entry: other, start, end });
+      occupiedByDay.set(dayKey, dayEntries);
+    }
+
     const candidates: Array<{ entry: T; score: number }> = [];
 
     options.days.forEach((day, dayIndex) => {
+      const dayEntries = occupiedByDay.get(day.trim().toLowerCase()) ?? [];
       for (
         let start = options.dayStartMinutes;
         start + duration <= options.dayEndMinutes;
@@ -391,7 +404,27 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
           continue;
         }
 
+        const overlappingEntries = dayEntries.filter(
+          (other) => start < other.end && other.start < end,
+        );
+        const resourceConflict = overlappingEntries.some(
+          ({ entry: other }) =>
+            entry.sectionCode === other.sectionCode ||
+            (!!entry.teacherId && entry.teacherId === other.teacherId) ||
+            !!options.hasAdditionalConflict?.(entry, other),
+        );
+        if (resourceConflict) continue;
+
         for (const room of roomOptions) {
+          if (
+            !!room.roomId &&
+            overlappingEntries.some(
+              (other) => other.entry.roomId === room.roomId,
+            )
+          ) {
+            continue;
+          }
+
           const candidate = {
             ...entry,
             day,
@@ -400,28 +433,7 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
             roomId: room.roomId,
             roomName: room.roomName,
           } as T;
-          const candidateTimed = { entry: candidate, start, end };
-          const conflicts = occupied.some((other) => {
-            const otherStart = parseTime(other.startTime);
-            const otherEnd = parseTime(other.endTime);
-            return (
-              otherStart !== null &&
-              otherEnd !== null &&
-              entriesConflict(
-                candidateTimed,
-                {
-                  entry: other,
-                  start: otherStart,
-                  end: otherEnd,
-                },
-                options.hasAdditionalConflict,
-              )
-            );
-          });
-          if (
-            conflicts ||
-            options.hasAdditionalEntryConflict?.(candidate, occupied)
-          ) {
+          if (options.hasAdditionalEntryConflict?.(candidate, occupied)) {
             continue;
           }
 
@@ -740,20 +752,26 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
     occupied: T[],
     remainingDepth: number,
     movingKeys: Set<string>,
+    searchBudget: { remaining: number },
   ): T[] | null {
+    if (searchBudget.remaining <= 0) return null;
+    searchBudget.remaining--;
+
     const directPlacement = placeEntry(entry, occupied);
     if (directPlacement) return [directPlacement];
     if (remainingDepth === 0) return null;
 
-    for (const blocker of shuffle(occupied)) {
+    for (const blocker of shuffle(occupied).slice(0, 8)) {
       const blockerKey = componentKey(blocker);
       if (movingKeys.has(blockerKey)) continue;
 
       const rest = occupied.filter(
         (other) => componentKey(other) !== blockerKey,
       );
+      if (searchBudget.remaining <= 0) return null;
+      searchBudget.remaining--;
       const placements = getPlacements(entry, rest);
-      for (const placement of placements.slice(0, 20)) {
+      for (const placement of placements.slice(0, 3)) {
         const nextMovingKeys = new Set(movingKeys);
         nextMovingKeys.add(blockerKey);
         const blockerChain = placeWithEjectionChain(
@@ -761,8 +779,10 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
           [...rest, placement],
           remainingDepth - 1,
           nextMovingKeys,
+          searchBudget,
         );
         if (blockerChain) return [placement, ...blockerChain];
+        if (searchBudget.remaining <= 0) return null;
       }
     }
 
@@ -773,29 +793,28 @@ export function repairGeneratedSchedule<T extends GeneratedScheduleEntry>(
     const missing = getMissingEntries(candidate);
     if (missing.length === 0) return null;
 
-    for (const unplaced of shuffle(missing)) {
-      const movedEntries = placeWithEjectionChain(
-        unplaced,
-        candidate,
-        3,
-        new Set([componentKey(unplaced)]),
-      );
-      if (!movedEntries) continue;
+    const unplaced = shuffle(missing)[0];
+    const movedEntries = placeWithEjectionChain(
+      unplaced,
+      candidate,
+      3,
+      new Set([componentKey(unplaced)]),
+      { remaining: 12 },
+    );
+    if (!movedEntries) return null;
 
-      const movedKeys = new Set(movedEntries.map(componentKey));
-      return [
-        ...candidate.filter((entry) => !movedKeys.has(componentKey(entry))),
-        ...movedEntries,
-      ];
-    }
-    return null;
+    const movedKeys = new Set(movedEntries.map(componentKey));
+    return [
+      ...candidate.filter((entry) => !movedKeys.has(componentKey(entry))),
+      ...movedEntries,
+    ];
   }
 
   let current = bestState;
   let currentScore = bestScore;
   const iterations =
     options.localSearchIterations ??
-    Math.min(1000, Math.max(100, getMissingEntries(bestState).length * 20));
+    Math.min(200, Math.max(50, getMissingEntries(bestState).length * 4));
   for (let iteration = 0; iteration < iterations; iteration++) {
     const moveType = random();
     const proposal =
