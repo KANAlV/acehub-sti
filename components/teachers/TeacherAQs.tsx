@@ -54,6 +54,7 @@ import {
   deleteTeacherAQ,
   fetchTeacherAQRecords,
   fetchTeachers,
+  fetchTeachersCount,
   fetchMaq,
   fetchMaqClustersWithEntries,
   MaqClusterEntryItem,
@@ -247,7 +248,7 @@ export default function TeacherAQs() {
       const deptParam =
         departmentFilter === "All Departments" ? undefined : departmentFilter;
 
-      const [teacherRes, aqRes] = await Promise.all([
+      const [teacherRes, teacherCountRes, aqRes] = await Promise.all([
         fetchTeachers(
           searchTerm,
           filterParam as never,
@@ -257,6 +258,7 @@ export default function TeacherAQs() {
           limit,
           page,
         ),
+        fetchTeachersCount(searchTerm, filterParam as never, deptParam),
         fetchTeacherAQRecords(
           undefined,
           undefined,
@@ -271,7 +273,9 @@ export default function TeacherAQs() {
       if (teacherRes?.success && teacherRes.data) {
         setTeachersList(teacherRes.data);
         setTeachersCount(
-          (teacherRes as { count?: number }).count || teacherRes.data.length,
+          teacherCountRes?.success
+            ? teacherCountRes.count
+            : teacherRes.data.length,
         );
       }
 
