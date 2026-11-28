@@ -493,7 +493,7 @@ export default function MatrixOfAcademicQualificationPage() {
   return (
       <div className="space-y-4 p-4">
         {/* Page Header & Actions */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-4">
           <div>
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">
               Matrix of Academic Qualifications
@@ -504,7 +504,7 @@ export default function MatrixOfAcademicQualificationPage() {
           </div>
 
           {/* Search Bar & Actions */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="w-full sm:w-64">
               <TextInput
                   id="search_maq"
@@ -519,21 +519,23 @@ export default function MatrixOfAcademicQualificationPage() {
                   }
               />
             </div>
-            <Button
-                color="gray"
-                className="whitespace-nowrap"
-                onClick={() => setOpenExcelModal(true)}
-            >
-              <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
-              Excel Operations
-            </Button>
-            <Button
-                color="blue"
-                onClick={handleOpenAdd}
-                className="whitespace-nowrap"
-            >
-              <HiPlus className="mr-2 h-4 w-4" /> Add Qualification
-            </Button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                  color="gray"
+                  className="w-full whitespace-nowrap sm:w-auto"
+                  onClick={() => setOpenExcelModal(true)}
+              >
+                <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
+                Excel Operations
+              </Button>
+              <Button
+                  color="blue"
+                  onClick={handleOpenAdd}
+                  className="w-full whitespace-nowrap sm:w-auto"
+              >
+                <HiPlus className="mr-2 h-4 w-4" /> Add Qualification
+              </Button>
+            </div>
           </div>
         </div>
 

@@ -782,7 +782,7 @@ export default function RoomsManagement() {
             {/* Main Container */}
             <div className="m-8">
                 {/* Header Bar */}
-                <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+                <div className="mb-4 space-y-4">
                     <div>
                         <h2 className="mb-1 text-lg font-bold">Rooms Management</h2>
                         <p className="text-gray-500">
@@ -790,8 +790,8 @@ export default function RoomsManagement() {
                         </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="relative mr-2 w-full md:w-64">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="relative w-full sm:w-64">
                             <TextInput
                                 id="search-rooms"
                                 type="text"
@@ -811,22 +811,24 @@ export default function RoomsManagement() {
                             )}
                         </div>
 
-                        <Button
-                            color="gray"
-                            className="whitespace-nowrap"
-                            onClick={() => setOpenExcelModal(true)}
-                        >
-                            <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
-                            Excel Operations
-                        </Button>
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                            <Button
+                                color="gray"
+                                className="w-full whitespace-nowrap sm:w-auto"
+                                onClick={() => setOpenExcelModal(true)}
+                            >
+                                <FaFileExcel className="mr-2 text-green-600 h-4 w-4" />
+                                Excel Operations
+                            </Button>
 
-                        <Button
-                            className="whitespace-nowrap"
-                            onClick={() => setOpenAddRoomModal(true)}
-                        >
-                            <FaPlus className="mr-2" />
-                            Add Room
-                        </Button>
+                            <Button
+                                className="w-full whitespace-nowrap sm:w-auto"
+                                onClick={() => setOpenAddRoomModal(true)}
+                            >
+                                <FaPlus className="mr-2" />
+                                Add Room
+                            </Button>
+                        </div>
                     </div>
                 </div>
 

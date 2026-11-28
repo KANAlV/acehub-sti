@@ -538,50 +538,7 @@ export default function SchedulesTeachersTable({
       </div>
 
       {/* Table Controls */}
-      <div className="mb-4 flex flex-wrap items-center gap-3 md:justify-end">
-        {/* Department Dropdown Filter */}
-        <div className="w-full md:w-48">
-          <Select
-            id="department-filter"
-            value={departmentFilter}
-            onChange={handleDepartmentFilterChange}
-          >
-            <option value="All Departments">All Departments</option>
-            {allDepartments.map((dept) => (
-              <option key={dept} value={dept}>
-                {dept}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        {/* Status Dropdown Filter */}
-        <div className="w-full md:w-52">
-          <Select
-            id="status-filter"
-            value={statusFilter}
-            onChange={handleStatusFilterChange}
-          >
-            <option value="All Active & On Leave">All Active & On Leave</option>
-            <option value="Active">Active</option>
-            <option value="On Leave">On Leave</option>
-          </Select>
-        </div>
-
-        {/* Employment Type Dropdown Filter */}
-        <div className="w-full md:w-52">
-          <Select
-            id="employment-type-filter"
-            value={employmentTypeFilter}
-            onChange={handleEmploymentTypeFilterChange}
-          >
-            <option value="All">All Employment Types</option>
-            <option value="Full-Time">Full-Time</option>
-            <option value="Part-Time Full Load">Part-Time Full Load</option>
-            <option value="Part-Time">Part-Time</option>
-          </Select>
-        </div>
-
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         {/* Search Bar */}
         <div className="relative w-full md:w-60">
           <TextInput
@@ -610,6 +567,51 @@ export default function SchedulesTeachersTable({
           >
             Type at least 3 characters to search
           </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Department Dropdown Filter */}
+          <div className="w-full md:w-48">
+            <Select
+              id="department-filter"
+              value={departmentFilter}
+              onChange={handleDepartmentFilterChange}
+            >
+              <option value="All Departments">All Departments</option>
+              {allDepartments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Status Dropdown Filter */}
+          <div className="w-full md:w-52">
+            <Select
+              id="status-filter"
+              value={statusFilter}
+              onChange={handleStatusFilterChange}
+            >
+              <option value="All Active & On Leave">All Active & On Leave</option>
+              <option value="Active">Active</option>
+              <option value="On Leave">On Leave</option>
+            </Select>
+          </div>
+
+          {/* Employment Type Dropdown Filter */}
+          <div className="w-full md:w-52">
+            <Select
+              id="employment-type-filter"
+              value={employmentTypeFilter}
+              onChange={handleEmploymentTypeFilterChange}
+            >
+              <option value="All">All Employment Types</option>
+              <option value="Full-Time">Full-Time</option>
+              <option value="Part-Time Full Load">Part-Time Full Load</option>
+              <option value="Part-Time">Part-Time</option>
+            </Select>
+          </div>
         </div>
       </div>
 

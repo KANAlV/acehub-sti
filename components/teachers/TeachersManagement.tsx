@@ -293,7 +293,7 @@ export default function TeachersManagement() {
     if (!Array.isArray(avail) || avail.length === 0) {
       return (
         <span className="font-medium text-yellow-500 dark:text-yellow-400">
-          [No Preferred Time]
+          [Availability not Set]
         </span>
       );
     }
@@ -1655,43 +1655,16 @@ export default function TeachersManagement() {
       )}
 
       {/* Header Bar */}
-      <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
-        <div className={"mb-2"}>
+      <div className="mb-4 space-y-4">
+        <div>
           <h2 className="mb-1 text-lg font-bold">Teachers Management</h2>
           <p className="text-gray-500">
             Manage instructors, departments, and employment status.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="w-full md:w-48">
-            <Select
-              id="department-filter"
-              value={departmentFilter}
-              onChange={handleDepartmentFilterChange}
-            >
-              <option value="All Departments">All Departments</option>
-              {allDepartments.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="w-full md:w-52">
-            <Select
-              id="status-filter"
-              value={statusFilter}
-              onChange={handleStatusFilterChange}
-            >
-              <option value="Active">Active</option>
-              <option value="Archived">Archived</option>
-              <option value="All Statuses">All Teachers</option>
-            </Select>
-          </div>
-
-          <div className="relative w-full md:w-60">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:w-60">
             <TextInput
               id="search-teachers"
               type="text"
@@ -1712,22 +1685,51 @@ export default function TeachersManagement() {
             )}
           </div>
 
-          <Button
-            color="gray"
-            className="whitespace-nowrap"
-            onClick={() => setOpenExcelModal(true)}
-          >
-            <FaFileExcel className="mr-2 h-4 w-4 text-green-600" />
-            Excel Operations
-          </Button>
+          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto sm:justify-end">
+            <div className="w-full sm:w-48">
+              <Select
+                id="department-filter"
+                value={departmentFilter}
+                onChange={handleDepartmentFilterChange}
+              >
+                <option value="All Departments">All Departments</option>
+                {allDepartments.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </Select>
+            </div>
 
-          <Button
-            className="whitespace-nowrap"
-            onClick={() => setOpenAddTeacherModal(true)}
-          >
-            <FaPlus className="mr-2" />
-            Add Instructor
-          </Button>
+            <div className="w-full sm:w-52">
+              <Select
+                id="status-filter"
+                value={statusFilter}
+                onChange={handleStatusFilterChange}
+              >
+                <option value="Active">Active</option>
+                <option value="Archived">Archived</option>
+                <option value="All Statuses">All Teachers</option>
+              </Select>
+            </div>
+
+            <Button
+              color="gray"
+              className="w-full whitespace-nowrap sm:w-auto"
+              onClick={() => setOpenExcelModal(true)}
+            >
+              <FaFileExcel className="mr-2 h-4 w-4 text-green-600" />
+              Excel Operations
+            </Button>
+
+            <Button
+              className="w-full whitespace-nowrap sm:w-auto"
+              onClick={() => setOpenAddTeacherModal(true)}
+            >
+              <FaPlus className="mr-2" />
+              Add Instructor
+            </Button>
+          </div>
         </div>
       </div>
 

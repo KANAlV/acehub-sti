@@ -308,7 +308,7 @@ export default function BlacklistManagement() {
       )}
 
       {/* --- Header Section --- */}
-      <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+      <div className="mb-4 space-y-4">
         <div>
           <h2 className="mb-1 text-lg font-bold">Blacklist Management</h2>
           <p className="text-gray-500">
@@ -317,8 +317,8 @@ export default function BlacklistManagement() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative w-full md:w-64">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative w-full sm:w-64">
             <TextInput
               id="search-blacklist"
               type="text"

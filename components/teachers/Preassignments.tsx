@@ -223,7 +223,7 @@ export default function PreassignmentTemplatesManagement() {
   return (
     <div className="space-y-4 p-4">
       {/* Page Header & Actions Bar */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-4">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
             Pre-assignment Templates Management
@@ -233,7 +233,7 @@ export default function PreassignmentTemplatesManagement() {
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="w-full sm:w-64">
             <TextInput
               id="search-templates"
@@ -245,7 +245,10 @@ export default function PreassignmentTemplatesManagement() {
             />
           </div>
 
-          <Button onClick={() => setOpenCreateModal(true)}>
+          <Button
+            className="w-full whitespace-nowrap sm:w-auto"
+            onClick={() => setOpenCreateModal(true)}
+          >
             <HiPlus className="mr-2 h-4 w-4" />
             Add Template
           </Button>

@@ -380,7 +380,7 @@ export default function RolesManagement() {
       )}
 
       {/* --- Header Section --- */}
-      <div className="mb-4 flex-col justify-between gap-4 md:flex md:flex-row md:items-center">
+      <div className="mb-4 space-y-4">
         <div>
           <h2 className="mb-1 text-lg font-bold">Role Management</h2>
           <p className="text-gray-500">
@@ -388,8 +388,8 @@ export default function RolesManagement() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative mr-4 w-full md:w-64">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:w-64">
             <TextInput
               id="search-roles"
               type="text"
@@ -410,7 +410,7 @@ export default function RolesManagement() {
           </div>
 
           <Button
-            className="whitespace-nowrap"
+            className="ml-auto w-full whitespace-nowrap sm:w-auto"
             onClick={() => setOpenAddRoleModal(true)}
           >
             <FaPlus className="mr-2" />

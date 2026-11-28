@@ -361,7 +361,10 @@ export default function FCCETermManagement() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={() => setOpenAddAyModal(true)}>
+          <Button
+            className="w-full whitespace-nowrap sm:w-auto"
+            onClick={() => setOpenAddAyModal(true)}
+          >
             <FaPlus className="mr-2" /> Add Academic Year
           </Button>
         </div>

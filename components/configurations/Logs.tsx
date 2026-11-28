@@ -174,23 +174,25 @@ export default function AuditLogs() {
       )}
 
       {/* --- Header & Search Bar --- */}
-      <div className="mb-4 justify-between md:flex md:items-end">
+      <div className="mb-4 space-y-4">
         <div>
           <h2 className="mb-1 text-lg font-bold">System Logs</h2>
-          <p className="mb-4 text-gray-500 md:mb-0">
+          <p className="text-gray-500">
             View administrative actions, audit trails, and system event activity
             history.
           </p>
         </div>
-        <div className="w-full md:w-64">
-          <TextInput
-            id="log_search"
-            type="text"
-            icon={HiMagnifyingGlass}
-            placeholder="Search logs..."
-            value={searchQuery}
-            onChange={handleSearch}
-          />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="w-full sm:w-64">
+            <TextInput
+              id="log_search"
+              type="text"
+              icon={HiMagnifyingGlass}
+              placeholder="Search logs..."
+              value={searchQuery}
+              onChange={handleSearch}
+            />
+          </div>
         </div>
       </div>
 

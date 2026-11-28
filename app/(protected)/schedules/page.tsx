@@ -1780,31 +1780,29 @@ export default function ScheduleManagement() {
           </div>
         </div>
 
-        <div className={"w-full gap-2 sm:flex sm:justify-end"}>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative mb-2 w-full sm:w-auto">
-              <TextInput
-                id="search-schedule"
-                type="text"
-                placeholder="Search Schedule Name..."
-                value={searchTerm}
-                onChange={handleSearchChange}
-                icon={HiSearch}
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={handleClearSearch}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
-                >
-                  <HiX className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:w-64">
+            <TextInput
+              id="search-schedule"
+              type="text"
+              placeholder="Search Schedule Name..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              icon={HiSearch}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700"
+              >
+                <HiX className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <Button
-            className="mb-2 w-full whitespace-nowrap sm:w-auto"
+            className="w-full whitespace-nowrap sm:w-auto"
             onClick={() => {
               setIsCopyFlow(false);
               setCopyEntriesToCarry([]);
